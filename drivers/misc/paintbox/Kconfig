@@ -1,0 +1,28 @@
+#
+# Paintbox Programmable IPU
+#
+
+menu "Paintbox Programmable IPU"
+
+config PAINTBOX
+	tristate "Paintbox programmable ISP"
+	help
+	  Say Y here if you want to support the Paintbox programmable ISP
+
+config PAINTBOX_FPGA_SUPPORT
+	bool  "Paintbox FPGA Support"
+	depends on PAINTBOX
+	default n
+	---help---
+	This option enables support for the Paintbox FPGA hardware.
+	If you are unsure, say N.
+
+config PAINTBOX_SIMULATOR_SUPPORT
+	bool  "Paintbox Simulator Support"
+	depends on PAINTBOX
+	default n
+	---help---
+	This option enables support for the Paintbox Simulator.
+	If you are unsure, say N.
+
+endmenu
