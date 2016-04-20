@@ -35,6 +35,7 @@
 		#size-cells = <0>;
 
 		cpu-map {
+/*
 			cluster0 {
 				core0 {
 					cpu = <&A72_0>;
@@ -43,11 +44,12 @@
 					cpu = <&A72_1>;
 				};
 			};
-
+*/
 			cluster1 {
 				core0 {
 					cpu = <&A53_0>;
 				};
+/*
 				core1 {
 					cpu = <&A53_1>;
 				};
@@ -57,6 +59,7 @@
 				core3 {
 					cpu = <&A53_3>;
 				};
+*/
 			};
 		};
 
@@ -81,7 +84,7 @@
 				min-residency-us = <2500>;
 			};
 		};
-
+/*
 		A72_0: cpu@0 {
 			compatible = "arm,cortex-a72","arm,armv8";
 			reg = <0x0 0x0>;
@@ -101,7 +104,7 @@
 			clocks = <&scpi_dvfs 0>;
 			cpu-idle-states = <&CPU_SLEEP_0 &CLUSTER_SLEEP_0>;
 		};
-
+*/
 		A53_0: cpu@100 {
 			compatible = "arm,cortex-a53","arm,armv8";
 			reg = <0x0 0x100>;
@@ -111,7 +114,7 @@
 			clocks = <&scpi_dvfs 1>;
 			cpu-idle-states = <&CPU_SLEEP_0 &CLUSTER_SLEEP_0>;
 		};
-
+/*
 		A53_1: cpu@101 {
 			compatible = "arm,cortex-a53","arm,armv8";
 			reg = <0x0 0x101>;
@@ -141,16 +144,17 @@
 			clocks = <&scpi_dvfs 1>;
 			cpu-idle-states = <&CPU_SLEEP_0 &CLUSTER_SLEEP_0>;
 		};
-
+*/
+/*
 		A72_L2: l2-cache0 {
 			compatible = "cache";
 		};
-
+*/
 		A53_L2: l2-cache1 {
 			compatible = "cache";
 		};
 	};
-
+/*
 	pmu_a72 {
 		compatible = "arm,cortex-a72-pmu";
 		interrupts = <GIC_SPI 02 IRQ_TYPE_LEVEL_HIGH>,
@@ -158,17 +162,19 @@
 		interrupt-affinity = <&A72_0>,
 				     <&A72_1>;
 	};
-
+*/
 	pmu_a53 {
 		compatible = "arm,cortex-a53-pmu";
 		interrupts = <GIC_SPI 18 IRQ_TYPE_LEVEL_HIGH>,
 			     <GIC_SPI 22 IRQ_TYPE_LEVEL_HIGH>,
 			     <GIC_SPI 26 IRQ_TYPE_LEVEL_HIGH>,
 			     <GIC_SPI 30 IRQ_TYPE_LEVEL_HIGH>;
-		interrupt-affinity = <&A53_0>,
+		interrupt-affinity = <&A53_0>;
+/*,
 				     <&A53_1>,
 				     <&A53_2>,
 				     <&A53_3>;
+*/
 	};
 
 	#include "juno-base.dtsi"
