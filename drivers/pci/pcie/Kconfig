@@ -80,3 +80,9 @@ endchoice
 config PCIE_PME
 	def_bool y
 	depends on PCIEPORTBUS && PM
+
+
+config MTH_PCIE_EP
+	def_bool y
+	help
+	  Enables the PCIe Endpoint driver
