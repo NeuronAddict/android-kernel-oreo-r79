@@ -1,0 +1,1 @@
+exec git format-patch -1 --stdout|scripts/checkpatch.pl -q -
