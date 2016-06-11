@@ -122,6 +122,12 @@ dw_dma_parse_dt(struct platform_device *pdev)
 	if (of_property_read_bool(np, "is_private"))
 		pdata->is_private = true;
 
+	if (of_property_read_bool(np, "is_memcpy"))
+		pdata->is_memcpy = true;
+
+	if (of_property_read_bool(np, "is_nollp"))
+		pdata->is_nollp = true;
+
 	if (!of_property_read_u32(np, "chan_allocation_order", &tmp))
 		pdata->chan_allocation_order = (unsigned char)tmp;
 
@@ -184,7 +190,8 @@ static int dw_probe(struct platform_device *pdev)
 
 	chip->dev = dev;
 
-	chip->clk = devm_clk_get(chip->dev, "hclk");
+	//chip->clk = devm_clk_get(chip->dev, "hclk");
+	chip->clk = devm_clk_get(chip->dev, NULL);
 	if (IS_ERR(chip->clk))
 		return PTR_ERR(chip->clk);
 	err = clk_prepare_enable(chip->clk);

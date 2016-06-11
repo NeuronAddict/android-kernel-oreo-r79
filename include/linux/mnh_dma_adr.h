@@ -26,9 +26,14 @@
 #define FPGA_DDR_BASE	0x40000000
 #define CPU_DDR_BASE	0x60850000
 
+#define FPGA_DEV_BASE	0x04000000
+#define CPU_DEV_BASE	0x60042000
+
+
 #ifdef EMULATION
-#define FPGA_ADR(address) (((((void *) address)  - CPU_DDR_BASE) \
-	+ FPGA_DDR_BASE))
+#define FPGA_DEV_ADR(address) (((((void *) address)  - CPU_DEV_BASE) + FPGA_DEV_BASE))
+#define FPGA_ADR(address) (((((void *) address)  - CPU_DDR_BASE) + FPGA_DDR_BASE))
+
 #define CPU_ADR(address) (((((void *) address) - FPGA_DDR_BASE) + CPU_DDR_BASE))
 
 #else

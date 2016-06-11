@@ -104,7 +104,7 @@
 	};
 
 	/include/ "juno-clocks.dtsi"
-
+	/*
 	dma0: dma@7ff00000 {
 		compatible = "arm,pl330", "arm,primecell";
 		reg = <0x0 0x7ff00000 0 0x1000>;
@@ -123,6 +123,23 @@
 		clocks = <&soc_faxiclk>;
 		clock-names = "apb_pclk";
 	};
+	*/
+	dma0: dma@60042000 {
+		compatible = "snps,dma-spear1340";
+		reg = <0 0x60042000 0 0x1000>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
+		is_memcpy;
+		dma-channels = <4>;
+		dma-requests = <16>;
+		dma-masters = <1>;
+		#dma-cells = <3>;
+		chan_allocation_order = <1>;
+		chan_priority = <1>;
+		block_size = <0xfff>;
+		data_width = <2>;
+		clocks = <&soc_mnh25mhz>;
+	};
+
 /*
 	hdlcd@7ff50000 {
 		compatible = "arm,hdlcd";

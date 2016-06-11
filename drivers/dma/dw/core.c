@@ -25,6 +25,7 @@
 #include <linux/pm_runtime.h>
 
 #include "../dmaengine.h"
+#include <linux/mnh_dma_adr.h>
 #include "internal.h"
 
 /*
@@ -743,8 +744,8 @@ dwc_prep_dma_memcpy(struct dma_chan *chan, dma_addr_t dest, dma_addr_t src,
 		if (!desc)
 			goto err_desc_get;
 
-		desc->lli.sar = src + offset;
-		desc->lli.dar = dest + offset;
+		desc->lli.sar = FPGA_ADR(src) + offset;
+		desc->lli.dar = FPGA_ADR(dest) + offset;
 		desc->lli.ctllo = ctllo;
 		desc->lli.ctlhi = xfer_count;
 		desc->len = xfer_count << src_width;
@@ -805,7 +806,7 @@ dwc_prep_slave_sg(struct dma_chan *chan, struct scatterlist *sgl,
 	switch (direction) {
 	case DMA_MEM_TO_DEV:
 		reg_width = __ffs(sconfig->dst_addr_width);
-		reg = sconfig->dst_addr;
+		reg = FPGA_DEV_ADR(sconfig->dst_addr);
 		ctllo = (DWC_DEFAULT_CTLLO(chan)
 				| DWC_CTLL_DST_WIDTH(reg_width)
 				| DWC_CTLL_DST_FIX
@@ -820,7 +821,7 @@ dwc_prep_slave_sg(struct dma_chan *chan, struct scatterlist *sgl,
 			struct dw_desc	*desc;
 			u32		len, dlen, mem;
 
-			mem = sg_dma_address(sg);
+			mem = FPGA_ADR(sg_dma_address(sg));
 			len = sg_dma_len(sg);
 
 			mem_width = min_t(unsigned int,
@@ -862,7 +863,7 @@ slave_sg_todev_fill_desc:
 		break;
 	case DMA_DEV_TO_MEM:
 		reg_width = __ffs(sconfig->src_addr_width);
-		reg = sconfig->src_addr;
+		reg = FPGA_DEV_ADR(sconfig->src_addr);
 		ctllo = (DWC_DEFAULT_CTLLO(chan)
 				| DWC_CTLL_SRC_WIDTH(reg_width)
 				| DWC_CTLL_DST_INC
@@ -877,7 +878,7 @@ slave_sg_todev_fill_desc:
 			struct dw_desc	*desc;
 			u32		len, dlen, mem;
 
-			mem = sg_dma_address(sg);
+			mem = FPGA_ADR(sg_dma_address(sg));
 			len = sg_dma_len(sg);
 
 			mem_width = min_t(unsigned int,
@@ -1638,10 +1639,11 @@ int dw_dma_probe(struct dw_dma_chip *chip, struct dw_dma_platform_data *pdata)
 			dwc->block_size = pdata->block_size;
 
 			/* Check if channel supports multi block transfer */
-			channel_writel(dwc, LLP, 0xfffffffc);
+			/*channel_writel(dwc, LLP, 0xfffffffc);
 			dwc->nollp =
 				(channel_readl(dwc, LLP) & 0xfffffffc) == 0;
-			channel_writel(dwc, LLP, 0);
+			channel_writel(dwc, LLP, 0);*/
+			dwc->nollp = pdata->is_nollp;
 		}
 	}
 
