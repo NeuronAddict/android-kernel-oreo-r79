@@ -13,6 +13,8 @@
 #include <linux/interrupt.h>
 #include <linux/kernel_stat.h>
 #include <linux/mutex.h>
+#include <linux/poll.h>
+#include <linux/slab.h>
 
 #include "internals.h"
 
@@ -318,6 +320,140 @@ void register_handler_proc(unsigned int irq, struct irqaction *action)
 	action->dir = proc_mkdir(name, desc->dir);
 }
 
+struct irq_proc {
+	unsigned long irq;
+	wait_queue_head_t q;
+	atomic_t count;
+	char devname[TASK_COMM_LEN];
+};
+
+static irqreturn_t irq_proc_irq_handler(int irq, void *vidp, struct pt_regs
+regs)
+{
+	struct irq_proc *idp = (struct irq_proc *)vidp;
+
+	WARN_ON(idp->irq != irq);
+	disable_irq_nosync(irq);
+	atomic_inc(&idp->count);
+	wake_up(&idp->q);
+	return IRQ_HANDLED;
+}
+
+
+/*
+ * Signal to userspace an interrupt has occurred
+ */
+static ssize_t irq_proc_read(struct file *filp, char  __user *bufp,
+			     size_t len, loff_t *ppos)
+{
+	struct irq_proc *ip = (struct irq_proc *)filp->private_data;
+	struct irq_desc *desc = irq_to_desc(ip->irq);
+
+	int pending;
+
+	DEFINE_WAIT(wait);
+
+	if (len < sizeof(int))
+		return -EINVAL;
+
+	pending = atomic_read(&ip->count);
+	if (pending == 0) {
+		if (desc->depth > 0)
+			enable_irq(ip->irq);
+		if (filp->f_flags & O_NONBLOCK)
+			return -EWOULDBLOCK;
+	}
+
+	while (pending == 0) {
+		prepare_to_wait(&ip->q, &wait, TASK_INTERRUPTIBLE);
+		pending = atomic_read(&ip->count);
+		if (pending == 0)
+			schedule();
+		finish_wait(&ip->q, &wait);
+		pending = atomic_read(&ip->count);
+		if (signal_pending(current))
+			return -ERESTARTSYS;
+	}
+
+	if (copy_to_user(bufp, &pending, sizeof(pending)))
+		return -EFAULT;
+
+	*ppos += sizeof(pending);
+
+	atomic_sub(pending, &ip->count);
+	return sizeof(pending);
+}
+
+
+static int irq_proc_open(struct inode *inop, struct file *filp)
+{
+	struct irq_proc *ip;
+	unsigned int irq = (int)(long)PDE_DATA(inop);
+	int error;
+
+	ip = kmalloc(sizeof(*ip), GFP_KERNEL);
+	if (ip == NULL)
+		return -ENOMEM;
+
+	memset(ip, 0, sizeof(*ip));
+	strcpy(ip->devname, current->comm);
+	init_waitqueue_head(&ip->q);
+	atomic_set(&ip->count, 0);
+	ip->irq = irq;
+
+	error = request_irq(ip->irq,
+			    irq_proc_irq_handler,
+			    IRQF_SHARED,
+			    ip->devname,
+			    ip);
+	if (error < 0) {
+		kfree(ip);
+		return error;
+	}
+	filp->private_data = (void *)ip;
+
+	return 0;
+}
+
+static int irq_proc_release(struct inode *inop, struct file *filp)
+{
+	struct irq_proc *ip = (struct irq_proc *)filp->private_data;
+	(void)inop;
+	free_irq(ip->irq, ip);
+	filp->private_data = NULL;
+	kfree(ip);
+	return 0;
+}
+
+static unsigned int irq_proc_poll(struct file *filp,
+				  struct poll_table_struct *wait)
+{
+	struct irq_proc *ip = (struct irq_proc *)filp->private_data;
+	struct irq_desc *desc = irq_to_desc(ip->irq);
+
+	if (atomic_read(&ip->count) > 0)
+		return POLLIN | POLLRDNORM; /* readable */
+
+	/* if interrupts disabled and we don't have one to process... */
+	if (desc->depth > 0)
+		enable_irq(ip->irq);
+
+	poll_wait(filp, &ip->q, wait);
+
+	if (atomic_read(&ip->count) > 0)
+		return POLLIN | POLLRDNORM; /* readable */
+
+	return 0;
+}
+
+static const struct file_operations irq_proc_file_operations = {
+	.read = irq_proc_read,
+	.open = irq_proc_open,
+	.release = irq_proc_release,
+	.poll = irq_proc_poll,
+};
+
+
 #undef MAX_NAMELEN
 
 #define MAX_NAMELEN 10
@@ -326,6 +462,7 @@ void register_irq_proc(unsigned int irq, struct irq_desc *desc)
 {
 	static DEFINE_MUTEX(register_lock);
 	char name [MAX_NAMELEN];
+	struct proc_dir_entry *entry;
 
 	if (!root_irq_dir || (desc->irq_data.chip == &no_irq_chip))
 		return;
@@ -347,6 +484,14 @@ void register_irq_proc(unsigned int irq, struct irq_desc *desc)
 	desc->dir = proc_mkdir(name, root_irq_dir);
 	if (!desc->dir)
 		goto out_unlock;
+
+	/*
+	 * Create handles for user-mode interrupt handlers
+	 * if the kernel hasn't already grabbed the IRQ
+	 */
+	proc_create_data("irq", 0644, desc->dir,
+			 &irq_proc_file_operations, (void *)(long)irq);
+
 
 #ifdef CONFIG_SMP
 	/* create /proc/irq/<irq>/smp_affinity */
