@@ -182,6 +182,15 @@
 		clock-names = "uartclk", "apb_pclk";
 	};
 
+	spi@64043000 {
+		compatible = "snps,dw-apb-ssi";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg = <0x0 0x64043000 0x0 0x1000>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_LEVEL_HIGH>;
+		num-cs = <4>;
+	};
+
 	i2c@7ffa0000 {
 		compatible = "snps,designware-i2c";
 		reg = <0x0 0x7ffa0000 0x0 0x1000>;
