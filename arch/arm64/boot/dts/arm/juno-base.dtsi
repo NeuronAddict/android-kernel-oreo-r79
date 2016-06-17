@@ -304,6 +304,38 @@
 		};
 	};
 
+
+	mipitop: mipitop@64015000 {
+		compatible = "intel,mipicsi_top";
+		reg = <0x0 0x64015000 0x0 0x0FFF>;
+	};
+
+	mipi_rx0: mipihost@64012000 {
+		compatible = "snps,mipicsi_host";
+		reg = <0x0 0x64012000 0x0 0xFFF>;
+	};
+/*
+	mipi_rx1: mipihost@64013000 {
+		compatible = "snps,mipicsi_host";
+		reg = <0x0 0x64013000 0x0 0xFFF>;
+	};
+	mipi_rx2: mipihost@64014000 {
+		compatible = "snps,mipicsi_host";
+		reg = <0x0 0x64014000 0x0 0xFFF>;
+	};
+*/
+	mipi_tx0: mipidevice@64010000 {
+		compatible = "snps,mipicsi_device";
+		reg = <0x0 0x64010000 0x0 0xFFF>;
+	};
+/*
+	mipi_tx1: mipidevice@64011000 {
+		compatible = "snps,mipicsi_device";
+		reg = <0x0 0x64011000 0x0 0xFFF>;
+	};
+*/
+
+
 	smb {
 		compatible = "simple-bus";
 		#address-cells = <2>;
