@@ -367,6 +367,9 @@ int mipicsi_device_probe(struct platform_device *pdev)
 	struct resource *mem = NULL;
 	struct mipicsi_device_dev *dev;
 	int irq_number = 0;
+#ifdef JUNO_BRINGUP
+	void *iomem;
+#endif
 
 	dev_info(&pdev->dev, "Installing MIPI CSI-2 DEVICE module...\n");
 
@@ -380,6 +383,16 @@ int mipicsi_device_probe(struct platform_device *pdev)
 	/* Update the device node */
 	dev->dev = &pdev->dev;
 
+#ifdef JUNO_BRINGUP
+	dev_info(dev->dev, "Creating bogus memregion for PO\n");
+	iomem = devm_kzalloc(dev->dev, (unsigned int)dev->mem_size,
+		GFP_KERNEL);
+	dev_info(dev->dev, "Allocated %p\n", iomem);
+	dev->base_address = iomem;
+	dev_info(dev->dev, "MIPI TOP at %p\n",
+		 dev->base_address);
+	pr_info("MIPI DEVICE: juno bringup %p\n", dev->base_address);
+#else
 	/* Device tree information: Base addresses & mapping */
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	dev->mem_size = resource_size(mem);
@@ -395,6 +408,8 @@ int mipicsi_device_probe(struct platform_device *pdev)
 		error = -ENOMEM;
 		goto free_mem;
 	}
+#endif
+
 	pr_info("MIPI DEV: ioremapped to %p\n", dev->base_address);
 	mipicsi_util_save_virt_addr(MIPI_TX0, dev->base_address);
 

@@ -198,4 +198,10 @@ source "drivers/hwtracing/intel_th/Kconfig"
 
 source "drivers/fpga/Kconfig"
 
+config JUNO_BRINGUP
+	tristate "Enable juno debugging flag"
+	default y
+	help
+	  Enable global flag for juno debugging
+
 endmenu
