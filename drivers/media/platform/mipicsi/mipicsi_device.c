@@ -46,52 +46,53 @@
 #include "mipicsi_util.h"
 #include "mipicsi_dc_dphy.h"
 
+#include <linux/intel-hwio.h>
+#include <soc/mnh/mnh-hwio-mipi-tx.h>
+extern void * dev_addr_map[];
 /*
  * Linked list that contains the installed devices
  */
 static LIST_HEAD(devlist_global);
 
+/* these macros assume a void * in scope named baddr */
+#define TX_IN(reg)            HW_IN(baddr,   MIPI_TX, reg)
+#define TX_OUT(reg,val)       HW_OUT(baddr,  MIPI_TX, reg, val)
+#define TX_OUTf(reg,fld,val)  HW_OUTf(baddr, MIPI_TX, reg, fld, val)
+
+#define TX_MASK(reg, fld)     HWIO_MIPI_TX_##reg##_##fld##_FLDMASK
+
 void mipicsi_dev_dphy_write(enum mipicsi_top_dev dev,
-			    uint8_t offset, uint8_t data)
+			    uint8_t command, uint8_t data)
 {
-#ifdef MNH_EMULATION
-	/* Gen 2 Daughtercard specific sequence */
-
-	pr_info("%s: dev=0x%x, data=0x%x, offset=0x%x\n",
-		__func__, dev, data, offset);
-
-	/* set the TESTCLK input high in preparation to latch in the desired
-	 * test mode
+	/* Consider passing in the base address
+	 * rather than a lookup in a table.
 	 */
-	mipicsi_write_part(dev, R_CSI2_DEV_PHY0_TST_CTRL0, 1, DEV_TESTCLK_SH,
-			   1);
+	void * baddr = dev_addr_map[dev];
 
-	/* set the desired test code in the input 8-bit bus TESTDIN[7:0] */
-	mipicsi_write(dev, R_CSI2_DEV_PHY1_TST_CTRL1, offset);
+	if (baddr) {
+		pr_info("%s: dev=0x%x @ %p, command 0x%02X data=0x%02X\n",
+			__func__, dev, baddr, command, data);
 
-	/* set TESTEN input high  */
-	mipicsi_write_part(dev, R_CSI2_DEV_PHY0_TST_CTRL1, 1, DEV_TESTEN_SH, 1);
+		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 1);
+		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTDIN, command);
+		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  1);
+		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 0);
 
-	/* drive the TESTCLK input low; the falling edge captures the chosen
-	 *  test code into the transceiver
-	 */
-	mipicsi_write_part(dev, R_CSI2_DEV_PHY0_TST_CTRL0, 0, DEV_TESTCLK_SH,
-			   1);
+		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  0);
+		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTDIN, data);
 
-	/* set TESTEN input low to disable further test mode code latching  */
-	mipicsi_write_part(dev, R_CSI2_DEV_PHY0_TST_CTRL1, 0, DEV_TESTEN_SH, 1);
-
-	/* set TESTDIN[7:0] to the desired test data appropriate to the
-	 * chosen test mode
-	 */
-	mipicsi_write(dev, R_CSI2_DEV_PHY0_TST_CTRL1, data);
-
-	/* pulse TESTCLK high to capture this test data into the macrocell */
-	mipicsi_write_part(dev, R_CSI2_DEV_PHY0_TST_CTRL0, 1, DEV_TESTCLK_SH,
-			   1);
-
-	pr_info("%s: X\n", __func__);
-#endif /* MNH_EMULATION */
+		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 1);
+		/*
+		  I thought we needed one more TESTCLK to low
+		  but tested scripts don't have it.
+		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 0);
+		*/
+		//pr_info("%s: X\n", __func__);
+	}
+	else {
+		pr_err("%s: no address for %d\n", __func__, dev);
+	}
+	udelay(1);
 }
 
 int mipicsi_dev_dphy_write_set(enum mipicsi_top_dev dev, uint32_t offset,
@@ -124,17 +125,31 @@ int mipicsi_dev_dphy_write_set(enum mipicsi_top_dev dev, uint32_t offset,
 
 void mipicsi_device_reset(enum mipicsi_top_dev dev)
 {
-	mipicsi_write(dev, R_CSI2_DEV_CSI2_RESETN, 0);
-	udelay(1000);
-	mipicsi_write(dev, R_CSI2_DEV_CSI2_RESETN, 1);
+	void * baddr = dev_addr_map[dev];
+	if (baddr) {
+		pr_info("%s %d\n", __func__, dev);
+		TX_OUT(CSI2_RESETN, 0);
+		udelay(1000);
+		TX_OUT(CSI2_RESETN, 1);
+	}
+	else {
+		pr_err("%s: no address for %d\n", __func__, dev);
+	}
 }
 
 
 void mipicsi_device_dphy_reset(enum mipicsi_top_dev dev)
 {
-	mipicsi_write_part(dev, R_CSI2_DEV_PHY_RSTZ, 1, DEV_RSTZ_SH, 1);
-	udelay(1000);
-	mipicsi_write_part(dev, R_CSI2_DEV_PHY_RSTZ, 0, DEV_RSTZ_SH, 1);
+	void * baddr = dev_addr_map[dev];
+	if (baddr) {
+		pr_info("%s %d\n", __func__, dev);
+		TX_OUTf(PHY_RSTZ, PHY_RSTZ, 1);
+		udelay(1000);
+		TX_OUTf(PHY_RSTZ, PHY_RSTZ, 0);
+	}
+	else {
+		pr_err("%s: no address for %d\n", __func__, dev);
+        }
 }
 
 int32_t mipicsi_device_set_pll(struct mipicsi_top_cfg *config)
@@ -145,7 +160,7 @@ int32_t mipicsi_device_set_pll(struct mipicsi_top_cfg *config)
 	dev = config->dev;
 
 #ifdef MNH_EMULATION
-
+#if 0
 	/* HARD CODE PLL for 1.5 GHzs, and input 12.5 Mhz */
 	pll.hsfreq = 0x3c;
 	pll.vco_range = 0x03;
@@ -161,27 +176,6 @@ int32_t mipicsi_device_set_pll(struct mipicsi_top_cfg *config)
 	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_HS_RX_CTRL_L0,
 			       (pll.hsfreq << 1));
 
-	/* 11. Configure the PLL (if for Master mode), direct PLL SoC control:
-	 * a. Set clk_sel[1:0] = 2'b01.
-	 * b. Set pll_shadow_control = 0 for direct SoC control of the PLL
-	 * configuration.
-	 * c. Apply a shadow_clear pulse on the PLL interface to clear
-	 * configuration shadow registers to default values. Apply PLL desired
-	 * configurations:
-	 * n, m, p, icpctrl, lpfctrl, vcorange, vcocap; the example
-	 * below is for 2GHz operation -- for different operating frequencies,
-	 * refer to Chapter 6,  "PLL Requirements"):
-	 * ¦ VCO Control (vcorange and vcocap):
-	 * ¦ vcorange[1:0] = 2'b11
-	 * ¦ vcocap[1:0] = 2'b00
-	 * ¦ PLL Control (icpctrl): icpctrl[3:0] = 4'b0111
-	 * ¦ PLL Control (lpfctrl): lpfctrl[5:0] = 6'b000001
-	 * ¦ PLL Input Divider Ratio (n): n[2:0] = 3'h2
-	 * ¦ PLL Loop Divider Ratio (m): m[9:0] = 10'hF8
-	 * ¦ PLL Output Frequency Division Ratio (p): p[1:0] = 2'b00
-	 *
-	 * e. Apply updatepll pulse to read-in PLL desired configurations
-	 */
 
 	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_BYPASS, 0x01);
 
@@ -205,6 +199,16 @@ int32_t mipicsi_device_set_pll(struct mipicsi_top_cfg *config)
 	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_DIV_RAT_CTRL,
 			       ((0x1<<5) | (0x1<<4) | (0x1<<2) |
 				(pll.output_div<<0)));
+#else
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_HS_RX_CTRL_L0,       0x10);
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_BIAS_FCC_VCO,    0x80);
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_LPF_CP_CTRL,     0xD0);
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_CP_LOCK_BYP_ULP, 0x07);
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_DIV_RAT_CTRL,    0x34);
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_INPUT_DIV_RAT,   0x09);
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_LOOP_DIV_RAT,    0x1E);
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_LOOP_DIV_RAT,    0x87);
+#endif // #if 0
 #endif
 	return 0;
 }
@@ -212,26 +216,31 @@ int32_t mipicsi_device_set_pll(struct mipicsi_top_cfg *config)
 int mipicsi_device_vpg(struct mipicsi_top_vpg *vpg)
 {
 	enum mipicsi_top_dev dev = vpg->dev;
+	void * baddr = dev_addr_map[dev];
+	if (baddr) {
+		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_HS_TX_PWR_CTRL_CLK, 0xB);
 
-	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_HS_TX_PWR_CTRL_CLK, 0xB);
+		TX_OUT(VPG_MODE_CFG, vpg->mode_cfg);
+		TX_OUT(VPG_PKT_CFG, vpg->pkt_cfg);
+		TX_OUT(VPG_PKT_SIZE, vpg->pkt_size);
+		TX_OUT(VPG_HSA_TIME, vpg->hsa_time);
+		TX_OUT(VPG_HBP_TIME, vpg->hbp_time);
+		TX_OUT(VPG_HLINE_TIME, vpg->hline_time);
+		TX_OUT(VPG_VSA_LINES, vpg->vsa_lines);
+		TX_OUT(VPG_VBP_LINES, vpg->vbp_lines);
+		TX_OUT(VPG_VFP_LINES, vpg->vfp_lines);
+		TX_OUT(VPG_ACT_LINES, vpg->act_lines);
+		TX_OUT(VPG_MAX_FRAME_NUM, vpg->max_frame);
+		TX_OUT(VPG_START_LINE_NUM, vpg->start_line);
+		TX_OUT(VPG_STEP_LINE_NUM, vpg->step_line);
 
-	mipicsi_write(dev, R_CSI2_DEV_VPG_MODE_CFG, vpg->mode_cfg);
-	mipicsi_write(dev, R_CSI2_DEV_VPG_PKT_CFG, vpg->pkt_cfg);
-	mipicsi_write(dev, R_CSI2_DEV_VPG_PKT_SIZE, vpg->pkt_size);
-	mipicsi_write(dev, R_CSI2_DEV_VPG_HSA_TIME, vpg->hsa_time);
-	mipicsi_write(dev, R_CSI2_DEV_VPG_HBP_TIME, vpg->hbp_time);
-	mipicsi_write(dev, R_CSI2_DEV_VPG_HLINE_TIME, vpg->hline_time);
-	mipicsi_write(dev, R_CSI2_DEV_VPG_VSA_LINES, vpg->vsa_lines);
-	mipicsi_write(dev, R_CSI2_DEV_VPG_VBP_LINES, vpg->vbp_lines);
-	mipicsi_write(dev, R_CSI2_DEV_VPG_VFP_LINES, vpg->vfp_lines);
-	mipicsi_write(dev, R_CSI2_DEV_VPG_ACT_LINES, vpg->act_lines);
-	mipicsi_write(dev, R_CSI2_DEV_VPG_MAX_FRAME_NUM, vpg->max_frame);
-	mipicsi_write(dev, R_CSI2_DEV_VPG_START_LINE_NUM, vpg->start_line);
-	mipicsi_write(dev, R_CSI2_DEV_VPG_STEP_LINE_NUM, vpg->step_line);
-
-	/* Enable VPG */
-	mipicsi_write(dev, R_CSI2_DEV_VPG_CTRL, 1);
-	return 0;
+		TX_OUTf(VPG_CTRL, VPG_EN, 1);
+		return 0;
+	}
+	else {
+		pr_err("%s: no address for %d\n", __func__, dev);
+		return -ENXIO;
+        }
 }
 
 
@@ -242,100 +251,103 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 	uint32_t data = 0;
 	uint8_t counter = 0;
 	enum mipicsi_top_dev dev = config->dev;
+	void * baddr = dev_addr_map[dev];
+	const uint32_t stop_mask =
+	  TX_MASK(PHY_STATUS, TXSTOPSTATE_CLK) |
+	  TX_MASK(PHY_STATUS, TXSTOPSTATE_L0) |
+	  TX_MASK(PHY_STATUS, TXSTOPSTATE_L1) | 
+	  TX_MASK(PHY_STATUS, TXSTOPSTATE_L2) |
+	  TX_MASK(PHY_STATUS, TXSTOPSTATE_L3);
+	if (baddr) {
 
-	pr_info("%s: E\n", __func__);
-
-	if ((dev != MIPI_TX0) && (dev != MIPI_TX1))
-		return 0;
-
-	/* Set SHUTDOWNZ logic low, */
-	mipicsi_write_part(dev, R_CSI2_DEV_PHY_RSTZ, 0, DEV_SHUTDOWNZ_SH, 1);
-
-	/* Set RSTZ signals to logic low */
-	mipicsi_write_part(dev, R_CSI2_DEV_PHY_RSTZ, 0, DEV_RSTZ_SH, 1);
-
-	/* TESTCLR to logic high */
-	mipicsi_write_part(dev, R_CSI2_DEV_PHY0_TST_CTRL0, 1,
-			    DEV_TESTCLR_SH, 1);
-
-	/* Apply the appropriate frequency to the REFCLK signal; for correct
-	 * values, refer to Table 6-1 on page 91
-	 */
-	/* Hardware controlled */
-
-	/* Apply the appropriate frequency to the CFG_CLK signal; for correct
-	 * values, refer to Table 12-5
-	 */
-	/* Hardware controlled */
-
-	/* Set MASTERSLAVEZ = 1 for Master mode selection (1'b0 for Slave mode
-	 * selection).
-	 */
-	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_MASTER_SLAVEZ, DC_SLAVE_VAL);
-
-	/* Set ENABLE_N = 1'b1 */
-	mipicsi_write(dev, R_CSI2_DEV_PHY_IF_CFG, 0x03);
-
-	/* Set BASEDIR_N to the desired values */
-	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L0, DC_TX_BASEDIR_VAL);
-	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L1, DC_TX_BASEDIR_VAL);
-	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L2, DC_TX_BASEDIR_VAL);
-	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L3, DC_TX_BASEDIR_VAL);
-
-	/* Wait for 15 ns */
-	udelay(1);
-
-	/* Set TESTCLR to low */
-	mipicsi_write_part(dev, R_CSI2_DEV_PHY0_TST_CTRL0, 0, DEV_TESTCLR_SH,
-			   1);
-
-	/* Wait for 35 ns */
-	udelay(1);
-
-	/* Configure PLL */
-	mipicsi_device_set_pll(config);
-
-	/* Wait 5 ns */
-	udelay(1);
-
-	/* Configure Test Code 0x22
-	 * Bitrate configuration
-	 * Band Gap reference voltage
-	 * BIASEXTR internal resistor control
-	 * LPTX bias current control
-	 */
-	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_AFE_BYPASS_BANDGAP,
-				0x04);
-	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_AFE_BYPASS_BANDGAP,
-				0x50);
-
-	/* Set SHUTDOWNZ signal to logic high */
-	mipicsi_write_part(dev, R_CSI2_DEV_PHY_RSTZ, 1, DEV_SHUTDOWNZ_SH, 1);
-
-	/* Wait 5 ns */
-	udelay(1);
-
-	/* Set RSTZ signal to logic high */
-	mipicsi_write_part(dev, R_CSI2_DEV_PHY_RSTZ, 1, DEV_RSTZ_SH, 1);
-
-	/* Wait until the STOPSTATEDATA_N and STOPSTATECLK outputs are asserted.
-	 * At this point, the PLL has already locked (for the Master) and the
-	 * initialization of the analog drivers has completed. From this point,
-	 * the REQUEST inputs can be set according to the desired transmission
-	 * -- poll for 200 us
-	 */
-	do {
-		data = mipicsi_read(dev, R_CSI2_DEV_PHY_STATUS);
-
-		if ((data & DEV_STOPSTATE) == DEV_STOPSTATE) {
-			pr_info("%s: X\n", __func__);
-			return 0;
+		if ((dev != MIPI_TX0) && (dev != MIPI_TX1)) {
+		  pr_err("%s unexpected dev %d\n", __func__, dev);
+			return -EINVAL;
 		}
+		pr_info("%s: dev: %d\n", __func__, dev);
+		TX_OUTf(CSI2_RESETN,    CSI2_RESETN_RW, 1);
+		TX_OUT(PHY_RSTZ,        0);
+		TX_OUTf(PHY_RSTZ,       PHY_ENABLECLK,  1);
+		/* set TESTCLR to HIGH */
+		TX_OUT(PHY0_TST_CTRL0,  1);
 
-		udelay(10);
-		counter++;
-	} while (counter < 20);
+		/* Apply the appropriate frequency to the REFCLK signal; for correct
+		 * values, refer to Table 6-1 on page 91
+		 */
+		/* Hardware controlled */
+		
+		/* Apply the appropriate frequency to the CFG_CLK signal; for correct
+		 * values, refer to Table 12-5
+		 */
+		/* Hardware controlled */
+		
+		/* Set MASTERSLAVEZ = 1 for Master mode selection (1'b0 for Slave mode
+		 * selection).
+		 */
+		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_MASTER_SLAVEZ, 0x0F);
 
+		/* need PHY_STOP_WAIT_TIME in PHY_IF_CFG ?
+		   original code overwrote the entire register with 0x03
+		*/
+		TX_OUTf(PHY_IF_CFG, LANE_EN_NUM, 0x03);
+
+		/* Set BASEDIR_N to the desired values */
+		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L0, DC_TX_BASEDIR_VAL);
+		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L1, DC_TX_BASEDIR_VAL);
+		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L2, DC_TX_BASEDIR_VAL);
+		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L3, DC_TX_BASEDIR_VAL);
+
+		/* Wait for 15 ns */
+		udelay(1);
+		/* Configure the TESTCLR to LO */
+		//TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLR, 0);
+		TX_OUT(PHY0_TST_CTRL0, 0);
+
+		/* Wait for 35 ns */
+		udelay(1);
+		
+		/* Configure PLL */
+		mipicsi_device_set_pll(config);
+
+		/* Wait 5 ns */
+		udelay(1);
+		TX_OUTf(LPCLK_CTRL, PHY_TXREQCLKHS_CON, 1);
+		/* Configure Test Code 0x22
+		 * Bitrate configuration
+		 * Band Gap reference voltage
+		 * BIASEXTR internal resistor control
+		 * LPTX bias current control
+		 */
+		// Do we really want to send this same test code with different
+		// values?
+		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_AFE_BYPASS_BANDGAP, 0x04);
+		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_AFE_BYPASS_BANDGAP, 0x40);
+
+		TX_OUT(PHY_RSTZ, 0x07);
+		udelay(1);
+		/* Wait until the STOPSTATEDATA_N and STOPSTATECLK outputs are asserted.
+		 * At this point, the PLL has already locked (for the Master) and the
+		 * initialization of the analog drivers has completed. From this point,
+		 * the REQUEST inputs can be set according to the desired transmission
+		 * -- poll for 200 us
+		 */
+		do {
+			data = TX_IN(PHY_STATUS);
+			if ((data & stop_mask) == stop_mask) {
+				pr_info("%s: X\n", __func__);
+				return 0;
+			}
+
+			udelay(10);
+			counter++;
+		} while (counter < 20);
+		pr_info("%s counter: %d 0x%08X\n",
+                        __func__, counter, data);
+	}
+	else {
+		pr_err("%s: no address for %d\n", __func__, dev);
+		return -ENXIO;
+	}
 	return -EINVAL;
 #endif
 	/* TO DO - initialize controller parameters only here for Gen 3 */
@@ -344,19 +356,29 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 
 int mipicsi_device_hw_init(enum mipicsi_top_dev dev)
 {
-	mipicsi_write_part(dev, R_CSI2_DEV_PHY_RSTZ, 1, DEV_SHUTDOWNZ_SH, 1);
+	void * baddr = dev_addr_map[dev];
+	if (baddr) {
+		pr_info("%s %d version: 0x%08X\n",
+			__func__, dev, TX_IN(VERSION));
+		TX_OUTf(PHY_RSTZ, PHY_SHUTDOWNZ, 1);
+		mipicsi_device_dphy_reset(dev);
 
-	mipicsi_device_dphy_reset(dev);
+		mipicsi_device_reset(dev);
 
-	mipicsi_device_reset(dev);
+		TX_OUT(INT_MASK_VPG, 0xFFFFFFFF);
+		TX_OUT(INT_MASK_IDI, 0xFFFFFFFF);
 
-	mipicsi_write(dev, R_CSI2_DEV_INT_MASK_VPG, 0xFFFFFFFF);
-	mipicsi_write(dev, R_CSI2_DEV_INT_MASK_IDI, 0xFFFFFFFF);
-	mipicsi_write(dev, R_CSI2_DEV_INT_MASK_MEM, 0xFFFFFFFF);
+		/* another fictitious register?  
+		   mipicsi_write(dev, R_CSI2_DEV_INT_MASK_MEM, 0xFFFFFFFF);
+		*/
 
-	mipicsi_write_part(dev, R_CSI2_DEV_PHY_RSTZ, 0, DEV_SHUTDOWNZ_SH, 1);
-
-	return 0;
+		TX_OUTf(PHY_RSTZ, PHY_SHUTDOWNZ, 0);
+		return 0;
+	}
+	else {
+		pr_err("%s: no address for %d\n", __func__, dev);
+		return -ENXIO;
+	}
 }
 
 
@@ -364,11 +386,12 @@ int mipicsi_device_probe(struct platform_device *pdev)
 {
 	int ret = 0;
 	int error = 0;
-	struct resource *mem = NULL;
 	struct mipicsi_device_dev *dev;
 	int irq_number = 0;
 #ifdef JUNO_BRINGUP
 	void *iomem;
+#else
+	struct resource *mem = NULL;
 #endif
 
 	dev_info(&pdev->dev, "Installing MIPI CSI-2 DEVICE module...\n");

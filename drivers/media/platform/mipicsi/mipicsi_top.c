@@ -50,6 +50,25 @@
 #include "mipicsi_device.h"
 #include "mipicsi_util.h"
 
+#include <linux/intel-hwio.h>
+#include <soc/mnh/mnh-hwio-mipi-top.h>
+
+void * dev_addr_map[MIPI_MAX] = { NULL };
+
+void mipicsi_util_save_virt_addr(enum mipicsi_top_dev dev, void *base_addr)
+{
+  dev_addr_map[dev] = base_addr;
+}
+
+/* these macros assume a void * in scope named baddr */
+#define TOP_IN(reg)            HW_IN(baddr,   MIPI_TOP, reg)
+#define TOP_INf(reg,fld)       HW_INf(baddr,  MIPI_TOP, reg, fld)
+#define TOP_OUT(reg,val)       HW_OUT(baddr,  MIPI_TOP, reg, val)
+#define TOP_OUTf(reg,fld,val)  HW_OUTf(baddr, MIPI_TOP, reg, fld, val)
+
+#define TOP_MASK(reg,fld)      HWIO_MIPI_TOP_##reg##_##fld##_FLDMASK
+
+
 /*
  * Linked list that contains the installed devices
  */
@@ -90,60 +109,6 @@ static LIST_HEAD(devlist_global);
 #define CSI2_PPI_PD                     2
 #define CSI2_PCLK_FREE                  1
 
-struct top_regs {
-	uint32_t mode;
-	uint32_t bypint;
-	uint32_t pll_config0;
-	uint32_t pll_config1;
-	uint32_t pll_cntrl;
-	uint32_t pll_status;
-	uint32_t dphy_config;
-	uint32_t dphy_cntrl;
-	uint32_t iotest;
-};
-
-struct top_regs top_reg_tbl[MIPI_MAX] = {
-	[MIPI_RX0] = {RX0_MODE, R_INVALID, RX0_DPHY_PLL_CONFIG0,
-		      RX0_DPHY_PLL_CONFIG1, RX0_DPHY_PLL_CNTRL,
-		      RX0_DPHY_PLL_STATUS, RX0_DPHY_CONFIG,
-		      RX0_DPHY_CONTROL, RX0_DPHY_IOTEST},
-	[MIPI_RX1] = {RX1_MODE, R_INVALID, R_INVALID,
-		      R_INVALID, R_INVALID,
-		      R_INVALID, RX1_DPHY_CONFIG,
-		      RX1_DPHY_CONTROL, RX1_DPHY_IOTEST},
-	[MIPI_RX2] = {RX2_MODE, R_INVALID, R_INVALID,
-		      R_INVALID, R_INVALID,
-		      R_INVALID, RX2_DPHY_CONFIG,
-		      RX2_DPHY_CONTROL, RX2_DPHY_IOTEST},
-	[MIPI_TX0] = {TX0_MODE, TX0_BYPINT, TX0_DPHY_PLL_CONFIG0,
-		      TX0_DPHY_PLL_CONFIG1, TX0_DPHY_PLL_CNTRL,
-		      TX0_DPHY_PLL_STATUS, TX0_DPHY_CONFIG,
-		      TX0_DPHY_CONTROL, TX0_DPHY_IOTEST},
-	[MIPI_TX1] = {TX1_MODE, TX1_BYPINT, TX1_DPHY_PLL_CONFIG0,
-		      TX1_DPHY_PLL_CONFIG1, TX1_DPHY_PLL_CNTRL,
-		      TX1_DPHY_PLL_STATUS, TX1_DPHY_CONFIG,
-		      TX1_DPHY_CONTROL, TX1_DPHY_IOTEST}
-};
-
-uint32_t top_read(enum mipicsi_top_dev dev, uint32_t offset)
-{
-	if (offset != R_INVALID)
-		return mipicsi_read(dev, offset);
-	else
-		return -EINVAL;
-}
-
-uint32_t top_write(enum mipicsi_top_dev dev, uint32_t offset, uint32_t data)
-{
-	if (offset != R_INVALID) {
-		mipicsi_write(dev, offset, data);
-		return 0;
-	} else {
-		return -EINVAL;
-	}
-}
-
-
 void top_dphy_reset(enum mipicsi_top_dev dev)
 {
 
@@ -167,13 +132,11 @@ void top_dphy_reset(enum mipicsi_top_dev dev)
 	/* TO DO -  Reset via TOP Registers */
 }
 
-
 void top_dphy_write(enum mipicsi_top_dev dev,
 			   uint8_t offset, uint8_t data)
 {
 	/* TO DO - Write for TOP Registers */
 }
-
 
 int32_t top_set_pll(struct mipicsi_top_cfg *config)
 {
@@ -267,132 +230,201 @@ int32_t mipicsi_top_start(struct mipicsi_top_cfg *config)
 	return ret;
 }
 
+static void find_tx_matching_rx_byp_and_pwr_off(uint32_t tx_bypass_sel)
+{
+	void * baddr = dev_addr_map[MIPI_TOP];
+	uint32_t matches = 0;
+	if (baddr) {
+		if (TOP_INf(TX0_MODE, TX0_BYP_SEL) == tx_bypass_sel) {
+			TOP_OUTf(TX0_MODE, TX0_BYP_SEL, TX_POWER_OFF);
+			matches++;
+		}
+		if (TOP_INf(TX1_MODE, TX1_BYP_SEL) == tx_bypass_sel) {
+			TOP_OUTf(TX1_MODE, TX1_BYP_SEL, TX_POWER_OFF);
+			matches++;
+		}
+		if (!matches) {
+			pr_err("%s no match for %d\n", __func__, tx_bypass_sel);
+		}
+	} else {
+		pr_err("%s missing address for top\n", __func__);
+	}
+}
+
+static void find_rx_matching_tx_and_disable(uint32_t rx_byp_tx_en_mask)
+{
+  void * baddr = dev_addr_map[MIPI_TOP];
+  uint32_t value, matches;
+  if (baddr) {
+    matches = 0;
+    value = TOP_IN(RX0_MODE);
+    if (value & rx_byp_tx_en_mask) {
+      TOP_OUT(RX0_MODE, value & ~rx_byp_tx_en_mask);
+      matches++;
+    }
+    value = TOP_IN(RX1_MODE);
+    if (value & rx_byp_tx_en_mask) {
+      TOP_OUT(RX1_MODE, value & ~rx_byp_tx_en_mask);
+      matches++;
+    }
+    value = TOP_IN(RX2_MODE);
+    if (value & rx_byp_tx_en_mask) {
+      TOP_OUT(RX2_MODE, value & ~rx_byp_tx_en_mask);
+      matches++;
+    }
+    if (!matches) {
+      pr_err("%s no match for 0x%08X\n",
+	     __func__, rx_byp_tx_en_mask);
+    }
+  }
+  else {
+    pr_err("%s missing address for top\n", __func__);
+  }
+}
+
 int32_t mipicsi_top_stop(enum mipicsi_top_dev dev)
 {
-	uint32_t clr_tx_mode = 0, clr_rx_mode = 0, temp = 0;
+	void * baddr = dev_addr_map[MIPI_TOP];
+	if (baddr) {
+		pr_info("%s: %d E\n", __func__, dev);
 
-	pr_info("%s: E\n", __func__);
+		/* Turn off mux associated with the device */
+		switch (dev) {
 
-	top_write(MIPI_TOP, top_reg_tbl[dev].dphy_cntrl, ~SHUTDOWNZ_N);
+		case MIPI_RX0:
+		  TOP_OUTf(RX0_DPHY_CONTROL, SHUTDOWNZ_N, 0);
+		  TOP_OUT(RX0_MODE, 0);
+		  find_tx_matching_rx_byp_and_pwr_off(TX_BYPASS_RX0);
+		  break;
 
-	/* Turn off mux associated with the device */
-	switch (dev) {
-	case MIPI_RX0:
-		clr_tx_mode = TX_BYP_SEL_SET(TX_BYPASS_RX0);
-		break;
-	case MIPI_RX1:
-		clr_tx_mode = TX_BYP_SEL_SET(TX_BYPASS_RX1);
-		break;
-	case MIPI_RX2:
-		clr_tx_mode = TX_BYP_SEL_SET(TX_BYPASS_RX2);
-		break;
-	case MIPI_TX0:
-		clr_rx_mode = RX_BYP_Tx0_EN;
-		break;
-	case MIPI_TX1:
-		clr_rx_mode = RX_BYP_Tx1_EN;
-		break;
-	default:
+		case MIPI_RX1:
+		  TOP_OUTf(RX1_DPHY_CONTROL, SHUTDOWNZ_N, 0);
+		  TOP_OUT(RX1_MODE, 0);
+		  find_tx_matching_rx_byp_and_pwr_off(TX_BYPASS_RX1);
+		  break;
+
+		case MIPI_RX2:
+		  TOP_OUTf(RX2_DPHY_CONTROL, SHUTDOWNZ_N, 0);
+		  TOP_OUT(RX2_MODE, 0);
+		  find_tx_matching_rx_byp_and_pwr_off(TX_BYPASS_RX2);
+		  break;
+
+		case MIPI_TX0:
+		  TOP_OUTf(TX0_DPHY_CONTROL, SHUTDOWNZ_N, 0);
+		  TOP_OUT(TX0_MODE, 0);
+		  find_rx_matching_tx_and_disable(TOP_MASK(RX0_MODE, RX0_BYP_TX0_EN));
+		  break;
+
+		case MIPI_TX1:
+		  TOP_OUTf(TX1_DPHY_CONTROL, SHUTDOWNZ_N, 0);
+		  TOP_OUT(TX1_MODE, 0);
+		  find_rx_matching_tx_and_disable(TOP_MASK(RX0_MODE, RX0_BYP_TX1_EN));
+		  break;
+		default:
+		  return -EINVAL;
+		}
+		pr_info("%s: %d X\n", __func__, dev);
+		return 0;
+	}
+	else {
+		pr_err("%s missing address for top\n", __func__);
 		return -EINVAL;
 	}
-
-	/* Clear mode for current device */
-	top_write(MIPI_TOP, top_reg_tbl[dev].mode, 0);
-
-	/* Clear connections to other devices */
-	if (clr_tx_mode != 0) {
-		temp = top_read(MIPI_TOP, top_reg_tbl[MIPI_TX0].mode);
-		if ((temp & TX_BYP_SEL_MASK) == clr_tx_mode) {
-			temp &= ~TX_BYP_SEL_MASK;
-			top_write(MIPI_TOP, top_reg_tbl[MIPI_TX0].mode, temp);
-		}
-		temp = top_read(MIPI_TOP, top_reg_tbl[MIPI_TX1].mode);
-		if ((temp & TX_BYP_SEL_MASK) == clr_tx_mode) {
-			temp &= ~TX_BYP_SEL_MASK;
-			top_write(MIPI_TOP, top_reg_tbl[MIPI_TX1].mode, temp);
-		}
-	}
-	if (clr_rx_mode != 0) {
-		temp = top_read(MIPI_TOP, top_reg_tbl[MIPI_RX0].mode);
-		temp &= ~clr_rx_mode;
-		top_write(MIPI_TOP, top_reg_tbl[MIPI_RX0].mode, temp);
-
-		temp = top_read(MIPI_TOP, top_reg_tbl[MIPI_RX1].mode);
-		temp &= ~clr_rx_mode;
-		top_write(MIPI_TOP, top_reg_tbl[MIPI_RX1].mode, temp);
-
-		temp = top_read(MIPI_TOP, top_reg_tbl[MIPI_RX2].mode);
-		temp &= ~clr_rx_mode;
-		top_write(MIPI_TOP, top_reg_tbl[MIPI_RX2].mode, temp);
-	}
-	pr_info("%s: X\n", __func__);
-
-	return 0;
 }
 
 int mipicsi_top_set_mux(struct mipicsi_top_mux *mux)
 {
 	bool bypass = true;
-	uint32_t tx_mode = 0, rx_mode = 0, temp = 0;
+	uint32_t tx_mode = 0, rx_mode = 0;
+	void * baddr = dev_addr_map[MIPI_TOP];
+	/* RX[x] masks for enabling IPU, TX0, TX1 match up.
+	 * use rx0 ones for a mask to be applied to any RX[x] MODE register
+	 */
+	const uint32_t rxmode_en_masks =
+	  TOP_MASK(RX0_MODE, RX0_IPU_EN) | 
+	  TOP_MASK(RX0_MODE, RX0_BYP_TX0_EN) |
+	  TOP_MASK(RX0_MODE, RX0_BYP_TX1_EN);
 
-	pr_info("%s: E\n", __func__);
+	if (baddr) {
+		pr_info("%s: E\n", __func__);
+		if ((mux->source == MIPI_IPU) || (mux->sink == MIPI_IPU))
+		  bypass = false;
 
-	if ((mux->source == MIPI_IPU) || (mux->sink != MIPI_IPU))
-		bypass = false;
-
-	switch (mux->source) {
-	case MIPI_RX0:
-	case MIPI_RX1:
-	case MIPI_RX2:
 		if (bypass) {
 			if (mux->sink == MIPI_TX0)
-				rx_mode = RX_BYP_Tx0_EN;
+				rx_mode = TOP_MASK(RX0_MODE, RX0_BYP_TX0_EN);
 			else if (mux->sink == MIPI_TX1)
-				rx_mode = RX_BYP_Tx1_EN;
+				rx_mode = TOP_MASK(RX0_MODE, RX0_BYP_TX1_EN);
 			else
 				return -EINVAL;
-		} else {
-			rx_mode = RX_IPU_EN;
 		}
-		break;
+		else {
+			rx_mode = TOP_MASK(RX0_MODE, RX0_IPU_EN);
+		}
 
-	default:
-		return -EINVAL;
-	}
-
-	switch (mux->sink) {
-	case MIPI_TX0:
-	case MIPI_TX1:
 		if (bypass) {
 			if (mux->source == MIPI_RX0)
-				tx_mode = TX_BYP_SEL_SET(TX_BYPASS_RX0);
+				tx_mode = TX_BYPASS_RX0;
 			else if (mux->source == MIPI_RX1)
-				tx_mode = TX_BYP_SEL_SET(TX_BYPASS_RX1);
+				tx_mode = TX_BYPASS_RX1;
 			else if (mux->source == MIPI_RX2)
-				tx_mode = TX_BYP_SEL_SET(TX_BYPASS_RX2);
+				tx_mode = TX_BYPASS_RX2;
 			else
 				return -EINVAL;
-		} else
-			tx_mode = TX_FUNC_EN;
-		break;
-	default:
-		return -EINVAL;
-	}
+		} 
+		else {
+			tx_mode = 0;
+		}
+		pr_info("%s bypass: %d, sink: %d source %d, rx_mode 0x%08X, tx_mode 0x%08X\n",
+			__func__, bypass, mux->sink, mux->source, rx_mode, tx_mode);
+		switch (mux->source) {
+		case MIPI_RX0:
+		  TOP_OUT(RX0_MODE,
+			  (TOP_IN(RX0_MODE) & ~rxmode_en_masks) | rx_mode);
+		  break;
+		case MIPI_RX1:
+		  TOP_OUT(RX1_MODE,
+                          (TOP_IN(RX1_MODE) & ~rxmode_en_masks) | rx_mode);
+		  break;
+		case MIPI_RX2:
+		  TOP_OUT(RX2_MODE,
+                          (TOP_IN(RX2_MODE) & ~rxmode_en_masks) | rx_mode);
+		  break;
+		default:
+		  return -EINVAL;
+		}
 
-	if (rx_mode != 0) {
-		temp = top_read(MIPI_TOP, top_reg_tbl[mux->source].mode);
-		rx_mode |= temp;
-		top_write(MIPI_TOP, top_reg_tbl[mux->source].mode, rx_mode);
-	}
-	if (tx_mode != 0) {
-		temp = top_read(MIPI_TOP, top_reg_tbl[mux->sink].mode);
-		tx_mode |= temp;
-		top_write(MIPI_TOP, top_reg_tbl[mux->sink].mode, tx_mode);
-	}
+		switch (mux->sink) {
 
-	pr_info("%s: X\n", __func__);
+		case MIPI_TX0:
+		  if (bypass) {
+		    TOP_OUTf(TX0_MODE, TX0_BYP_SEL, tx_mode);
+		    TOP_OUTf(TX0_MODE, TX0_FUNC,    0);
+		  }
+		  else {
+		    TOP_OUTf(TX0_MODE, TX0_FUNC,    1);
+		    TOP_OUTf(TX0_MODE, TX0_BYP_SEL, tx_mode);
+		  }
+		  break;
 
-	return 0;
+		case MIPI_TX1:
+		  if (bypass) {
+                    TOP_OUTf(TX1_MODE, TX1_BYP_SEL, tx_mode);
+                    TOP_OUTf(TX1_MODE, TX1_FUNC,    0);
+                  }
+                  else {
+                    TOP_OUTf(TX1_MODE, TX1_FUNC,    1);
+                    TOP_OUTf(TX1_MODE, TX1_BYP_SEL, tx_mode);
+                  }
+
+		  break;
+		default:
+		  return -EINVAL;
+		}
+		pr_info("%s: X\n", __func__);
+
+		return 0;
+	}
 }
 
 
@@ -442,11 +474,12 @@ int mipicsi_top_probe(struct platform_device *pdev)
 {
 	int ret = 0;
 	int error = 0;
-	struct resource *mem = NULL;
 	struct mipicsi_top_device *dev;
 	int irq_number = 0;
 #ifdef JUNO_BRINGUP
 	void *iomem;
+#else
+	struct resource *mem = NULL;
 #endif
 
 	dev_info(&pdev->dev, "Installing MIPI CSI-2 TOP module...\n");

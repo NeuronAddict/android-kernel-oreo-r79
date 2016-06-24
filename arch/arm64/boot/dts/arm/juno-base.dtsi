@@ -243,28 +243,28 @@
 		dma-names = "tx";
 	};
 
-	mipitop: mipitop@64015000 {
+	mipitop: mipitop@1234 {
 		compatible = "intel,mipicsi_top";
-		reg = <0x0 0x64015000 0x0 0x0FFF>;
+		reg = <0x0 0x60057000 0x0 0x0FFF>;
 	};
 
-	mipi_rx0: mipihost@64012000 {
+	mipi_rx0: mipihost@0 {
 		compatible = "snps,mipicsi_host";
-		reg = <0x0 0x64012000 0x0 0xFFF>;
+		reg = <0x0 0x60054000 0x0 0xFFF>;
 	};
 /*
-	mipi_rx1: mipihost@64013000 {
+	mipi_rx1: mipihost@1 {
 		compatible = "snps,mipicsi_host";
-		reg = <0x0 0x64013000 0x0 0xFFF>;
+		reg = <0x0 0x60013000 0x0 0xFFF>;
 	};
-	mipi_rx2: mipihost@64014000 {
+	mipi_rx2: mipihost@2 {
 		compatible = "snps,mipicsi_host";
 		reg = <0x0 0x64014000 0x0 0xFFF>;
 	};
 */
-	mipi_tx0: mipidevice@64010000 {
+	mipi_tx0: mipidevice@0 {
 		compatible = "snps,mipicsi_device";
-		reg = <0x0 0x64010000 0x0 0xFFF>;
+		reg = <0x0 0x60052000 0x0 0xFFF>;
 	};
 /*
 	mipi_tx1: mipidevice@64011000 {
