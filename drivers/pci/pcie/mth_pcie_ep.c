@@ -1933,10 +1933,11 @@ static int __init mth_pcie_drv_init(void)
 		return -EINVAL;
 	}
 	*/
+	/*
 	err = request_irq(MTH_IRQ_PCIE_SW, pcie_handle_sw_irq,
 			IRQF_SHARED,  DEVICE_NAME, pcie_ep_device);
 	if (err) {
-		/* free_irq(MTH_IRQ_PCIE_DMA_WRITE_0, pcie_ep_device);
+		free_irq(MTH_IRQ_PCIE_DMA_WRITE_0, pcie_ep_device);
 		free_irq(MTH_IRQ_PCIE_DMA_WRITE_1, pcie_ep_device);
 		free_irq(MTH_IRQ_PCIE_DMA_WRITE_2, pcie_ep_device);
 		free_irq(MTH_IRQ_PCIE_DMA_WRITE_3, pcie_ep_device);
@@ -1944,14 +1945,14 @@ static int __init mth_pcie_drv_init(void)
 		free_irq(MTH_IRQ_PCIE_DMA_READ_1, pcie_ep_device);
 		free_irq(MTH_IRQ_PCIE_DMA_READ_2, pcie_ep_device);
 		free_irq(MTH_IRQ_PCIE_DMA_READ_3, pcie_ep_device);
-		*/
+		
 		clear_mem();
 		return -EINVAL;
 	}
 	err = request_irq(MTH_IRQ_PCIE_CLUSTER, pcie_handle_cluster_irq,
 			IRQF_SHARED,  DEVICE_NAME, pcie_ep_device);
 	if (err) {
-		/* free_irq(MTH_IRQ_PCIE_DMA_WRITE_0, pcie_ep_device);
+		free_irq(MTH_IRQ_PCIE_DMA_WRITE_0, pcie_ep_device);
 		free_irq(MTH_IRQ_PCIE_DMA_WRITE_1, pcie_ep_device);
 		free_irq(MTH_IRQ_PCIE_DMA_WRITE_2, pcie_ep_device);
 		free_irq(MTH_IRQ_PCIE_DMA_WRITE_3, pcie_ep_device);
@@ -1959,11 +1960,12 @@ static int __init mth_pcie_drv_init(void)
 		free_irq(MTH_IRQ_PCIE_DMA_READ_1, pcie_ep_device);
 		free_irq(MTH_IRQ_PCIE_DMA_READ_2, pcie_ep_device);
 		free_irq(MTH_IRQ_PCIE_DMA_READ_3, pcie_ep_device);
-		*/
+		
 		free_irq(MTH_IRQ_PCIE_SW, pcie_ep_device);
 		clear_mem();
 		return -EINVAL;
 	}
+	*/
 
    /* TODO: code to enable IRQs */
    /* TODO: handle PCIe wake IRQ */
@@ -1992,9 +1994,9 @@ static void __exit mth_pcie_drv_exit(void)
 	free_irq(MTH_IRQ_PCIE_DMA_READ_1, pcie_ep_device);
 	free_irq(MTH_IRQ_PCIE_DMA_READ_2, pcie_ep_device);
 	free_irq(MTH_IRQ_PCIE_DMA_READ_3, pcie_ep_device);
-	*/
 	free_irq(MTH_IRQ_PCIE_SW, pcie_ep_device);
 	free_irq(MTH_IRQ_PCIE_CLUSTER, pcie_ep_device);
+	*/
 	cdev_del(&pci_ep_dev);
 	unregister_chrdev_region(mht_pcie_ep_dev, 1);
 }
