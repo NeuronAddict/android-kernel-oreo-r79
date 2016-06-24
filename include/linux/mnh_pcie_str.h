@@ -1,5 +1,5 @@
 
-/** @mainpage  MTH PCIE EP(EndPoint) driver
+/** @mainpage  MNH PCIE EP(EndPoint) driver
 *
 * @section intro Introduction
 * The PCIE endpoint driver is implemented as a character driver
@@ -10,7 +10,7 @@
 
 
 /**
- * @file    mth_pcie_str.h
+ * @file    mnh_pcie_str.h
  * @brief   PCIe EP driver header includes data structures & definitions
  * @author  Intel
  * @date    27 Apr 2016
@@ -18,9 +18,9 @@
  */
 
 #include <linux/types.h>
-#include <linux/mth_pcie_reg.h>
-#ifndef __LINUX_MTH_PCIE_STR_H
-#define __LINUX_MTH_PCIE_STR_H
+#include <linux/mnh_pcie_reg.h>
+#ifndef __LINUX_MNH_PCIE_STR_H
+#define __LINUX_MNH_PCIE_STR_H
 
 #define VM_BYTE_8_9		0x0000
 
@@ -43,20 +43,27 @@
 #define UPPER(address) ((unsigned int)((address & 0xFFFFFFFF00000000) >> 32))
 #define LOWER(address) ((unsigned int)(address & 0x00000000FFFFFFFF))
 
+struct mnh_pcieep_device {
+	struct device *dev;
+	int irq;
+	char name[64];
+};
+
+
 /*****************************************************************************
  *
  *  Data structures for iATU programming
  *
  ****************************************************************************/
 
-/** enum value used for mode setting of mth_set_inbound() API */
+/** enum value used for mode setting of mnh_set_inbound() API */
 typedef enum {
 	ADDR_MATCH = 0,
 	BAR_MATCH
-} mth_iatu_mode_t;
+} mnh_iatu_mode_t;
 
-/** structure used for mth_set_inbound() API */
-struct mth_inb_window {
+/** structure used for mnh_set_inbound() API */
+struct mnh_inb_window {
 	uint8_t mode;				 /**< type of region */
 	uint32_t bar;				 /**< BAR ignored in addr mode */
 	uint8_t region;              /**< iATU region to be programmed */
@@ -67,18 +74,18 @@ struct mth_inb_window {
 	uint32_t limit_pcie_address; /**< end of src buffer
 								 *ignored in BAR mode
 								 */
-	uint64_t target_mth_address; /**< dest address */
+	uint64_t target_mnh_address; /**< dest address */
 };
 
-/** structure used for mth_set_outbound() API */
-struct mth_outb_region {
+/** structure used for mnh_set_outbound() API */
+struct mnh_outb_region {
 	uint8_t region;                /**< iATU region to be programmed */
-	uint64_t base_mth_address;     /**< start of src buffer */
-	uint32_t limit_mth_address;    /**< end of src buffer */
+	uint64_t base_mnh_address;     /**< start of src buffer */
+	uint32_t limit_mnh_address;    /**< end of src buffer */
 	uint64_t target_pcie_address;  /**< dest address */
 };
 
-struct mth_dma_ll_element {
+struct mnh_dma_ll_element {
 	uint32_t header;
 	uint32_t size;
 	uint32_t sar_low;

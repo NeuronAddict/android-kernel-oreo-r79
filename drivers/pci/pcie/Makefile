@@ -5,9 +5,6 @@
 # Build PCI Express ASPM if needed
 obj-$(CONFIG_PCIEASPM)		+= aspm.o
 
-# Build Monhette Hill Endpoint Driver
-obj-$(CONFIG_MTH_PCIE_EP) += mth_pcie_ep.o
-
 pcieportdrv-y			:= portdrv_core.o portdrv_pci.o portdrv_bus.o
 pcieportdrv-$(CONFIG_ACPI)	+= portdrv_acpi.o
 
