@@ -75,28 +75,6 @@
 		};
 	};
 
-	pcie_ctlr: pcie-controller@40000000 {
-		compatible = "arm,juno-r1-pcie", "plda,xpressrich3-axi", "pci-host-ecam-generic";
-		device_type = "pci";
-		reg = <0 0x40000000 0 0x10000000>;	/* ECAM config space */
-		bus-range = <0 255>;
-		linux,pci-domain = <0>;
-		#address-cells = <3>;
-		#size-cells = <2>;
-		dma-coherent;
-		ranges = <0x01000000 0x00 0x5f800000 0x00 0x5f800000 0x0 0x00800000>,
-			 <0x02000000 0x00 0x50000000 0x00 0x50000000 0x0 0x08000000>,
-			 <0x42000000 0x40 0x00000000 0x40 0x00000000 0x1 0x00000000>;
-		#interrupt-cells = <1>;
-		interrupt-map-mask = <0 0 0 7>;
-		interrupt-map = <0 0 0 1 &gic 0 0 0 136 4>,
-				<0 0 0 2 &gic 0 0 0 137 4>,
-				<0 0 0 3 &gic 0 0 0 138 4>,
-				<0 0 0 4 &gic 0 0 0 139 4>;
-		msi-parent = <&v2m_0>;
-		status = "disabled";
-	};
-
 	scpi {
 		compatible = "arm,scpi";
 		mboxes = <&mailbox 1>;
@@ -264,46 +242,6 @@
 		dmas = <&dma0 5>;
 		dma-names = "tx";
 	};
-
-	hdmi_audio: hdmi_audio@0 {
-		compatible = "linux,hdmi-audio";
-		#sound-dai-cells = <0>;
-		status = "okay";
-	};
-
-	sound {
-		compatible = "simple-audio-card";
-
-		simple-audio-card,format = "i2s";
-
-		simple-audio-card,cpu {
-			sound-dai = <&soc_i2s>;
-		};
-
-		simple-audio-card,codec {
-			sound-dai = <&hdmi_transmitter0 0>;
-		};
-	};
-
-	gpu: gpu@0x2d000000 {
-		compatible = "arm,malit6xx", "arm,mali";
-		#cooling-cells = <2>; /* min followed by max */
-		reg = <0x0 0x2d000000 0x0 0x4000>;
-		interrupts = <0 33 4>, <0 34 4>, <0 32 4>;
-		interrupt-names = "JOB", "MMU", "GPU";
-		clocks = <&scpi_dvfs 2>;
-		clock-names = "clk_mali";
-		power_model {
-			compatible = "arm,mali-simple-power-model";
-			voltage = <800>;
-			frequency = <500>;
-			static-power = <500>;
-			dynamic-power = <1500>;
-			ts = <20000 2000 (-20) 2>;
-			thermal-zone = "gpu";
-		};
-	};
-
 
 	mipitop: mipitop@64015000 {
 		compatible = "intel,mipicsi_top";
