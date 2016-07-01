@@ -40,6 +40,8 @@
 #define LL_LINK_ELEMENT			0x4
 #define LL_LAST_LINK_ELEMENT	0x6
 
+#define PCIE_SS_IRQ_MASK	0xF701FF
+
 #define UPPER(address) ((unsigned int)((address & 0xFFFFFFFF00000000) >> 32))
 #define LOWER(address) ((unsigned int)(address & 0x00000000FFFFFFFF))
 

@@ -1822,6 +1822,7 @@ static int mnh_pcie_ep_probe(struct platform_device *pdev)
 	INIT_WORK(&dma_irq_work, dma_irq_worker);
 	init_sysfs();
 	/* pcie_link_init(); */
+	pcie_cluster_write(MNH_PCIE_SS_INTR_EN, PCIE_SS_IRQ_MASK);
 	return 0;
 }
 
