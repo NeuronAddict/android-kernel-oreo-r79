@@ -73,6 +73,8 @@ void mipicsi_dev_dphy_write(enum mipicsi_top_dev dev,
 		pr_info("%s: dev=0x%x @ %p, command 0x%02X data=0x%02X\n",
 			__func__, dev, baddr, command, data);
 
+		TX_OUT(PHY_RSTZ, 0);
+		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLR, 0);
 		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 1);
 		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTDIN, command);
 		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  1);

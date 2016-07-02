@@ -228,7 +228,7 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 		mipicsi_host_dphy_write(dev, R_CSI2_DCPHY_HS_RX_CTRL_L0,
 					dc_freq_tbl[index].hsrxthssettle);
 #else
-		mipicsi_host_dphy_write(dev, R_CSI2_DCPHY_HS_RX_CTRL_L0, 0x2C);
+		mipicsi_host_dphy_write(dev, R_CSI2_DCPHY_HS_RX_CTRL_L0, 0x10);
 #endif // #if 0
 		/* meant to write to RX0 I assume. won't hard code
 		   on refactor work
