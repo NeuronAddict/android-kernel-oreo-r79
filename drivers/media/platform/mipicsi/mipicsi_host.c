@@ -51,11 +51,30 @@
 #include <soc/mnh/mnh-hwio-mipi-rx.h>
 extern void * dev_addr_map[];
 /* these macros assume a void * in scope named baddr */
+int reg_rx_poll_count = 0;
 #define RX_IN(reg)            HW_IN(baddr,   MIPI_RX, reg)
+#define RX_INf(reg,fld)       HW_INf(baddr,  MIPI_RX, reg, fld)
 #define RX_OUT(reg,val)       HW_OUT(baddr,  MIPI_RX, reg, val)
 #define RX_OUTf(reg,fld,val)  HW_OUTf(baddr, MIPI_RX, reg, fld, val)
 
+#define RX_POLL_OUT(reg,val) \
+  reg_rx_poll_count = 0; \
+  HW_OUT(baddr, MIPI_RX, reg, val); \
+  while (HW_IN(baddr,  MIPI_RX, reg) != val && reg_rx_poll_count < 20) { \
+    udelay(10000); \
+    reg_rx_poll_count++; }; \
+    pr_info("RX_POLL_OUT counter: %d 0x%08X\n", reg_rx_poll_count, HW_IN(baddr,  MIPI_RX, reg)); \
+
+#define RX_POLL_OUTf(reg,fld,val) \
+  reg_rx_poll_count = 0; \
+  HW_OUTf(baddr, MIPI_RX, reg, fld, val); \
+  while (HW_INf(baddr,  MIPI_RX, reg, fld) != val && reg_rx_poll_count < 20) { \
+    udelay(10000); \
+    reg_rx_poll_count++; }; \
+    pr_info("RX_POLL_OUTf counter: %d 0x%08X\n", reg_rx_poll_count, HW_INf(baddr,  MIPI_RX, reg, fld));
+
 #define RX_MASK(reg, fld)     HWIO_MIPI_RX_##reg##_##fld##_FLDMASK
+
 
 
 /*
@@ -91,7 +110,6 @@ struct dphy_freq_range dc_freq_tbl[] = {
 	{1960, 0x3E}
 };
 
-
 void mipicsi_host_dphy_write(enum mipicsi_top_dev dev,
 			     uint8_t command, uint8_t data)
 {
@@ -101,21 +119,30 @@ void mipicsi_host_dphy_write(enum mipicsi_top_dev dev,
 		pr_info("%s: dev=%d, command 0x%02X data=0x%02X\n",
 			__func__, dev, command, data);
 
-		RX_OUTf(PHY_SHUTDOWNZ, PHY_SHUTDOWNZ, 0);
-		RX_OUTf(DPHY_RSTZ,     DPHY_RSTZ,     0);
-		RX_OUT(PHY_TEST_CTRL0, 0);
-		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
+                //RX_POLL_OUTf();
+		RX_POLL_OUTf(PHY_SHUTDOWNZ, PHY_SHUTDOWNZ, 0);
+                msleep(50);
+		RX_POLL_OUTf(DPHY_RSTZ,     DPHY_RSTZ,     0);
+                msleep(50);
+		//RX_OUT(PHY_TEST_CTRL0, 0);
+		RX_POLL_OUT(PHY_TEST_CTRL0, 2);
+                msleep(50);
 		/* set the desired test code in the input 8-bit bus TESTDIN[7:0] */
-		RX_OUT(PHY_TEST_CTRL1, 0);
-		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, command);
-		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN, 1);
+		//RX_OUT(PHY_TEST_CTRL1, 0);
+		RX_POLL_OUT(PHY_TEST_CTRL1, command);
+                msleep(50);
+		RX_POLL_OUTf(PHY_TEST_CTRL1, PHY_TESTEN, 1);
+                msleep(50);
 
-		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 0);
-
-		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN, 0);
-		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, data);
-
-		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
+		//RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 0);
+                RX_POLL_OUT(PHY_TEST_CTRL0, 0);
+                msleep(50);
+		RX_POLL_OUTf(PHY_TEST_CTRL1, PHY_TESTEN, 0);
+                msleep(50);
+		RX_POLL_OUT(PHY_TEST_CTRL1, data);
+                msleep(50);
+		RX_POLL_OUT(PHY_TEST_CTRL0, 2);
+                msleep(50);
 
 		//pr_info("%s: X\n", __func__);
 	}
@@ -175,14 +202,16 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 
 		/* Set SHUTDOWNZ to logic low*/
 		RX_OUTf(PHY_SHUTDOWNZ, PHY_SHUTDOWNZ, 0);
-
+                pr_info("%s: register offset: 0x40, data: 0x%08X\n", __func__, 0);
+		
 		/* Set RSTZ to logic low */
 		RX_OUTf(DPHY_RSTZ, DPHY_RSTZ, 0);
-
+                pr_info("%s: register offset: 0x44, data: 0x%08X\n", __func__, 0);
 
 		/* Set TESTCLR to logic high*/
 		//RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLR, 1);
 		RX_OUT(PHY_TEST_CTRL0, 1);
+                pr_info("%s: register offset: 0x50, data: 0x%08X\n", __func__, 1);
 
 		/* Apply CFG_CLK signal with the appropriate frequency; for
 		 * correct values, refer to Table 12-5
@@ -212,6 +241,8 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 		/* Set TESTCLR to low */
 		//RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLR, 0);
 		RX_OUT(PHY_TEST_CTRL0, 0);
+		pr_info("%s: register offset: 0x50, data: 0x%08X\n", __func__, 0);
+
 		/* Wait for 15 ns */
 		udelay(1);
 
@@ -228,13 +259,15 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 		mipicsi_host_dphy_write(dev, R_CSI2_DCPHY_HS_RX_CTRL_L0,
 					dc_freq_tbl[index].hsrxthssettle);
 #else
-		mipicsi_host_dphy_write(dev, R_CSI2_DCPHY_HS_RX_CTRL_L0, 0x2C);
+		mipicsi_host_dphy_write(dev, R_CSI2_DCPHY_HS_RX_CTRL_L0, 0x10);
 #endif // #if 0
 		/* meant to write to RX0 I assume. won't hard code
 		   on refactor work
 		   mipicsi_write(MIPI_TX0, R_CSI2_N_LANES, config->num_lanes-1);
 		*/
 		RX_OUTf(N_LANES, N_LANES, (config->num_lanes-1));
+		pr_info("%s: register offset: 0x04, data: 0x%08X\n", __func__, (config->num_lanes-1));
+		
 		/* Wait 5ns */
 		udelay(1);
 		mipicsi_host_dphy_write(dev, R_CSI2_DCPHY_AFE_BYPASS_BANDGAP, 0x40);
@@ -246,6 +279,7 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 
 		/* Set SHUTDOWNZ=1'b1 */
 		RX_OUTf(PHY_SHUTDOWNZ, PHY_SHUTDOWNZ, 1);
+		pr_info("%s: register offset: 0x40, data: 0x%08X\n", __func__, 1);
 
 		/* Wait 5ns */
 		udelay(1);
@@ -253,8 +287,10 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 		/* Set RSTZ=1'b1 */
 		// MISMATCH PHY_SHUTDOWNZ doesn't have RSTZ field
 		RX_OUTf(DPHY_RSTZ, DPHY_RSTZ, 1);
+		pr_info("%s: register offset: 0x44, data: 0x%08X\n", __func__, 1);
 
 		RX_OUTf(CSI2_RESETN, CSI2_RESETN, 1);
+		pr_info("%s: register offset: 0x08, data: 0x%08X\n", __func__, 1);
 		/* Wait until STOPSTATEDATA_N and STOPSTATECLK outputs are
 		 * asserted -- poll for 200 us
 		 */
@@ -264,9 +300,11 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 				pr_info("%s: X\n", __func__);
 				return 0;
 			}
-			udelay(10);
+			msleep(10);
 			counter++;
 		} while (counter < 20);
+		pr_info("%s, stop_mask: 0x%08X\n",
+			__func__, stop_mask);
 		pr_info("%s counter: %d 0x%08X\n",
 			__func__, counter, data);
 	}
@@ -480,3 +518,4 @@ static struct platform_driver __refdata mipicsi_host_pdrv = {
 };
 
 module_platform_driver(mipicsi_host_pdrv);
+

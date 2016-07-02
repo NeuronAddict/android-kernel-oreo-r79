@@ -49,6 +49,7 @@
 #include <linux/intel-hwio.h>
 #include <soc/mnh/mnh-hwio-mipi-tx.h>
 extern void * dev_addr_map[];
+int reg_tx_poll_count = 0;
 /*
  * Linked list that contains the installed devices
  */
@@ -56,10 +57,28 @@ static LIST_HEAD(devlist_global);
 
 /* these macros assume a void * in scope named baddr */
 #define TX_IN(reg)            HW_IN(baddr,   MIPI_TX, reg)
+#define TX_INf(reg)           HW_IN(baddr,   MIPI_TX, reg, fld)
 #define TX_OUT(reg,val)       HW_OUT(baddr,  MIPI_TX, reg, val)
 #define TX_OUTf(reg,fld,val)  HW_OUTf(baddr, MIPI_TX, reg, fld, val)
 
 #define TX_MASK(reg, fld)     HWIO_MIPI_TX_##reg##_##fld##_FLDMASK
+
+#define TX_POLL_OUT(reg,val) \
+  reg_tx_poll_count = 0; \
+  HW_OUT(baddr, MIPI_TX, reg, val); \
+  while (HW_IN(baddr,  MIPI_TX, reg) != val && reg_tx_poll_count < 20) { \
+    udelay(10000); \
+    reg_tx_poll_count++; }; \
+    pr_info("TX_POLL_OUT counter: %d 0x%08X\n", reg_tx_poll_count, HW_IN(baddr,  MIPI_TX, reg)); \
+
+#define TX_POLL_OUTf(reg,fld,val) \
+  reg_tx_poll_count = 0; \
+  HW_OUTf(baddr, MIPI_TX, reg, fld, val); \
+  while (HW_INf(baddr,  MIPI_TX, reg, fld) != val && reg_tx_poll_count < 20) { \
+    udelay(10000); \
+    reg_tx_poll_count++; }; \
+    pr_info("TX_POLL_OUTf counter: %d 0x%08X\n", reg_tx_poll_count, HW_INf(baddr,  MIPI_TX, reg, fld));
+
 
 void mipicsi_dev_dphy_write(enum mipicsi_top_dev dev,
 			    uint8_t command, uint8_t data)
@@ -73,19 +92,30 @@ void mipicsi_dev_dphy_write(enum mipicsi_top_dev dev,
 		pr_info("%s: dev=0x%x @ %p, command 0x%02X data=0x%02X\n",
 			__func__, dev, baddr, command, data);
 
-		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 1);
-		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTDIN, command);
-		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  1);
-		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 0);
+                TX_OUT(PHY_RSTZ, 0);
+                msleep(50);
+		TX_POLL_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLR, 0);
+                msleep(50);
+		TX_POLL_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 1);
+                msleep(50);
+		TX_POLL_OUTf(PHY0_TST_CTRL1, PHY0_TESTDIN, command);
+                msleep(50);
+		TX_POLL_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  1);
+                msleep(50);
+		TX_POLL_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 0);
+                msleep(50);
 
-		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  0);
-		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTDIN, data);
+		TX_POLL_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  0);
+                msleep(50);
+		TX_POLL_OUTf(PHY0_TST_CTRL1, PHY0_TESTDIN, data);
+                msleep(50);
 
-		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 1);
+		TX_POLL_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 1);
+                msleep(50);
 		/*
 		  I thought we needed one more TESTCLK to low
 		  but tested scripts don't have it.
-		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 0);
+		TX_POLL_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 0);
 		*/
 		//pr_info("%s: X\n", __func__);
 	}
@@ -289,7 +319,7 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 		/* need PHY_STOP_WAIT_TIME in PHY_IF_CFG ?
 		   original code overwrote the entire register with 0x03
 		*/
-		TX_OUTf(PHY_IF_CFG, LANE_EN_NUM, 0x03);
+		TX_OUTf(PHY_IF_CFG, LANE_EN_NUM, (uint32_t)(0x03|0x4F<<8));
 
 		/* Set BASEDIR_N to the desired values */
 		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L0, DC_TX_BASEDIR_VAL);
@@ -308,6 +338,9 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 		
 		/* Configure PLL */
 		mipicsi_device_set_pll(config);
+                
+                TX_POLL_OUTf(PHY_STATUS, PLL_LOCK, 1);
+                msleep(50);
 
 		/* Wait 5 ns */
 		udelay(1);
@@ -341,6 +374,8 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 			udelay(10);
 			counter++;
 		} while (counter < 20);
+                pr_info("%s, stop_mask: 0x%08X\n",
+                        __func__, stop_mask);
 		pr_info("%s counter: %d 0x%08X\n",
                         __func__, counter, data);
 	}
@@ -550,3 +585,4 @@ static struct platform_driver __refdata mipicsi_device_pdrv = {
 };
 
 module_platform_driver(mipicsi_device_pdrv);
+

@@ -60,6 +60,8 @@ void mipicsi_util_save_virt_addr(enum mipicsi_top_dev dev, void *base_addr)
   dev_addr_map[dev] = base_addr;
 }
 
+static struct device *mipicsi_top_device;
+
 /* these macros assume a void * in scope named baddr */
 #define TOP_IN(reg)            HW_IN(baddr,   MIPI_TOP, reg)
 #define TOP_INf(reg,fld)       HW_INf(baddr,  MIPI_TOP, reg, fld)
@@ -163,7 +165,7 @@ int32_t top_set_pll(struct mipicsi_top_cfg *config)
 int32_t top_start_rx(struct mipicsi_top_cfg *config)
 {
 #ifdef MNH_EMULATION
-	mipicsi_host_hw_init(config->dev);
+//	mipicsi_host_hw_init(config->dev);
 	mipicsi_host_start(config);
 #else /* MNH_EMULATION */
 	if (config->mbps >= (RXCLK_MAX_MHZ*2))
@@ -182,7 +184,7 @@ int32_t top_start_rx(struct mipicsi_top_cfg *config)
 int32_t top_start_tx(struct mipicsi_top_cfg *config)
 {
 #ifdef MNH_EMULATION
-	mipicsi_device_hw_init(config->dev);
+//	mipicsi_device_hw_init(config->dev);
 	mipicsi_device_start(config);
 #else /* MNH_EMULATION */
 	uint32_t txdev = config->dev;
@@ -446,6 +448,7 @@ int mipicsi_top_hw_init(void)
 	 * Bypass mode from RX0 to TX0 by default
 	 */
 
+        void * baddr = dev_addr_map[MIPI_TOP];
 	struct mipicsi_top_cfg cfg;
 	struct mipicsi_top_mux mux;
 
@@ -459,7 +462,9 @@ int mipicsi_top_hw_init(void)
 
 	mux.source = MIPI_RX0;
 	mux.sink = MIPI_TX0;
-	mipicsi_top_set_mux(&mux);
+	//mipicsi_top_set_mux(&mux);
+         TOP_OUT(RX0_MODE, 0x02);
+         TOP_OUT(TX0_MODE, 0x02);
 
 #endif
 	return 0;
@@ -468,6 +473,50 @@ int mipicsi_top_hw_init(void)
 void mipicsi_top_get_mux(struct mipicsi_top_mux_data *mux_data)
 {
 	/* TO DO */
+}
+
+#define MAX_STR_COPY	32
+
+static ssize_t show_sysfs_mipicsi_top(struct device *dev,
+				struct device_attribute *attr,
+				char *buf)
+{
+
+	/* MIPICSI HW init */
+	mipicsi_top_hw_init();
+	return snprintf(buf, MAX_STR_COPY, "MIPI HW init\n");
+}
+
+static ssize_t sysfs_mipicsi_top(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf,
+				size_t count)
+{
+	return count;
+}
+
+static DEVICE_ATTR(mipicsi_top, S_IRUGO | S_IWUSR | S_IWGRP,
+			show_sysfs_mipicsi_top, sysfs_mipicsi_top);
+			
+static int init_sysfs(void)
+{
+	int ret;
+
+	pr_info("MIPI TOP: init_sysfs\n");
+	ret = device_create_file(mipicsi_top_device,
+			&dev_attr_mipicsi_top);
+	if (ret) {
+		dev_err(mipicsi_top_device, "Failed to create sysfs: send_msi\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static void clean_sysfs(void)
+{
+	device_remove_file(mipicsi_top_device,
+			&dev_attr_mipicsi_top);
 }
 
 int mipicsi_top_probe(struct platform_device *pdev)
@@ -483,7 +532,7 @@ int mipicsi_top_probe(struct platform_device *pdev)
 #endif
 
 	dev_info(&pdev->dev, "Installing MIPI CSI-2 TOP module...\n");
-
+        
 	dev_info(&pdev->dev, "Device registration\n");
 	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
 	if (!dev) {
@@ -493,6 +542,7 @@ int mipicsi_top_probe(struct platform_device *pdev)
 
 	/* Update the device node */
 	dev->dev = &pdev->dev;
+        mipicsi_top_device = dev->dev;
 
 #ifdef JUNO_BRINGUP
 	dev_info(dev->dev, "Creating bogus memregion for PO\n");
@@ -554,6 +604,8 @@ int mipicsi_top_probe(struct platform_device *pdev)
 
 	/* HW init */
 	ret = mipicsi_top_hw_init();
+	
+	//init_sysfs();
 #if 0
 	if (ret) {
 		dev_err(&pdev->dev, "Could not init Intel MIPI TOP %d\n", ret);
@@ -602,6 +654,7 @@ static int mipicsi_top_remove(struct platform_device *pdev)
 	struct list_head *list;
 
 	dev_dbg(&pdev->dev, "Removing MIPI CSI-2 module\n");
+        clean_sysfs();
 	while (!list_empty(&devlist_global)) {
 		list = devlist_global.next;
 		list_del(list);
@@ -639,3 +692,4 @@ static struct platform_driver __refdata mipicsi_top_pdrv = {
 };
 
 module_platform_driver(mipicsi_top_pdrv);
+
