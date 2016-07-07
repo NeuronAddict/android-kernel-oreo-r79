@@ -165,7 +165,7 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 		reg = <0x0 0x64043000 0x0 0x1000>;
-		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_LEVEL_HIGH>;
 		num-cs = <4>;
 	};
 
@@ -177,7 +177,6 @@
 		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>,
 					 <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
 	};
-
 
 	i2c@7ffa0000 {
 		compatible = "snps,designware-i2c";
@@ -213,6 +212,135 @@
 		};
 */	};
 
+	axi@64402000 {
+		compatible = "arm, mth-interrupt";
+		reg = <0x0 0x64402000 0x0 0x1000>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
+	};	
+
+    /* i2c devices on mnh */
+    /* need to revisit the clocks line after more info from FPGA team */
+	i2c0@60087000 {
+		compatible = "snps,designware-i2c";
+		reg = <0x0 0x60087000 0x0 0x1000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_LEVEL_HIGH>;
+		clock-frequency = <400000>;
+		i2c-sda-hold-time-ns = <500>;
+		clocks = <&soc_mnh25mhz>;  
+	};
+
+	i2c1@60088000 {
+		compatible = "snps,designware-i2c";
+		reg = <0x0 0x60088000 0x0 0x1000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_LEVEL_HIGH>;
+		clock-frequency = <400000>;
+		i2c-sda-hold-time-ns = <500>;
+		clocks = <&soc_mnh25mhz>;  
+		
+		ds1341: rtc@D0 {
+			compatible = "rtc-ds1307";
+			reg = <0x68>;        
+ 		};
+	};
+
+	i2c2@60089000 {
+		compatible = "snps,designware-i2c";
+		reg = <0x0 0x60089000 0x0 0x1000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_LEVEL_HIGH>;
+		clock-frequency = <400000>;
+		i2c-sda-hold-time-ns = <500>;
+		clocks = <&soc_mnh25mhz>;  
+	};
+
+	i2c3@6008A000 {
+		compatible = "snps,designware-i2c";
+		reg = <0x0 0x6008A000 0x0 0x1000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_LEVEL_HIGH>;
+		clock-frequency = <400000>;
+		i2c-sda-hold-time-ns = <500>;
+		clocks = <&soc_mnh25mhz>;  
+	};
+	gpio@60086000 {
+		compatible = "snps,dw-apb-gpio";
+		reg = <0x0 0x60086000 0x0 0x1000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_LEVEL_HIGH>;
+
+		porta:  gpio-controller@0 {
+                 compatible = "snps,dw-apb-gpio-port";
+                 gpio-controller;
+                 #gpio-cells = <2>;
+                 snps,nr-gpios = <18>;
+                 reg = <0>;
+         };
+ /* 
+        portb:  gpio-controller@1 {
+				compatible = "snps,dw-apb-gpio-port";
+				gpio-controller;
+				#gpio-cells = <2>;
+				snps,nr-gpios = <8>;
+				reg = <1>;
+          };
+        portc:  gpio-controller@2 {
+				compatible = "snps,dw-apb-gpio-port";
+				gpio-controller;
+				#gpio-cells = <2>;
+				snps,nr-gpios = <8>;
+				reg = <2>;
+          };
+        portd:  gpio-controller@3 {
+				compatible = "snps,dw-apb-gpio-port";
+				gpio-controller;
+				#gpio-cells = <2>;
+				snps,nr-gpios = <8>;
+				reg = <3>;
+          };
+*/
+	};
+	uart_0@6008B000 {
+		compatible = "snps,dw-apb-uart";
+		reg = <0x0 0x6008B000 0x0 0x1000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_LEVEL_HIGH>;
+		clock-frequency = <25000000>;
+		reg-shift = <2>;
+		reg-io-width = <4>;
+		dcd-override;
+		ri-override;
+		
+	};
+	uart_1@6008C000 {
+		compatible = "snps,dw-apb-uart";
+		reg = <0x0 0x6008C000 0x0 0x1000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_LEVEL_HIGH>;
+		clock-frequency = <25000000>;
+		reg-shift = <2>;
+		reg-io-width = <4>;
+		dcd-override;
+		ri-override;
+	};
+/*
+	wdt@60082000 {
+		compatible = "snps,dw-wdt";
+		reg = <0x0 0x60082000 0x0 0x1000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <25000000>;
+	};
+*/
 	ohci@7ffb0000 {
 		compatible = "generic-ohci";
 		reg = <0x0 0x7ffb0000 0x0 0x10000>;
@@ -277,6 +405,36 @@
 		reg = <0x0 0x60052000 0x0 0xFFF>;
 	};
 /*
+	mipi_tx1: mipidevice@64011000 {
+		compatible = "snps,mipicsi_device";
+		reg = <0x0 0x64011000 0x0 0xFFF>;
+	};
+*/
+
+
+
+/*
+	mipitop: mipitop@64015000 {
+		compatible = "intel,mipicsi_top";
+		reg = <0x0 0x64015000 0x0 0x0FFF>;
+	};
+
+	mipi_rx0: mipihost@64012000 {
+		compatible = "snps,mipicsi_host";
+		reg = <0x0 0x64012000 0x0 0xFFF>;
+	};
+	mipi_rx1: mipihost@64013000 {
+		compatible = "snps,mipicsi_host";
+		reg = <0x0 0x64013000 0x0 0xFFF>;
+	};
+	mipi_rx2: mipihost@64014000 {
+		compatible = "snps,mipicsi_host";
+		reg = <0x0 0x64014000 0x0 0xFFF>;
+	};
+	mipi_tx0: mipidevice@64010000 {
+		compatible = "snps,mipicsi_device";
+		reg = <0x0 0x64010000 0x0 0xFFF>;
+	};
 	mipi_tx1: mipidevice@64011000 {
 		compatible = "snps,mipicsi_device";
 		reg = <0x0 0x64011000 0x0 0xFFF>;
