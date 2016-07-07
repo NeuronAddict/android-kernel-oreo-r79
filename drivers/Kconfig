@@ -200,6 +200,8 @@ source "drivers/fpga/Kconfig"
 
 source "drivers/pcie_ep/Kconfig"
 
+source "drivers/mipicsi/Kconfig"
+
 config JUNO_BRINGUP
 	tristate "Enable juno debugging flag"
 	default y

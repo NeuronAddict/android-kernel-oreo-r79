@@ -9,8 +9,6 @@ menuconfig V4L_PLATFORM_DRIVERS
 	---help---
 	  Say Y here to enable support for platform-specific V4L drivers.
 
-source "drivers/media/platform/mipicsi/Kconfig"
-
 if V4L_PLATFORM_DRIVERS
 
 source "drivers/media/platform/marvell-ccic/Kconfig"
