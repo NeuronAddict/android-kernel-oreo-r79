@@ -48,29 +48,27 @@
 #include <linux/scatterlist.h>
 #include <linux/dma-mapping.h>
 #include <linux/pci.h>
+#include <linux/intel-hwio.h>
+#include <soc/mnh/mnh-hwio-pcie-ep.h>
+#include <soc/mnh/mnh-hwio-pcie-ss.h>
+
+
+
 
 #define VENDOR_ID				0x8086
 #define DEVICE_ID				0x3140
 
 int (*irq_callback)(struct mnh_pcie_irq *irq);
 int (*dma_callback)(struct mnh_dma_irq *irq);
-struct mnh_pcieep_device *pci_ep_dev;
-dev_t mht_pcie_ep_dev;
-static struct class *pcie_ep_class;
-static struct device *pcie_ep_device;
-static struct resource *conf_mem;
-static struct resource *cluster_mem;
-static struct resource *outbound_mem;
-static uint64_t *pcie_conf_mem, *pcie_clust_mem, *pcie_outb_mem;
+struct mnh_pcie_ep_device *pcie_ep_dev;
 struct delayed_work msi_work;
-struct work_struct msi_rx_work, pcie_irq_work, dma_irq_work;
+struct work_struct msi_rx_work, pcie_irq_work;
 #define DEVICE_NAME "mnh_pcie_ep"
 #define CLASS_NAME "pcie_ep"
 #define MSI_DELAY (HZ/20) /* TODO: Need to understand what this should be */
 #define MAX_STR_COPY	32
 uint32_t rw_address_sysfs, rw_size_sysfs;
 struct mnh_pcie_irq sysfs_irq;
-uint32_t pcie_sw_irq, pcie_cluster_irq;
 
 static int pcie_set_inbound_iatu(struct mnh_inb_window *inb);
 static int pcie_clear_msi_mask(void);
@@ -80,9 +78,9 @@ static int pcie_ll_destroy(uint64_t *start_addr);
 static uint32_t pcie_cluster_read(uint64_t address)
 {
 	uint32_t data;
-	uint64_t addr = (uint64_t)pcie_clust_mem + address;
+	uint64_t addr = (uint64_t)pcie_ep_dev->clust_mem + address;
 
-	data = ioread32(addr);
+	data = ioread32((uint32_t *) addr);
 	return data;
 }
 
@@ -90,9 +88,9 @@ static uint32_t pcie_cluster_read(uint64_t address)
 
 static int pcie_cluster_write(uint64_t address, uint32_t data)
 {
-	uint64_t addr = (uint64_t)pcie_clust_mem + address;
+	uint64_t addr = (uint64_t)pcie_ep_dev->clust_mem + address;
 
-	iowrite32(data, addr);
+	iowrite32(data, (uint32_t *) addr);
 	return 0;
 }
 
@@ -101,9 +99,9 @@ static int pcie_cluster_write(uint64_t address, uint32_t data)
 static uint32_t pcie_config_read(uint64_t address)
 {
 	uint32_t data;
-	uint64_t addr = (uint64_t)pcie_conf_mem + address;
+	uint64_t addr = (uint64_t)pcie_ep_dev->conf_mem + address;
 
-	data = ioread32(addr);
+	data = ioread32((uint32_t *) addr);
 	return data;
 }
 
@@ -111,30 +109,26 @@ static uint32_t pcie_config_read(uint64_t address)
 
 static int pcie_config_write(uint64_t address, uint32_t data)
 {
-	uint64_t addr = (uint64_t)pcie_conf_mem + address;
+	uint64_t addr = (uint64_t)pcie_ep_dev->conf_mem + address;
 
-	iowrite32(data, addr);
+	iowrite32(data, (uint32_t *) addr);
 	return 0;
 }
 
 static int check_sram_init_done(void)
 {
-	uint32_t data;
 
-	data = pcie_cluster_read(MNH_PCIE_APP_STS_REG);
-	data &= MNH_PCIE_PHY_SRAM_INIT_DONE;
-	if (data != MNH_PCIE_PHY_SRAM_INIT_DONE)
-		return  0;
-
-	return 1;
+	return CSR_INf(PCIE_APP_STS, PCIE_PHY_SRAM_INIT_DONE);
 }
 
 static int pcie_link_up(void)
 {
-	uint32_t data;
+	uint32_t data, mask;
 
-	data = pcie_config_read(MNH_STATUS_COMMAND_REG);
-	data &= MNH_PCIE_LINK_MASK;
+	mask = TYPE0_MASK(TYPE0_HDR_STATUS_COMMAND, PCI_TYPE0_IO_EN) |
+		TYPE0_MASK(TYPE0_HDR_STATUS_COMMAND, PCI_TYPE0_MEM_SPACE_EN) |
+		TYPE0_MASK(TYPE0_HDR_STATUS_COMMAND, PCI_TYPE0_BUS_MASTER_EN);
+	data = TYPE0_IN(TYPE0_HDR_STATUS_COMMAND) & mask;
 	if (data == 0)
 		return 0;
 	return 1;
@@ -146,7 +140,7 @@ static int pcie_link_init(void)
 
 	if (!pcie_link_up()) {
 		/* Magic value Only used during boot */
-		pcie_cluster_write(MNH_PCIE_GP_0, 0x0);
+		CSR_OUTx(PCIE_GP, 0, 0x0);
 		/* program PCIe controller registers
 		* not needed at this point in time
 		*/
@@ -158,9 +152,7 @@ static int pcie_link_init(void)
 		/* program PCIe PHY PCS PATCH registers
 		*not needed at this point in time
 		*/
-		pcie_cluster_write(MNH_PCIE_APP_CTRL,
-			pcie_cluster_read(MNH_PCIE_APP_CTRL) |
-				MNH_PCIE_PHY_SRAM_LD_DONE);
+		CSR_OUTf(PCIE_APP_CTRL, PCIE_PHY_SRAM_LD_DONE, 1);
 
 		/* program PCIe PHY registers not needed
 		* at this point in time
@@ -178,58 +170,42 @@ static int pcie_link_init(void)
 		iatu.target_mnh_address = BAR_4_BASE;
 		pcie_set_inbound_iatu(&iatu);
 		pcie_clear_msi_mask();
-
-		pcie_cluster_write(MNH_PCIE_APP_CTRL,
-			pcie_cluster_read(MNH_PCIE_APP_CTRL) |
-				MNH_PCIE_APP_LTSSM_ENABLE);
-		pcie_cluster_write(MNH_PCIE_APP_CTRL,
-			pcie_cluster_read(MNH_PCIE_APP_CTRL) |
-				MNH_PCIE_APP_XFER_PEND);
+		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_LTSSM_EN, 1);
+		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_XFER_PEND, 1);
 
 		/* waiting for magic value */
-		while (pcie_cluster_read(MNH_PCIE_GP_0) == 0)
-			udelay(1);
+		//while (CSR_INx(PCIE_GP, 0) == 0)
+		//	udelay(1);
 
-		pcie_cluster_write(MNH_PCIE_APP_CTRL,
-			pcie_cluster_read(MNH_PCIE_APP_CTRL) &
-				~(MNH_PCIE_APP_XFER_PEND));
-			};
-	return  pcie_cluster_read(MNH_PCIE_GP_0);
+		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_XFER_PEND, 0);
+
+	};
+	return  CSR_INx(PCIE_GP, 0);
 }
 
 static void force_link_up(void)
 {
-	if (pcie_cluster_read(MNH_PCIE_APP_CTRL) &
-				(MNH_PCIE_APP_REQ_EXIT_L1)) {
-		pcie_cluster_write(MNH_PCIE_APP_CTRL,
-			pcie_cluster_read(MNH_PCIE_APP_CTRL) &
-				~(MNH_PCIE_APP_REQ_EXIT_L1));
-	}
-	pcie_cluster_write(MNH_PCIE_APP_CTRL,
-			pcie_cluster_read(MNH_PCIE_APP_CTRL) |
-				(MNH_PCIE_APP_REQ_EXIT_L1));
+	if (CSR_INf(PCIE_APP_CTRL, PCIE_APP_REQ_EXIT_L1))
+		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_REQ_EXIT_L1, 0);
+	CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_REQ_EXIT_L1, 1);
 }
 
 static void release_link(void)
 {
-	pcie_cluster_write(MNH_PCIE_APP_CTRL,
-		pcie_cluster_read(MNH_PCIE_APP_CTRL) &
-		~(MNH_PCIE_APP_REQ_EXIT_L1));
+	CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_REQ_EXIT_L1, 0);
 }
 
 static int pcie_send_msi_p(uint32_t msi)
 {
 	uint32_t tc, data, msg;
 
-	data = pcie_cluster_read(MNH_PCIE_MSI_TRIG_REG);
-	data &= MNH_TRIGGER_MSI;
+	data = CSR_IN(PCIE_MSI_TRIG) &
+		CSR_MASK(PCIE_MSI_TRIG, PCIE_VEN_MSI_REQ);
 	tc = MNH_TC0 << 13;
 	msg = msi << 8;
 	data |= tc | msg;
-	pcie_cluster_write(MNH_PCIE_MSI_TRIG_REG, data);
-	data = pcie_cluster_read(MNH_PCIE_MSI_TRIG_REG);
-	data |= MNH_TRIGGER_MSI;
-	pcie_cluster_write(MNH_PCIE_MSI_TRIG_REG, data);
+	CSR_OUT(PCIE_MSI_TRIG, data);
+	CSR_OUTf(PCIE_MSI_TRIG, PCIE_VEN_MSI_REQ, 1);
 	return 0;
 }
 
@@ -238,15 +214,16 @@ static int pcie_get_msi_mask(void)
 {
 	uint32_t data, mask;
 
-	data = pcie_config_read(MNH_PCI_MSI_CAP_ID_NEXT_CTRL);
-	data &=  MNH_PCI_MSI_64_BIT_ADDR_CAP;
+	data = MSICAP_INf(MSI_CAP_PCI_MSI_CAP_ID_NEXT_CTRL,
+			PCI_MSI_64_BIT_ADDR_CAP);
 	if (data) {
 	/* 64 bit ADDR used */
-		mask = pcie_config_read(MNH_MSI_CAP_OFF_10H_REG);
+		mask = MSICAP_IN(MSI_CAP_MSI_CAP_OFF_10H);
 	} else {
 	/* 32 bit ADDR used */
-		mask = pcie_config_read(MNH_MSI_CAP_OFF_0CH_REG);
+		mask = MSICAP_IN(MSI_CAP_MSI_CAP_OFF_0CH);
 	}
+
 	return mask;
 }
 
@@ -254,15 +231,16 @@ static int pcie_clear_msi_mask(void)
 {
 	uint32_t data;
 
-	data = pcie_config_read(MNH_PCI_MSI_CAP_ID_NEXT_CTRL);
-	data &=  MNH_PCI_MSI_64_BIT_ADDR_CAP;
+	data = MSICAP_INf(MSI_CAP_PCI_MSI_CAP_ID_NEXT_CTRL,
+			PCI_MSI_64_BIT_ADDR_CAP);
 	if (data) {
 	/* 64 bit ADDR used */
-		pcie_config_write(MNH_MSI_CAP_OFF_10H_REG, 0);
+		MSICAP_OUT(MSI_CAP_MSI_CAP_OFF_10H, 0);
 	} else {
 	/* 32 bit ADDR used */
-		pcie_config_write(MNH_MSI_CAP_OFF_0CH_REG, 0);
+		MSICAP_OUT(MSI_CAP_MSI_CAP_OFF_0CH, 0);
 	}
+
 	return 0;
 }
 
@@ -274,8 +252,7 @@ static int pcie_check_msi_mask(uint32_t msi)
 	mask = pcie_get_msi_mask();
 	if (mask & vmask) {
 		/* need to set pending bit, than start polling */
-		pcie_cluster_write(MNH_PCIE_MSI_PEND_REG,
-			(pcie_cluster_read(MNH_PCIE_MSI_PEND_REG) | mask));
+		CSR_OUT(PCIE_MSI_PEND, CSR_IN(PCIE_MSI_PEND) | mask);
 		cancel_delayed_work_sync(&msi_work);
 		schedule_delayed_work(&msi_work, MSI_DELAY);
 		return 1;
@@ -296,8 +273,7 @@ static void process_pend_msi(uint32_t pend, uint32_t vmask, uint32_t arg)
 	if ((pend & b2h(arg)) &&
 		!(vmask & b2h(arg))) {
 		pcie_send_msi_p(arg);
-		pcie_cluster_write(MNH_PCIE_MSI_PEND_REG,
-			(pend & ~b2h(arg)));
+		CSR_OUT(PCIE_MSI_PEND, (pend & ~b2h(arg)));
 	}
 }
 
@@ -318,7 +294,7 @@ static void pcie_msi_worker(struct work_struct *work)
 
 	force_link_up();
 	send_pending_msi();
-	pend = pcie_cluster_read(MNH_PCIE_MSI_PEND_REG);
+	pend = CSR_IN(PCIE_MSI_PEND);
 	if (pend) {
 		cancel_delayed_work_sync(&msi_work);
 		schedule_delayed_work(&msi_work, MSI_DELAY);
@@ -335,7 +311,7 @@ static int pcie_send_msi(uint32_t msi)
 	force_link_up();
 	if (pcie_check_msi_mask(msi))
 		return -EINVAL; /* MSI is masked */
-	pend = pcie_cluster_read(MNH_PCIE_MSI_PEND_REG);
+	pend = CSR_IN(PCIE_MSI_PEND);
 	if (pend)
 		send_pending_msi();
 	pcie_send_msi_p(msi);
@@ -348,22 +324,27 @@ static int pcie_send_vm(uint32_t vm)
 
 	force_link_up();
 	data = (VENDOR_ID << 16) | VM_BYTE_8_9;
-	pcie_cluster_write(MNH_PCIE_TX_MSG_PYLD_REG1, data);
-	pcie_cluster_write(MNH_PCIE_TX_MSG_PYLD_REG0, vm);
-	data = (MNH_PCIE_VM_TAG << 24) | (MNH_PCIE_VM_MSG_CODE_VD << 16)
-		| MNH_PCIE_TX_MSG_REQ;
-	pcie_cluster_write(MNH_PCIE_TX_MSG_REQ_REG, data);
+	CSR_OUT(PCIE_TX_MSG_PYLD_REG1, data);
+	HW_OUT(pcie_ep_dev->clust_mem,  PCIE_SS, PCIE_TX_MSG_PYLD_REG1, data);
+	CSR_OUT(PCIE_TX_MSG_PYLD_REG0, vm);
+	HW_OUT(pcie_ep_dev->clust_mem,  PCIE_SS, PCIE_TX_MSG_PYLD_REG0, vm);
+	CSR_OUTf(PCIE_TX_MSG_REQ, PCIE_TX_MSG_TAG, MNH_PCIE_VM_TAG);
+	CSR_OUTf(PCIE_TX_MSG_REQ, PCIE_TX_MSG_CODE, MNH_PCIE_VM_MSG_CODE_VD);
+	CSR_OUTf(PCIE_TX_MSG_REQ, PCIE_TX_MSG_REQ, 1);
+	/*
+	*data = (MNH_PCIE_VM_TAG << 24) | (MNH_PCIE_VM_MSG_CODE_VD << 16)
+	*	| MNH_PCIE_TX_MSG_REQ;
+	*pcie_cluster_write(MNH_PCIE_TX_MSG_REQ_REG, data);
+	*/
 	return 0;
 }
 
 static int pcie_send_ltr(uint32_t ltr)
 {
-	uint32_t data;
 
 	force_link_up();
-	pcie_cluster_write(MNH_PCIE_LTR_MSG_LATENCY_REG, ltr);
-	data = pcie_cluster_read(MNH_PCIE_LTR_MSG_CTRL_REG) | MNH_LTR_TRIGGER;
-	pcie_cluster_write(MNH_PCIE_LTR_MSG_CTRL_REG, data);
+	CSR_OUT(PCIE_LTR_MSG_LATENCY, ltr);
+	CSR_OUTf(PCIE_LTR_MSG_CTRL, PCIE_LTR_MSG_REQ, 1);
 	return 0;
 }
 
@@ -374,47 +355,78 @@ static int handle_vm(int vm)
 	struct mnh_pcie_irq inc;
 
 	if (vm == 0) {
-		if (pcie_cluster_read(MNH_PCIE_RX_VMSG0_ID) & MNH_VALID_VM) {
-			vm = pcie_cluster_read(MNH_PCIE_RX_MSG0_PYLD_REG0);
+		if (CSR_INf(PCIE_RX_VMSG0_ID, PCIE_RADM_MSG0_REQ_ID)
+				& MNH_VALID_VM) {
+			vm = CSR_IN(PCIE_RX_MSG0_PYLD_REG0);
 			inc.vm = vm;
-			dev_err(pcie_ep_device, "Vendor msg %lx rcvd\n", vm);
+			dev_err(pcie_ep_dev->dev, "Vendor msg %x rcvd\n", vm);
 			irq_callback(&inc);
-			pcie_cluster_write(MNH_PCIE_RX_VMSG0_ID, MNH_CLEAR_VM);
+			CSR_OUTf(PCIE_RX_VMSG0_ID, PCIE_RADM_MSG0_REQ_ID,
+				MNH_CLEAR_VM);
 		}
 	} else {
-		if (pcie_cluster_read(MNH_PCIE_RX_VMSG1_ID) & MNH_VALID_VM) {
-			vm = pcie_cluster_read(MNH_PCIE_RX_MSG1_PYLD_REG0);
-			dev_err(pcie_ep_device, "Vendor msg %lx rcvd\n", vm);
+		if (CSR_INf(PCIE_RX_VMSG1_ID, PCIE_RADM_MSG1_REQ_ID)
+				& MNH_VALID_VM) {
+			vm = CSR_IN(PCIE_RX_MSG0_PYLD_REG1);
 			inc.vm = vm;
+			dev_err(pcie_ep_dev->dev, "Vendor msg %x rcvd\n", vm);
 			irq_callback(&inc);
-			pcie_cluster_write(MNH_PCIE_RX_VMSG1_ID, MNH_CLEAR_VM);
+			CSR_OUTf(PCIE_RX_VMSG1_ID, PCIE_RADM_MSG1_REQ_ID,
+				MNH_CLEAR_VM);
 		}
 	}
 	return 0;
 }
 
+static void dma_rx_handler(void)
+{
+	uint32_t data;
+	struct mnh_dma_irq dma_event;
+
+	if (dma_callback != NULL) {
+		data = CSR_INx(PCIE_GP, 2);
+		if (data & DMA_READ_DONE_MASK) {
+			dma_event.type = MNH_DMA_READ;
+			dma_event.status = MNH_DMA_DONE;
+			dma_event.channel = data & DMA_READ_DONE_MASK;
+		} else if (data & DMA_READ_ABORT_MASK) {
+			dma_event.type = MNH_DMA_READ;
+			dma_event.status = MNH_DMA_ABORT;
+			dma_event.channel = (data & DMA_READ_ABORT_MASK) >> 8;
+		} else if (data & DMA_WRITE_DONE_MASK) {
+			dma_event.type = MNH_DMA_WRITE;
+			dma_event.status = MNH_DMA_DONE;
+			dma_event.channel = (data & DMA_WRITE_DONE_MASK) >> 16;
+		} else if (data & DMA_WRITE_ABORT_MASK) {
+			dma_event.type = MNH_DMA_WRITE;
+			dma_event.status = MNH_DMA_ABORT;
+			dma_event.channel = (data & DMA_READ_ABORT_MASK) >> 24;
+		}
+		CSR_OUTx(PCIE_GP, 2, 0x0);
+		dma_callback(&dma_event);
+	}
+}
 static void msi_rx_worker(struct work_struct *work)
 {
 	uint32_t apirq;
 	struct mnh_pcie_irq inc;
-	dev_err(pcie_ep_device, "AP IRQ routine called \n");
 	
-	apirq = pcie_cluster_read(MNH_PCIE_SW_INTR_TRIGG);
+	dev_err(pcie_ep_dev->dev, "AP IRQ routine called\n");
+	apirq = CSR_IN(PCIE_SW_INTR_TRIGG);
 	if (apirq != 0) {
-		dev_err(pcie_ep_device, "AP IRQ %lx received \n", apirq);
-		if (irq_callback != NULL) {
-			if (apirq & (0x1 << MSG_SEND_I)) {
+		dev_err(pcie_ep_dev->dev, "AP IRQ %x received\n", apirq);
+
+		if (apirq & (0x1 << MSG_SEND_I)) {
+			if (irq_callback != NULL) {
 				inc.msi_irq =  MSG_SEND_I;
 				irq_callback(&inc);
 			}
-			if (apirq & (0x1 << DMA_DONE)) {
-				inc.msi_irq =  DMA_DONE;
-				irq_callback(&inc);
-			}
 		}
+		if (apirq & (0x1 << DMA_STATUS))
+			dma_rx_handler();
+
 		/* Clear all interrupts */
-		pcie_cluster_write(MNH_PCIE_SW_INTR_TRIGG,
-			MNH_PCIE_SW_IRQ_CLEAR);
+		CSR_OUT(PCIE_SW_INTR_TRIGG, MNH_PCIE_SW_IRQ_CLEAR);
 	}
 }
 
@@ -422,57 +434,61 @@ static void pcie_irq_worker(struct work_struct *work)
 {
 	uint32_t pcieirq;
 
-	dev_err(pcie_ep_device, "PCIE IRQ routine called \n");
-	pcieirq = pcie_cluster_read(MNH_PCIE_SS_INTR_STS);
+	dev_err(pcie_ep_dev->dev, "PCIE IRQ routine called\n");
+	pcieirq = CSR_IN(PCIE_SS_INTR_STS);
 	if (pcieirq != 0) {
 		if (pcieirq & MNH_PCIE_MSI_SENT) {
-			dev_err(pcie_ep_device, "MSI Sent\n");
+			dev_err(pcie_ep_dev->dev, "MSI Sent\n");
 			release_link();
 		}
 		if (pcieirq & MNH_PCIE_VMSG_SENT) {
-			dev_err(pcie_ep_device, "VM Sent\n");
+			dev_err(pcie_ep_dev->dev, "VM Sent\n");
 			release_link();
 		}
 		if ((pcieirq & MNH_PCIE_VMSG1_RXD)
 			& (irq_callback != NULL)) {
-			dev_err(pcie_ep_device, "VM1 received\n");
+			dev_err(pcie_ep_dev->dev, "VM1 received\n");
 			handle_vm(1);
 		}
 		if ((pcieirq & MNH_PCIE_VMSG0_RXD)
 			& (irq_callback != NULL)) {
-			dev_err(pcie_ep_device, "VM2 received\n");
+			dev_err(pcie_ep_dev->dev, "VM2 received\n");
 			handle_vm(0);
 		}
 		if (pcieirq & MNH_PCIE_LINK_EQ_REQ_INT)
-			dev_err(pcie_ep_device, "MNH_PCIE_LINK_EQ_REQ_INT received\n");
+			dev_err(pcie_ep_dev->dev,
+			"MNH_PCIE_LINK_EQ_REQ_INT received\n");
 		if (pcieirq & MNH_PCIE_LINK_REQ_RST_NOT)
-			dev_err(pcie_ep_device, "MNH_PCIE_LINK_REQ_RST_NOT received\n");
+			dev_err(pcie_ep_dev->dev,
+			"MNH_PCIE_LINK_REQ_RST_NOT received\n");
 		if (pcieirq & MNH_PCIE_LTR_SENT)
 			release_link();
 		if (pcieirq & MNH_PCIE_COR_ERR)
-			dev_err(pcie_ep_device, "MNH_PCIE_COR_ERR received\n");
+			dev_err(pcie_ep_dev->dev,
+			"MNH_PCIE_COR_ERR received\n");
 		if (pcieirq & MNH_PCIE_NONFATAL_ERR)
-			dev_err(pcie_ep_device, "MNH_PCIE_NONFATAL_ERR received\n");
+			dev_err(pcie_ep_dev->dev,
+			"MNH_PCIE_NONFATAL_ERR received\n");
 		if (pcieirq & MNH_PCIE_FATAL_ERR)
-			dev_err(pcie_ep_device, "MNH_PCIE_FATAL_ERR received\n");
+			dev_err(pcie_ep_dev->dev,
+			"MNH_PCIE_FATAL_ERR received\n");
 		if (pcieirq & MNH_PCIE_RADM_MSG_UNLOCK)
-			dev_err(pcie_ep_device, "MNH_PCIE_RADM_MSG_UNLOCK received\n");
+			dev_err(pcie_ep_dev->dev,
+			"MNH_PCIE_RADM_MSG_UNLOCK received\n");
 		if (pcieirq & MNH_PCIE_PM_TURNOFF)
-			dev_err(pcie_ep_device, "MNH_PCIE_PM_TURNOFF received\n");
+			dev_err(pcie_ep_dev->dev,
+			"MNH_PCIE_PM_TURNOFF received\n");
 		if (pcieirq & MNH_PCIE_RADM_CPL_TIMEOUT)
-			dev_err(pcie_ep_device, "MNH_PCIE_RADM_CPL_TIMEOUT received\n");
+			dev_err(pcie_ep_dev->dev,
+			"MNH_PCIE_RADM_CPL_TIMEOUT received\n");
 		if (pcieirq & MNH_PCIE_TRGT_CPL_TIMEOUT)
-			dev_err(pcie_ep_device, "MNH_PCIE_TRGT_CPL_TIMEOUT received\n");
+			dev_err(pcie_ep_dev->dev,
+			"MNH_PCIE_TRGT_CPL_TIMEOUT received\n");
 	}
 
 	/* Clear all interrupts */
-	pcie_cluster_write(MNH_PCIE_SS_INTR_STS, 0xFFFF);
+	CSR_OUT(PCIE_SS_INTR_STS, PCIE_SS_IRQ_MASK);
 
-}
-
-static void dma_irq_worker(struct work_struct *work)
-{
-	/* TODO need to investigate */
 }
 
 static irqreturn_t pcie_handle_cluster_irq(int irq, void *dev_id)
@@ -490,13 +506,6 @@ static irqreturn_t pcie_handle_sw_irq(int irq, void *dev_id)
 	/* return interrupt handled */
 	return IRQ_HANDLED;
 }
-static irqreturn_t pcie_handle_dma_irq(int irq, void *dev_id)
-{
-	schedule_work(&dma_irq_work);
-	/* return interrupt handled */
-	return IRQ_HANDLED;
-}
-
 
 static int pcie_set_inbound_iatu(struct mnh_inb_window *inb)
 {
@@ -505,43 +514,57 @@ static int pcie_set_inbound_iatu(struct mnh_inb_window *inb)
 	if (inb->mode == BAR_MATCH) {
 		if ((inb->region > 0xF) || (inb->bar > 5))
 			return -EINVAL;
-		data = MNH_IATU_INBOUND | inb->region;
-		pcie_config_write(MNH_IATU_VIEWPORT, data);
+		data = PORT_MASK(PORT_LOGIC_IATU_VIEWPORT_OFF, REGION_DIR)
+			| inb->region;
+		PORT_OUT(PORT_LOGIC_IATU_VIEWPORT_OFF, data);
 		upper = UPPER(inb->target_mnh_address);
 		lower = LOWER(inb->target_mnh_address);
-		pcie_config_write(MNH_IATU_LWR_TARGET_ADDR, lower);
-		pcie_config_write(MNH_IATU_UPPER_TARGET_ADDR, upper);
-		data = MNH_IATU_MEM;
-		pcie_config_write(MNH_IATU_REGION_CTRL_1, data);
-		data = MNH_IATU_BAR_MODE | (inb->bar << 8);
-		pcie_config_write(MNH_IATU_REGION_CTRL_2, data);
-		while (pcie_config_read(MNH_IATU_REGION_CTRL_2) != data)
+		PORT_OUT(PORT_LOGIC_IATU_LWR_TARGET_ADDR_OFF_OUTBOUND_0,
+			lower);
+		PORT_OUT(PORT_LOGIC_IATU_UPPER_TARGET_ADDR_OFF_OUTBOUND_0,
+			upper);
+		PORT_OUTf(PORT_LOGIC_IATU_REGION_CTRL_1_OFF_OUTBOUND_0, TYPE,
+			MNH_IATU_MEM);
+		data = PORT_MASK(PORT_LOGIC_IATU_REGION_CTRL_2_OFF_OUTBOUND_0,
+			REGION_EN) |
+			PORT_MASK(PORT_LOGIC_IATU_REGION_CTRL_2_OFF_OUTBOUND_0,
+			RSVDP_30) | (inb->bar << 8);
+		PORT_OUT(PORT_LOGIC_IATU_REGION_CTRL_2_OFF_OUTBOUND_0, data);
+		while (PORT_IN(PORT_LOGIC_IATU_REGION_CTRL_2_OFF_OUTBOUND_0)
+			!= data)
 			udelay(1);
 	} else {
 		if ((inb->region > 0xF) ||
 				(inb->target_mnh_address >
 				MNH_PCIE_OUTBOUND_BASE) ||
-				((inb->target_mnh_address
-				+ inb->limit_pcie_address)
-				> MNH_PCIE_OUTBOUND_BASE) ||
+				(inb->limit_pcie_address >
+				MNH_PCIE_OUTBOUND_BASE) ||
 				(inb->memmode > 0xf))
 			return -EINVAL; /* address out of range */
-		data = MNH_IATU_INBOUND | inb->region;
-		pcie_config_write(MNH_IATU_VIEWPORT, data);
+		data = PORT_MASK(PORT_LOGIC_IATU_VIEWPORT_OFF, REGION_DIR)
+			| inb->region;
+		PORT_OUT(PORT_LOGIC_IATU_VIEWPORT_OFF, data);
 		upper = UPPER(inb->base_pcie_address);
 		lower = LOWER(inb->base_pcie_address);
-		pcie_config_write(MNH_IATU_LWR_BASE_ADDR, lower);
-		pcie_config_write(MNH_IATU_UPPER_BASE_ADDR, upper);
-		data = inb->limit_pcie_address;
-		pcie_config_write(MNH_IATU_LIMIT_ADDR, data);
+		PORT_OUT(PORT_LOGIC_IATU_LWR_BASE_ADDR_OFF_OUTBOUND_0,
+			lower);
+		PORT_OUT(PORT_LOGIC_IATU_UPPER_BASE_ADDR_OFF_OUTBOUND_0,
+			upper);
+		PORT_OUT(PORT_LOGIC_IATU_LIMIT_ADDR_OFF_OUTBOUND_0,
+			inb->limit_pcie_address);
 		upper = UPPER(inb->target_mnh_address);
 		lower = LOWER(inb->target_mnh_address);
-		pcie_config_write(MNH_IATU_LWR_TARGET_ADDR, lower);
-		pcie_config_write(MNH_IATU_UPPER_TARGET_ADDR, upper);
-		pcie_config_write(MNH_IATU_REGION_CTRL_1, inb->memmode);
-		pcie_config_write(MNH_IATU_REGION_CTRL_2, MNH_IATU_ENABLE);
-		while (pcie_config_read(MNH_IATU_REGION_CTRL_2)
-				!= MNH_IATU_ENABLE)
+		PORT_OUT(PORT_LOGIC_IATU_LWR_TARGET_ADDR_OFF_OUTBOUND_0,
+			lower);
+		PORT_OUT(PORT_LOGIC_IATU_UPPER_TARGET_ADDR_OFF_OUTBOUND_0,
+			upper);
+		PORT_OUTf(PORT_LOGIC_IATU_REGION_CTRL_1_OFF_OUTBOUND_0, TYPE,
+			inb->memmode);
+		PORT_OUTf(PORT_LOGIC_IATU_REGION_CTRL_2_OFF_OUTBOUND_0,
+				REGION_EN, 1);
+		while (PORT_INf(PORT_LOGIC_IATU_REGION_CTRL_2_OFF_OUTBOUND_0,
+			REGION_EN)
+				!= 1)
 			udelay(1);
 	}
 	return 0;
@@ -553,26 +576,33 @@ static int pcie_set_outbound_iatu(struct mnh_outb_region *outb)
 
 	if ((outb->region > 0xF) || (outb->base_mnh_address
 			> MNH_PCIE_OUTBOUND_BASE) ||
-			((outb->base_mnh_address
-			+ outb->limit_mnh_address)
+			(outb->limit_mnh_address
 			> MNH_PCIE_OUTBOUND_BASE))
 		return -EINVAL; /* address out of range */
 	data = MNH_IATU_OUTBOUND | outb->region;
-	pcie_config_write(MNH_IATU_VIEWPORT, data);
+	PORT_OUT(PORT_LOGIC_IATU_VIEWPORT_OFF, data);
 	upper = UPPER(outb->base_mnh_address);
 	lower = LOWER(outb->base_mnh_address);
-	pcie_config_write(MNH_IATU_LWR_BASE_ADDR, lower);
-	pcie_config_write(MNH_IATU_UPPER_BASE_ADDR, upper);
+	PORT_OUT(PORT_LOGIC_IATU_LWR_BASE_ADDR_OFF_OUTBOUND_0,
+			lower);
+		PORT_OUT(PORT_LOGIC_IATU_UPPER_BASE_ADDR_OFF_OUTBOUND_0,
+			upper);
+		PORT_OUT(PORT_LOGIC_IATU_LIMIT_ADDR_OFF_OUTBOUND_0,
+			outb->limit_mnh_address);
 	data = outb->limit_mnh_address;
-	pcie_config_write(MNH_IATU_LIMIT_ADDR, data);
 	upper = UPPER(outb->target_pcie_address);
 	lower = LOWER(outb->target_pcie_address);
-	pcie_config_write(MNH_IATU_LWR_TARGET_ADDR, lower);
-	pcie_config_write(MNH_IATU_UPPER_TARGET_ADDR, upper);
-	pcie_config_write(MNH_IATU_REGION_CTRL_1, MNH_IATU_MEM);
-	pcie_config_write(MNH_IATU_REGION_CTRL_2, MNH_IATU_ENABLE);
-	while (pcie_config_read(MNH_IATU_REGION_CTRL_2) != MNH_IATU_ENABLE)
-		udelay(1);
+	PORT_OUT(PORT_LOGIC_IATU_LWR_TARGET_ADDR_OFF_OUTBOUND_0,
+			lower);
+		PORT_OUT(PORT_LOGIC_IATU_UPPER_TARGET_ADDR_OFF_OUTBOUND_0,
+			upper);
+	PORT_OUTf(PORT_LOGIC_IATU_REGION_CTRL_1_OFF_OUTBOUND_0, TYPE,
+			MNH_IATU_MEM);
+	PORT_OUTf(PORT_LOGIC_IATU_REGION_CTRL_2_OFF_OUTBOUND_0, REGION_EN, 1);
+		while (PORT_INf(PORT_LOGIC_IATU_REGION_CTRL_2_OFF_OUTBOUND_0,
+			REGION_EN)
+				!= 1)
+			udelay(1);
 	return 0;
 }
 
@@ -580,7 +610,7 @@ static int pcie_set_rb_base(uint32_t base)
 {
 	uint32_t msi = BOOTSTRAP_SET;
 
-	pcie_cluster_write(MNH_PCIE_GP_1, base);
+	CSR_OUTx(PCIE_GP, 1, base);
 	pcie_send_msi(msi);
 	return 0;
 }
@@ -588,44 +618,35 @@ static int pcie_set_rb_base(uint32_t base)
 static int pcie_read_data(uint8_t *buff, uint32_t size, uint64_t adr)
 {
 
-	uint64_t addr = (uint64_t)pcie_outb_mem + adr;
+	uint64_t addr = (uint64_t)pcie_ep_dev->outb_mem + adr;
 
-	memcpy(buff, addr, size);
-	dev_err(pcie_ep_device, "finished copy\n");
+	memcpy(buff, (char *) addr, size);
+	dev_err(pcie_ep_dev->dev, "finished copy\n");
 	return 0;
 }
 
 static int pcie_write_data(uint8_t *buff, uint32_t size, uint64_t adr)
 {
 
-	uint64_t addr = (uint64_t)pcie_outb_mem + adr;
+	uint64_t addr = (uint64_t)pcie_ep_dev->outb_mem + adr;
 
-	memcpy(addr, buff, size);
-	dev_err(pcie_ep_device, "finished copy\n");
+	memcpy((char *) addr, buff, size);
+	dev_err(pcie_ep_dev->dev, "finished copy\n");
 	return 0;
 }
 
 static int pcie_set_l_one(uint32_t enable, uint32_t clkpm)
 {
-	uint32_t data;
 
 	if (clkpm == 1) {
-		data = pcie_cluster_read(MNH_PCIE_APP_CTRL)
-				| MNH_PCIE_APP_CLK_PM_EN;
-		pcie_cluster_write(MNH_PCIE_APP_CTRL, data);
+		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_CLK_PM_EN, 1);
 	} else {
-		data = pcie_cluster_read(MNH_PCIE_APP_CTRL)
-				& ~(MNH_PCIE_APP_CLK_PM_EN);
-		pcie_cluster_write(MNH_PCIE_APP_CTRL, data);
+		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_CLK_PM_EN, 0);
 	}
 	if (enable == 1) {
-		data = pcie_cluster_read(MNH_PCIE_APP_CTRL)
-				| MNH_PCIE_APP_REQ_ENTRY_L1;
-		pcie_cluster_write(MNH_PCIE_APP_CTRL, data);
+		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_REQ_EXIT_L1, 1);
 	} else {
-		data = pcie_cluster_read(MNH_PCIE_APP_CTRL)
-				| MNH_PCIE_APP_REQ_EXIT_L1;
-		pcie_cluster_write(MNH_PCIE_APP_CTRL, data);
+		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_REQ_EXIT_L1, 0);
 	}
 
 	return 0;
@@ -647,6 +668,7 @@ int pcie_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg[],
 	n_num = get_user_pages(current, current->mm,
 			(uint64_t) dmadest, p_num, 1, 1, &mypage, NULL);
 	up_read(&current->mm->mmap_sem);
+	dev_err(pcie_ep_dev->dev, "buffer offset  %x pagenumber %x \n", fp_offset, n_num);
 	if (n_num) {
 		sg_init_table(sc_list, n_num);
 		sg_set_page(&sc_list[0], &mypage[0],
@@ -657,14 +679,15 @@ int pcie_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg[],
 		sg_set_page(&sc_list[n_num], &mypage[n_num],
 			size - (PAGE_SIZE - fp_offset)
 			- ((n_num-1)*PAGE_SIZE), 0);
-		count = dma_map_sg(pcie_ep_device, sc_list,
+		count = dma_map_sg(pcie_ep_dev->dev, sc_list,
 				n_num, DMA_BIDIRECTIONAL);
+		dev_err(pcie_ep_dev->dev, "Count %x\n", count);
 		for_each_sg(sc_list, in_sg, count, i) {
 			if (i < maxsg) {
 			sg[i]->paddr = sg_dma_address(in_sg);
 			sg[i]->size = sg_dma_len(in_sg);
 			} else {
-				dma_unmap_sg(pcie_ep_device,
+				dma_unmap_sg(pcie_ep_dev->dev,
 					sc_list, n_num, DMA_BIDIRECTIONAL);
 				kfree(mypage);
 				kfree(sc_list);
@@ -674,12 +697,14 @@ int pcie_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg[],
 		}
 		i++;
 		sg[i]->paddr = NULL;
+		dev_err(pcie_ep_dev->dev, "SGL suceeded with %x entries\n", i);
 	} else {
+		dev_err(pcie_ep_dev->dev, "maxsg exceeded\n");
 		kfree(mypage);
 		kfree(sc_list);
 		return -EINVAL;
 	}
-	dma_map_sg(pcie_ep_device, sc_list, n_num, DMA_BIDIRECTIONAL);
+	dma_unmap_sg(pcie_ep_dev->dev, sc_list, n_num, DMA_BIDIRECTIONAL);
 	kfree(mypage);
 	kfree(sc_list);
 	return 0;
@@ -742,9 +767,9 @@ static int pcie_ll_build(struct mnh_sg_entry *src_sg[],
 			ll_element[u]->header = LL_LINK_ELEMENT;
 			if ((sg_src.paddr == NULL) || (sg_dst.paddr == NULL)) {
 				ll_element[u]->sar_low =
-					LOWER((unsigned int) start_addr);
+					LOWER((uint64_t) start_addr);
 				ll_element[u]->sar_high =
-					UPPER((unsigned int) start_addr);
+					UPPER((uint64_t) start_addr);
 				return 0;
 			}
 			tmp_element = kcalloc(DMA_LL_LENGTH,
@@ -752,24 +777,24 @@ static int pcie_ll_build(struct mnh_sg_entry *src_sg[],
 					GFP_KERNEL);
 			if (!tmp_element) {
 				ll_element[u]->sar_low =
-					LOWER((unsigned int) start_addr);
+					LOWER((uint64_t) start_addr);
 				ll_element[u]->sar_high =
-					UPPER((unsigned int) start_addr);
+					UPPER((uint64_t) start_addr);
 				pcie_ll_destroy(start_addr);
 				return -EINVAL;
 			}
 			ll_element[u]->sar_low =
-				LOWER((unsigned int) tmp_element);
+				LOWER((uint64_t) tmp_element);
 			ll_element[u]->sar_high =
-				UPPER((unsigned int) tmp_element);
+				UPPER((uint64_t) tmp_element);
 			ll_element = tmp_element;
 			u = 0;
 		}
 	}
 	ll_element[u-1]->header = LL_IRQ_DATA_ELEMENT;
 	ll_element[u]->header = LL_LAST_LINK_ELEMENT;
-	ll_element[u]->sar_low = LOWER((unsigned int) start_addr);
-	ll_element[u]->sar_high = UPPER((unsigned int) start_addr);
+	ll_element[u]->sar_low = LOWER((uint64_t) start_addr);
+	ll_element[u]->sar_high = UPPER((uint64_t) start_addr);
 	return 0;
 }
 
@@ -806,7 +831,7 @@ static int pcie_ll_destroy(uint64_t *start_addr)
 /* APIs exposed to message passing protocol */
 
 /* API to generate MSI to AP */
-int mnh_send_msi(mnh_msi_msg_t msi)
+int mnh_send_msi(enum mnh_msi_msg_t msi)
 {
 
 	return pcie_send_msi(msi);
@@ -902,74 +927,86 @@ EXPORT_SYMBOL(mnh_ll_destroy);
 
 static int config_mem(struct platform_device *pdev)
 {
-	conf_mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!conf_mem) {
+	pcie_ep_dev->config_mem =
+		platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (!pcie_ep_dev->config_mem)
 		return -ENOMEM;
-	}
-	if (!request_mem_region(conf_mem->start, resource_size(conf_mem),
-			pci_ep_dev->name)) {
+	if (!request_mem_region(pcie_ep_dev->config_mem->start,
+		resource_size(pcie_ep_dev->config_mem),
+		pcie_ep_dev->name)) {
 		dev_err(&pdev->dev, "unable to request mem region\n");
 		return -ENOMEM;
 	}
-	pcie_conf_mem = ioremap_nocache(conf_mem->start,
-			resource_size(conf_mem));
-	if (!pcie_conf_mem) {
-		release_mem_region(conf_mem->start, resource_size(conf_mem));
+	pcie_ep_dev->conf_mem =
+		ioremap_nocache(pcie_ep_dev->config_mem->start,
+			resource_size(pcie_ep_dev->config_mem));
+	if (!pcie_ep_dev->conf_mem) {
+		release_mem_region(pcie_ep_dev->config_mem->start,
+				resource_size(pcie_ep_dev->config_mem));
 		return -ENOMEM;
 	}
-	cluster_mem = platform_get_resource(pdev, IORESOURCE_MEM, 1);
-	if (!cluster_mem) {
-		iounmap(&pcie_conf_mem);
-		release_mem_region(conf_mem->start, resource_size(conf_mem));
+	pcie_ep_dev->cluster_mem =
+		platform_get_resource(pdev, IORESOURCE_MEM, 1);
+	if (!pcie_ep_dev->cluster_mem) {
+		iounmap(&pcie_ep_dev->conf_mem);
+		release_mem_region(pcie_ep_dev->config_mem->start,
+				resource_size(pcie_ep_dev->config_mem));
 		return -ENOMEM;
 	}
-	if (!request_mem_region(cluster_mem->start, resource_size(cluster_mem),
-			pci_ep_dev->name)) {
+	if (!request_mem_region(pcie_ep_dev->cluster_mem->start,
+		resource_size(pcie_ep_dev->cluster_mem), pcie_ep_dev->name)) {
 		dev_err(&pdev->dev, "unable to request mem region\n");
-		iounmap(&pcie_conf_mem);
-		release_mem_region(conf_mem->start, resource_size(conf_mem));
+		iounmap(&pcie_ep_dev->conf_mem);
+		release_mem_region(pcie_ep_dev->config_mem->start,
+				resource_size(pcie_ep_dev->config_mem));
 		return -ENOMEM;
 	}
-	pcie_clust_mem = ioremap_nocache(cluster_mem->start,
-					resource_size(cluster_mem));
-	if (!pcie_clust_mem) {
+	pcie_ep_dev->clust_mem =
+		ioremap_nocache(pcie_ep_dev->cluster_mem->start,
+			resource_size(pcie_ep_dev->cluster_mem));
+	if (!pcie_ep_dev->clust_mem) {
 		dev_err(&pdev->dev, "unable to request mem region\n");
-		iounmap(&pcie_conf_mem);
-		release_mem_region(conf_mem->start, resource_size(conf_mem));
-		release_mem_region(cluster_mem->start,
-					resource_size(cluster_mem));
+		iounmap(&pcie_ep_dev->conf_mem);
+		release_mem_region(pcie_ep_dev->config_mem->start,
+				resource_size(pcie_ep_dev->config_mem));
+		release_mem_region(pcie_ep_dev->cluster_mem->start,
+				resource_size(pcie_ep_dev->cluster_mem));
 		return -ENOMEM;
 	}
-	outbound_mem = platform_get_resource(pdev, IORESOURCE_MEM, 2);
-	if (!outbound_mem) {
-		iounmap(&pcie_clust_mem);
-		iounmap(&pcie_conf_mem);
-		release_mem_region(conf_mem->start, resource_size(conf_mem));
-		release_mem_region(cluster_mem->start,
-					resource_size(cluster_mem));
+	pcie_ep_dev->outbound_mem = platform_get_resource(pdev,
+					IORESOURCE_MEM, 2);
+	if (!pcie_ep_dev->outbound_mem) {
+		iounmap(&pcie_ep_dev->clust_mem);
+		iounmap(&pcie_ep_dev->conf_mem);
+		release_mem_region(pcie_ep_dev->config_mem->start,
+			resource_size(pcie_ep_dev->config_mem));
+		release_mem_region(pcie_ep_dev->cluster_mem->start,
+				resource_size(pcie_ep_dev->cluster_mem));
 		return -ENOMEM;
 	}
-	if (!request_mem_region(outbound_mem->start, resource_size(outbound_mem),
-				pci_ep_dev->name)) {
+	if (!request_mem_region(pcie_ep_dev->outbound_mem->start,
+		resource_size(pcie_ep_dev->outbound_mem), pcie_ep_dev->name)) {
 		dev_err(&pdev->dev, "unable to request mem region\n");
-		iounmap(&pcie_clust_mem);
-		iounmap(&pcie_conf_mem);
-		release_mem_region(conf_mem->start, resource_size(conf_mem));
-		release_mem_region(cluster_mem->start,
-					resource_size(cluster_mem));
+		iounmap(&pcie_ep_dev->clust_mem);
+		iounmap(&pcie_ep_dev->conf_mem);
+		release_mem_region(pcie_ep_dev->config_mem->start,
+				resource_size(pcie_ep_dev->config_mem));
+		release_mem_region(pcie_ep_dev->cluster_mem->start,
+				resource_size(pcie_ep_dev->cluster_mem));
 		return -ENOMEM;
 		}
-	pcie_outb_mem = ioremap(outbound_mem->start, 
-				resource_size(outbound_mem));
-	if (!pcie_outb_mem) {
+	pcie_ep_dev->outb_mem = ioremap(pcie_ep_dev->outbound_mem->start,
+				resource_size(pcie_ep_dev->outbound_mem));
+	if (!pcie_ep_dev->outb_mem) {
 		dev_err(&pdev->dev, "unable to request mem region\n");
-		iounmap(&pcie_clust_mem);
-		iounmap(&pcie_conf_mem);
-		release_mem_region(conf_mem->start, resource_size(conf_mem));
-		release_mem_region(cluster_mem->start,
-					resource_size(cluster_mem));
-		release_mem_region(outbound_mem->start,
-					resource_size(outbound_mem));
+		iounmap(&pcie_ep_dev->clust_mem);
+		iounmap(&pcie_ep_dev->conf_mem);
+		release_mem_region(pcie_ep_dev->config_mem->start,
+				resource_size(pcie_ep_dev->config_mem));
+		release_mem_region(pcie_ep_dev->cluster_mem->start,
+				resource_size(pcie_ep_dev->cluster_mem));
+		release_mem_region(pcie_ep_dev->outbound_mem->start,
+				resource_size(pcie_ep_dev->outbound_mem));
 		return -ENOMEM;
 	}
 	return 0;
@@ -977,14 +1014,15 @@ static int config_mem(struct platform_device *pdev)
 
 static int clear_mem(void)
 {
-	iounmap(&pcie_conf_mem);
-	iounmap(&pcie_clust_mem);
-	iounmap(&pcie_outb_mem);
-	release_mem_region(conf_mem->start, resource_size(conf_mem));
-	release_mem_region(cluster_mem->start,
-					resource_size(cluster_mem));
-	release_mem_region(outbound_mem->start,
-					resource_size(outbound_mem));
+	iounmap(&pcie_ep_dev->conf_mem);
+	iounmap(&pcie_ep_dev->clust_mem);
+	iounmap(&pcie_ep_dev->outb_mem);
+	release_mem_region(pcie_ep_dev->config_mem->start,
+				resource_size(pcie_ep_dev->config_mem));
+	release_mem_region(pcie_ep_dev->cluster_mem->start,
+				resource_size(pcie_ep_dev->cluster_mem));
+	release_mem_region(pcie_ep_dev->outbound_mem->start,
+				resource_size(pcie_ep_dev->outbound_mem));
 	return 0;
 }
 
@@ -993,7 +1031,7 @@ static int clear_mem(void)
 int test_callback(struct mnh_pcie_irq *irq)
 {
 	sysfs_irq = *irq;
-	dev_err(pcie_ep_device, "PCIE MSI IRQ %lx PCIE IRQ %lx VM IRQ %lx",
+	dev_err(pcie_ep_dev->dev, "PCIE MSI IRQ %x PCIE IRQ %x VM IRQ %x",
 		sysfs_irq.msi_irq, sysfs_irq.pcie_irq, sysfs_irq.vm);
 	return 0;
 }
@@ -1001,6 +1039,8 @@ int test_callback(struct mnh_pcie_irq *irq)
 int test_dma_callback(struct mnh_dma_irq *irq)
 {
 	/*TODO do something */
+	dev_err(pcie_ep_dev->dev, "DMA Event channel %x type %x Event %x",
+		irq->channel, irq->type, irq->status);
 	return 0;
 }
 
@@ -1024,7 +1064,7 @@ static ssize_t sysfs_send_msi(struct device *dev,
 		return -EINVAL;
 	if ((val < 0) | (val > 31))
 		return -EINVAL;
-	mnh_send_msi((mnh_msi_msg_t) val);
+	mnh_send_msi((enum mnh_msi_msg_t) val);
 	return count;
 }
 
@@ -1209,8 +1249,8 @@ static ssize_t sysfs_write_data(struct device *dev,
 				const char *buf,
 				size_t count)
 {
-	if (mnh_pcie_write(buf, count, rw_address_sysfs)) {
-		dev_err(pcie_ep_device, "Write buffer failed\n");
+	if (mnh_pcie_write((uint8_t *)buf, count, rw_address_sysfs)) {
+		dev_err(pcie_ep_dev->dev, "Write buffer failed\n");
 		return -EINVAL;
 	}
 	return count;
@@ -1236,19 +1276,19 @@ static ssize_t sysfs_set_iob(struct device *dev,
 	uint8_t *token;
 	const char *delim = ";";
 
-	token = strsep(&buf, delim);
+	token = strsep((char **) &buf, delim);
 	if (token) {
 		if (kstrtoul(token, 0, &val))
 		return -EINVAL;
 	if ((val < 0) || (val > 1))
 		return -EINVAL;
 	inb.mode = val;
-	dev_err(pcie_ep_device, "Inbound mode is %lx\n", val);
+	dev_err(pcie_ep_dev->dev, "Inbound mode is %lx\n", val);
 	} else {
 		return -EINVAL;
 	}
 
-	token = strsep(&buf, delim);
+	token = strsep((char **) &buf, delim);
 
 	if (token) {
 		if (kstrtoul(token, 0, &val))
@@ -1256,12 +1296,12 @@ static ssize_t sysfs_set_iob(struct device *dev,
 	if ((val < 0) || (val > 2))
 		return -EINVAL;
 	inb.bar = val;
-	dev_err(pcie_ep_device, "Inbound bar is %lx\n", val);
+	dev_err(pcie_ep_dev->dev, "Inbound bar is %lx\n", val);
 	} else {
 		return -EINVAL;
 	}
 
-	token = strsep(&buf, delim);
+	token = strsep((char **) &buf, delim);
 
 	if (token) {
 		if (kstrtoul(token, 0, &val))
@@ -1269,12 +1309,12 @@ static ssize_t sysfs_set_iob(struct device *dev,
 		if ((val < 0) || (val > 15))
 			return -EINVAL;
 		inb.region = val;
-		dev_err(pcie_ep_device, "Inbound region is %lx\n", val);
+		dev_err(pcie_ep_dev->dev, "Inbound region is %lx\n", val);
 	} else {
 		return -EINVAL;
 	}
 
-	token = strsep(&buf, delim);
+	token = strsep((char **) &buf, delim);
 
 	if (token) {
 		if (kstrtoul(token, 0, &val))
@@ -1282,40 +1322,40 @@ static ssize_t sysfs_set_iob(struct device *dev,
 		if ((val < 0) || (val > 15))
 			return -EINVAL;
 		inb.memmode = val;
-		dev_err(pcie_ep_device, "Inbound memmode is %lx\n", val);
+		dev_err(pcie_ep_dev->dev, "Inbound memmode is %lx\n", val);
 	} else {
 		return -EINVAL;
 	}
 
-	token = strsep(&buf, delim);
+	token = strsep((char **) &buf, delim);
 
 	if (token) {
 		if (kstrtoul(token, 0, &val))
 			return -EINVAL;
 		inb.base_pcie_address = val;
-		dev_err(pcie_ep_device, "Inbound base is %lx\n", val);
+		dev_err(pcie_ep_dev->dev, "Inbound base is %lx\n", val);
 	} else {
 		return -EINVAL;
 	}
 
-	token = strsep(&buf, delim);
+	token = strsep((char **) &buf, delim);
 
 	if (token) {
 		if (kstrtoul(token, 0, &val))
 			return -EINVAL;
 		inb.limit_pcie_address = val;
-		dev_err(pcie_ep_device, "Inbound limit is %lx\n", val);
+		dev_err(pcie_ep_dev->dev, "Inbound limit is %lx\n", val);
 	} else {
 		return -EINVAL;
 	}
 
-	token = strsep(&buf, delim);
+	token = strsep((char **) &buf, delim);
 
 	if (token) {
 		if (kstrtoul(token, 0, &val))
 			return -EINVAL;
 		inb.target_mnh_address = val;
-		dev_err(pcie_ep_device, "Inbound target is %lx\n", val);
+		dev_err(pcie_ep_dev->dev, "Inbound target is %lx\n", val);
 	} else {
 		return -EINVAL;
 	}
@@ -1343,7 +1383,7 @@ static ssize_t sysfs_set_outb(struct device *dev,
 	uint8_t *token;
 	const char *delim = ";";
 
-	token = strsep(&buf, delim);
+	token = strsep((char **) &buf, delim);
 
 	if (token) {
 		if (kstrtoul(token, 0, &val))
@@ -1351,40 +1391,40 @@ static ssize_t sysfs_set_outb(struct device *dev,
 		if ((val < 0) || (val > 32))
 			return -EINVAL;
 		outb.region = val;
-		dev_err(pcie_ep_device, "Outbound region is %lx\n", val);
+		dev_err(pcie_ep_dev->dev, "Outbound region is %lx\n", val);
 	} else {
 		return -EINVAL;
 	}
 
-	token = strsep(&buf, delim);
+	token = strsep((char **) &buf, delim);
 
 	if (token) {
 		if (kstrtoul(token, 0, &val))
 			return -EINVAL;
 		outb.base_mnh_address = val;
-		dev_err(pcie_ep_device, "Outbound base is %lx\n", val);
+		dev_err(pcie_ep_dev->dev, "Outbound base is %lx\n", val);
 	} else {
 		return -EINVAL;
 	}
 
-	token = strsep(&buf, delim);
+	token = strsep((char **) &buf, delim);
 
 	if (token) {
 		if (kstrtoul(token, 0, &val))
 			return -EINVAL;
 		outb.limit_mnh_address = val;
-		dev_err(pcie_ep_device, "Outbound limit is %lx\n", val);
+		dev_err(pcie_ep_dev->dev, "Outbound limit is %lx\n", val);
 	} else {
 		return -EINVAL;
 	}
 
-	token = strsep(&buf, delim);
+	token = strsep((char **) &buf, delim);
 
 	if (token) {
 		if (kstrtoul(token, 0, &val))
 			return -EINVAL;
 		outb.target_pcie_address = val;
-		dev_err(pcie_ep_device, "Outbound target is %lx\n", val);
+		dev_err(pcie_ep_dev->dev, "Outbound target is %lx\n", val);
 	} else {
 		return -EINVAL;
 	}
@@ -1464,7 +1504,7 @@ static ssize_t sysfs_set_lone(struct device *dev,
 	uint8_t *token;
 	const char *delim = ";";
 
-	token = strsep(&buf, delim);
+	token = strsep((char **) &buf, delim);
 
 	if (token) {
 		if (kstrtoul(token, 0, &val))
@@ -1472,12 +1512,12 @@ static ssize_t sysfs_set_lone(struct device *dev,
 		if ((val < 0) || (val > 1))
 			return -EINVAL;
 		enable = val;
-		dev_err(pcie_ep_device, "L1 state is %lx\n", val);
+		dev_err(pcie_ep_dev->dev, "L1 state is %lx\n", val);
 	} else {
 		return -EINVAL;
 	}
 
-	token = strsep(&buf, delim);
+	token = strsep((char **) &buf, delim);
 
 	if (token) {
 		if (kstrtoul(token, 0, &val))
@@ -1485,7 +1525,7 @@ static ssize_t sysfs_set_lone(struct device *dev,
 		if ((val < 0) || (val > 1))
 			return -EINVAL;
 		pmclock = val;
-		dev_err(pcie_ep_device, "PM Clock is %lx\n", val);
+		dev_err(pcie_ep_dev->dev, "PM Clock is %lx\n", val);
 	} else {
 		return -EINVAL;
 	}
@@ -1496,297 +1536,358 @@ static ssize_t sysfs_set_lone(struct device *dev,
 static DEVICE_ATTR(set_lone, S_IRUGO | S_IWUSR | S_IWGRP,
 			show_sysfs_set_lone, sysfs_set_lone);
 
+static ssize_t show_sysfs_test_sgl(struct device *dev,
+				struct device_attribute *attr,
+				char *buf)
+{
+	return snprintf(buf, MAX_STR_COPY, "No support\n");
+}
+
+static ssize_t sysfs_test_sgl(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf,
+				size_t count)
+{
+	unsigned long val;
+	char *buffer;
+	struct mnh_sg_entry *sg;
+
+	if (kstrtoul(buf, 0, &val))
+		return -EINVAL;
+	if (val == 1) {
+		buffer = vmalloc(SGL_BUFFER* PAGE_SIZE);
+		sg = kcalloc(SGL_SIZE, sizeof(struct mnh_sg_entry), GFP_KERNEL);
+		pcie_sg_build(buffer, SGL_BUFFER * PAGE_SIZE, sg, SGL_SIZE);
+}
+
+	return count;
+}
+
+static DEVICE_ATTR(test_sgl, S_IRUGO | S_IWUSR | S_IWGRP,
+			show_sysfs_test_sgl, sysfs_test_sgl);
+
+
 
 static int init_sysfs(void)
 {
 	int ret;
 
-	ret = device_create_file(pcie_ep_device,
+	ret = device_create_file(pcie_ep_dev->dev,
 			&dev_attr_send_msi);
 	if (ret) {
-		dev_err(pcie_ep_device, "Failed to create sysfs: send_msi\n");
+		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: send_msi\n");
 		return -EINVAL;
 	}
-	ret = device_create_file(pcie_ep_device,
+	ret = device_create_file(pcie_ep_dev->dev,
 			&dev_attr_send_vm);
 	if (ret) {
-		dev_err(pcie_ep_device, "Failed to create sysfs: send_vm\n");
-		device_remove_file(pcie_ep_device,
+		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: send_vm\n");
+		device_remove_file(pcie_ep_dev->dev,
 			&dev_attr_send_msi);
 		return -EINVAL;
 	}
-	ret = device_create_file(pcie_ep_device,
+	ret = device_create_file(pcie_ep_dev->dev,
 			&dev_attr_rb_base);
 	if (ret) {
-		dev_err(pcie_ep_device, "Failed to create sysfs: rb_base\n");
-		device_remove_file(pcie_ep_device,
+		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: rb_base\n");
+		device_remove_file(pcie_ep_dev->dev,
 			&dev_attr_send_msi);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 			&dev_attr_send_vm);
 		return -EINVAL;
 	}
 	rw_address_sysfs = 0x0;
-	ret = device_create_file(pcie_ep_device,
+	ret = device_create_file(pcie_ep_dev->dev,
 			&dev_attr_rw_address);
 	if (ret) {
-		dev_err(pcie_ep_device, "Failed to create sysfs: rw_address\n");
-		device_remove_file(pcie_ep_device,
+		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: rw_address\n");
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_send_msi);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_send_vm);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rb_base);
 		return -EINVAL;
 	}
 	rw_size_sysfs = 0x1;
-	ret = device_create_file(pcie_ep_device,
+	ret = device_create_file(pcie_ep_dev->dev,
 			&dev_attr_rw_size);
 	if (ret) {
-		dev_err(pcie_ep_device, "Failed to create sysfs: rw_size\n");
-		device_remove_file(pcie_ep_device,
+		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: rw_size\n");
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_send_msi);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_send_vm);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rb_base);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_address);
 		return -EINVAL;
 	}
-	ret = device_create_file(pcie_ep_device,
+	ret = device_create_file(pcie_ep_dev->dev,
 			&dev_attr_rw_cluster);
 	if (ret) {
-		dev_err(pcie_ep_device, "Failed to create sysfs: rw_cluster\n");
-		device_remove_file(pcie_ep_device,
+		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: rw_cluster\n");
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_send_msi);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_send_vm);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rb_base);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_address);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_size);
 		return -EINVAL;
 	}
-	ret = device_create_file(pcie_ep_device,
+	ret = device_create_file(pcie_ep_dev->dev,
 			&dev_attr_rw_config);
 	if (ret) {
-		dev_err(pcie_ep_device, "Failed to create sysfs: rw_config\n");
-		device_remove_file(pcie_ep_device,
+		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: rw_config\n");
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_send_msi);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_send_vm);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rb_base);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_address);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_size);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_cluster);
 		return -EINVAL;
 	}
-	ret = device_create_file(pcie_ep_device,
+	ret = device_create_file(pcie_ep_dev->dev,
 			&dev_attr_rw_data);
 	if (ret) {
-		dev_err(pcie_ep_device, "Failed to create sysfs: rw_data\n");
-				device_remove_file(pcie_ep_device,
+		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: rw_data\n");
+				device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_send_msi);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_send_vm);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rb_base);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_address);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_size);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_cluster);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_config);
 		return -EINVAL;
 	}
-	ret = device_create_file(pcie_ep_device,
+	ret = device_create_file(pcie_ep_dev->dev,
 			&dev_attr_set_inbound);
 	if (ret) {
-		dev_err(pcie_ep_device, "Failed to create sysfs: set_inbound\n");
-				device_remove_file(pcie_ep_device,
+		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: set_inbound\n");
+				device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_send_msi);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_send_vm);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rb_base);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_address);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_size);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_cluster);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_config);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_data);
 		return -EINVAL;
 	}
-	ret = device_create_file(pcie_ep_device,
+	ret = device_create_file(pcie_ep_dev->dev,
 			&dev_attr_set_outbound);
 	if (ret) {
-		dev_err(pcie_ep_device, "Failed to create sysfs: set_outbound\n");
-				device_remove_file(pcie_ep_device,
+		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: set_outbound\n");
+				device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_send_msi);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_send_vm);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rb_base);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_address);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_size);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_cluster);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_config);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_data);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_set_inbound);
 		return -EINVAL;
 	}
-	ret = device_create_file(pcie_ep_device,
+	ret = device_create_file(pcie_ep_dev->dev,
 			&dev_attr_test_callback);
 	if (ret) {
-		dev_err(pcie_ep_device, "Failed to create sysfs: test_callback\n");
-				device_remove_file(pcie_ep_device,
+		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: test_callback\n");
+				device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_send_msi);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_send_vm);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rb_base);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_address);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_size);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_cluster);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_config);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_data);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_set_inbound);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_set_outbound);
 		return -EINVAL;
 	}
-	ret = device_create_file(pcie_ep_device,
+	ret = device_create_file(pcie_ep_dev->dev,
 			&dev_attr_send_ltr);
 	if (ret) {
-		dev_err(pcie_ep_device, "Failed to create sysfs: send_ltr\n");
-				device_remove_file(pcie_ep_device,
+		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: send_ltr\n");
+				device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_send_msi);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_send_vm);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rb_base);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_address);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_size);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_cluster);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_config);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_data);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_set_inbound);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_set_outbound);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 			&dev_attr_test_callback);
 		return -EINVAL;
 	}
-	ret = device_create_file(pcie_ep_device,
+	ret = device_create_file(pcie_ep_dev->dev,
 			&dev_attr_set_lone);
 	if (ret) {
-		dev_err(pcie_ep_device, "Failed to create sysfs: set_lone\n");
-				device_remove_file(pcie_ep_device,
+		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: set_lone\n");
+				device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_send_msi);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_send_vm);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rb_base);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_address);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_size);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_cluster);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_config);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_rw_data);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_set_inbound);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 				&dev_attr_set_outbound);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 			&dev_attr_test_callback);
-		device_remove_file(pcie_ep_device,
+		device_remove_file(pcie_ep_dev->dev,
 			&dev_attr_send_ltr);
 		return -EINVAL;
 	}
+
+	ret = device_create_file(pcie_ep_dev->dev,
+			&dev_attr_test_sgl);
+	if (ret) {
+		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: set_lone\n");
+				device_remove_file(pcie_ep_dev->dev,
+				&dev_attr_send_msi);
+		device_remove_file(pcie_ep_dev->dev,
+				&dev_attr_send_vm);
+		device_remove_file(pcie_ep_dev->dev,
+				&dev_attr_rb_base);
+		device_remove_file(pcie_ep_dev->dev,
+				&dev_attr_rw_address);
+		device_remove_file(pcie_ep_dev->dev,
+				&dev_attr_rw_size);
+		device_remove_file(pcie_ep_dev->dev,
+				&dev_attr_rw_cluster);
+		device_remove_file(pcie_ep_dev->dev,
+				&dev_attr_rw_config);
+		device_remove_file(pcie_ep_dev->dev,
+				&dev_attr_rw_data);
+		device_remove_file(pcie_ep_dev->dev,
+				&dev_attr_set_inbound);
+		device_remove_file(pcie_ep_dev->dev,
+				&dev_attr_set_outbound);
+		device_remove_file(pcie_ep_dev->dev,
+			&dev_attr_test_callback);
+		device_remove_file(pcie_ep_dev->dev,
+			&dev_attr_send_ltr);
+		device_remove_file(pcie_ep_dev->dev,
+			&dev_attr_set_lone);
+		return -EINVAL;
+	}
+
 	return 0;
 }
 
 static void clean_sysfs(void)
 {
-	device_remove_file(pcie_ep_device,
+	device_remove_file(pcie_ep_dev->dev,
 			&dev_attr_send_msi);
-	device_remove_file(pcie_ep_device,
+	device_remove_file(pcie_ep_dev->dev,
 			&dev_attr_send_vm);
-	device_remove_file(pcie_ep_device,
+	device_remove_file(pcie_ep_dev->dev,
 			&dev_attr_rb_base);
-	device_remove_file(pcie_ep_device,
+	device_remove_file(pcie_ep_dev->dev,
 			&dev_attr_rw_address);
-	device_remove_file(pcie_ep_device,
+	device_remove_file(pcie_ep_dev->dev,
 			&dev_attr_rw_size);
-	device_remove_file(pcie_ep_device,
+	device_remove_file(pcie_ep_dev->dev,
 			&dev_attr_rw_cluster);
-	device_remove_file(pcie_ep_device,
+	device_remove_file(pcie_ep_dev->dev,
 			&dev_attr_rw_config);
-	device_remove_file(pcie_ep_device,
+	device_remove_file(pcie_ep_dev->dev,
 			&dev_attr_rw_data);
-	device_remove_file(pcie_ep_device,
+	device_remove_file(pcie_ep_dev->dev,
 			&dev_attr_set_inbound);
-	device_remove_file(pcie_ep_device,
+	device_remove_file(pcie_ep_dev->dev,
 			&dev_attr_set_outbound);
-	device_remove_file(pcie_ep_device,
+	device_remove_file(pcie_ep_dev->dev,
 			&dev_attr_test_callback);
-	device_remove_file(pcie_ep_device,
+	device_remove_file(pcie_ep_dev->dev,
 			&dev_attr_send_ltr);
-	device_remove_file(pcie_ep_device,
+	device_remove_file(pcie_ep_dev->dev,
 			&dev_attr_set_lone);
+	device_remove_file(pcie_ep_dev->dev,
+			&dev_attr_test_sgl);
 }
 
 static int mnh_pcie_ep_probe(struct platform_device *pdev)
 {
 	int err;
 
-	pci_ep_dev = kzalloc(sizeof(*pci_ep_dev), GFP_KERNEL);
-	if (!pci_ep_dev) {
+	pcie_ep_dev = kzalloc(sizeof(*pcie_ep_dev), GFP_KERNEL);
+	if (!pcie_ep_dev) {
 		dev_err(&pdev->dev, "Could not allocated pcie_ep_dev\n");
 		return -ENOMEM;
 	}
-	pci_ep_dev->dev = &pdev->dev;
-	pcie_ep_device = kzalloc(sizeof(*pcie_ep_device), GFP_KERNEL);
-	if (!pcie_ep_device) {
-		dev_err(&pdev->dev, "Could not allocated pcie_ep_device\n");
-		return -ENOMEM;
-	}
-	pcie_ep_device = &pdev->dev;
-	strcpy(pci_ep_dev->name, DEVICE_NAME);
+	pcie_ep_dev->dev = &pdev->dev;
+	strcpy(pcie_ep_dev->name, DEVICE_NAME);
 	irq_callback = NULL;
 	dma_callback = NULL;
 	err = config_mem(pdev);
@@ -1795,19 +1896,19 @@ static int mnh_pcie_ep_probe(struct platform_device *pdev)
 
 	/* Register IRQs */
 
-	pcie_sw_irq = platform_get_irq(pdev, 0);
+	pcie_ep_dev->sw_irq = platform_get_irq(pdev, 0);
 
-	err = request_irq(pcie_sw_irq, pcie_handle_sw_irq,
-			IRQF_SHARED, DEVICE_NAME, pci_ep_dev);
+	err = request_irq(pcie_ep_dev->sw_irq, pcie_handle_sw_irq,
+			IRQF_SHARED, DEVICE_NAME, pcie_ep_dev);
 	if (err) {
 		clear_mem();
 		return -EINVAL;
 	}
-	pcie_cluster_irq = platform_get_irq(pdev, 1);
-	err = request_irq(pcie_cluster_irq, pcie_handle_cluster_irq,
-			IRQF_SHARED, DEVICE_NAME, pcie_ep_device);
+	pcie_ep_dev->cluster_irq = platform_get_irq(pdev, 1);
+	err = request_irq(pcie_ep_dev->cluster_irq, pcie_handle_cluster_irq,
+			IRQF_SHARED, DEVICE_NAME, pcie_ep_dev->dev);
 	if (err) {
-		free_irq(pcie_sw_irq, pcie_ep_device);
+		free_irq(pcie_ep_dev->sw_irq, pcie_ep_dev->dev);
 		clear_mem();
 		return -EINVAL;
 	}
@@ -1819,10 +1920,9 @@ static int mnh_pcie_ep_probe(struct platform_device *pdev)
 	INIT_DELAYED_WORK(&msi_work, pcie_msi_worker);
 	INIT_WORK(&msi_rx_work, msi_rx_worker);
 	INIT_WORK(&pcie_irq_work, pcie_irq_worker);
-	INIT_WORK(&dma_irq_work, dma_irq_worker);
 	init_sysfs();
-	/* pcie_link_init(); */
-	pcie_cluster_write(MNH_PCIE_SS_INTR_EN, PCIE_SS_IRQ_MASK);
+	pcie_link_init();
+	CSR_OUT(PCIE_SS_INTR_EN, PCIE_SS_IRQ_MASK);
 	return 0;
 }
 
@@ -1831,8 +1931,8 @@ static int mnh_pcie_ep_remove(struct platform_device *pdev)
 	cancel_delayed_work_sync(&msi_work);
 	clean_sysfs();
 	clear_mem();
-	free_irq(pcie_sw_irq, pcie_ep_device);
-	free_irq(pcie_cluster_irq, pcie_ep_device);
+	free_irq(pcie_ep_dev->sw_irq, pcie_ep_dev->dev);
+	free_irq(pcie_ep_dev->cluster_irq, pcie_ep_dev->dev);
 	return 0;
 }
 

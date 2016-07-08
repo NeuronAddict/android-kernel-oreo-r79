@@ -30,28 +30,41 @@
  ****************************************************************************/
 
 /** enum value used for msi msg type for mnh_send_msi() API */
-typedef enum {
+enum  mnh_msi_msg_t {
 	INVAL_MSI = 0,
 	MSG_SEND_M,
 	PET_WATCHDOG,
 	CRASH_DUMP,
 	BOOTSTRAP_SET
-} mnh_msi_msg_t;
+};
 
 /** enum value used for irq structure passed IRQ callback function */
-typedef enum {
+enum mnh_irq_msg_t {
 	INVAL_IRQ = 0,
 	MSG_SEND_I,
-	DMA_DONE,
-} mnh_irq_msg_t;
+	DMA_STATUS,
+};
 
 /** enum value used for pcie interupts passed to IRQ callback function */
-typedef enum {
+enum mnh_irq_pcie_t {
 	INVAL_PCIE = 0,
 	MSI_SEND,
 	VM_SEND,
 	LTR_SEND
-} mnh_irq_pcie_t;
+};
+
+/** enum value used for pcie interupts passed to IRQ callback function */
+enum  mnh_dma_type_t {
+	MNH_DMA_READ = 0,
+	MNH_DMA_WRITE
+};
+
+/** enum value used for pcie interupts passed to IRQ callback function */
+enum mnh_dma_status_t {
+	MNH_DMA_DONE = 0,
+	MNH_DMA_ABORT
+};
+
 
 /** structure used for mnh_send_vm() API */
 struct mnh_pcie_vm {
@@ -60,10 +73,12 @@ struct mnh_pcie_vm {
 
 /** structure used for IRQ callback function */
 struct mnh_pcie_irq {
-	mnh_irq_msg_t	msi_irq; /**< Will be 0 if no IRQ received
+	enum mnh_irq_msg_t	msi_irq;
+				/**< Will be 0 if no IRQ received
 				 *from the AP otherwise it holds IRQ type
 				 */
-	mnh_irq_pcie_t	pcie_irq; /**< Will be 0 if no IRQ in the pcie controller
+	enum mnh_irq_pcie_t	pcie_irq;
+				/**< Will be 0 if no IRQ in the pcie controller
 				  *otherwise it will hold the IRQ type
 				  */
 	uint32_t		vm; /**< Will be 0 if no vm was received
@@ -72,7 +87,9 @@ struct mnh_pcie_irq {
 };
 
 struct mnh_dma_irq {
-	/*TODO populate deal with ripple effect */
+	uint32_t		channel;
+	enum mnh_dma_type_t	type;
+	enum mnh_dma_status_t	status;
 };
 
 /**
@@ -90,7 +107,7 @@ struct mnh_sg_entry {
  ******************************************************************************/
 
 /** API to generate MSI to AP */
-int mnh_send_msi(mnh_msi_msg_t msi);
+int mnh_send_msi(enum mnh_msi_msg_t msi);
 
 /** API to generate LTR to AP */
 /* add more info */

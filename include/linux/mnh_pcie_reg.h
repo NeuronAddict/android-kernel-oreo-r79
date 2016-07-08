@@ -150,6 +150,18 @@
 #define MNH_PCIE_RADM_CPL_TIMEOUT		0x40000
 #define MNH_PCIE_TRGT_CPL_TIMEOUT		0x80000
 
+#define HWIO_PCIE_EP_TYPE0_HDR_BASE_ADDR	0x0
+#define HWIO_PCIE_EP_SPCIE_CAP_BASE_ADDR	0x148
+#define HWIO_PCIE_EP_L1SUB_CAP_BASE_ADDR	0x170
+#define HWIO_PCIE_EP_PM_CAP_BASE_ADDR		0x40
+#define HWIO_PCIE_EP_PCIE_CAP_BASE_ADDR		0x70
+#define HWIO_PCIE_EP_AER_CAP_BASE_ADDR		0x100
+#define HWIO_PCIE_EP_MSI_CAP_BASE_ADDR		0x50
+#define HWIO_PCIE_EP_LTR_CAP_BASE_ADDR		0x168
+#define HWIO_PCIE_EP_PORT_LOGIC_BASE_ADDR	0x700
+
+
+
 /* PCIE System interrupt */
 
 #ifdef MNH_PCIE_FPGA
@@ -193,5 +205,50 @@
 /* MSI Management */
 #define MNH_TC0					0x0
 #define MNH_TRIGGER_MSI				0x01
+
+/*HW IO macros */
+
+#define TYPE0_AD (pcie_ep_dev->conf_mem + HWIO_PCIE_EP_TYPE0_HDR_BASE_ADDR)
+
+#define TYPE0_IN(reg)			HW_IN(TYPE0_AD, PCIE_EP, reg)
+#define TYPE0_INf(reg, fld)		HW_INf(TYPE0_AD, PCIE_EP, reg, fld)
+#define TYP0_OUT(reg, val)		HW_OUT(TYPE0_AD, PCIE_EP, reg, val)
+#define TYPE0_OUTf(reg, fld, val)	HW_OUTf(TYPE0_AD, PCIE_EP,\
+							reg, fld, val)
+
+#define TYPE0_MASK(reg, fld)		HWIO_PCIE_EP_##reg##_##fld##_FLDMASK
+
+#define MSIAD (pcie_ep_dev->conf_mem + HWIO_PCIE_EP_MSI_CAP_BASE_ADDR)
+
+#define MSICAP_IN(reg)			HW_IN(MSIAD, PCIE_EP, reg)
+#define MSICAP_INf(reg, fld)		HW_INf(MSIAD, PCIE_EP, reg, fld)
+#define MSICAP_OUT(reg, val)		HW_OUT(MSIAD, PCIE_EP, reg, val)
+#define MSICAP_OUTf(reg, fld, val)	HW_OUTf(MSIAD, PCIE_EP, reg, fld, val)
+
+#define MSICAP_MASK(reg, fld)		HWIO_PCIE_EP_##reg##_##fld##_FLDMASK
+
+#define PORT_AD (pcie_ep_dev->conf_mem + HWIO_PCIE_EP_PORT_LOGIC_BASE_ADDR)
+
+#define PORT_IN(reg)			HW_IN(PORT_AD, PCIE_EP, reg)
+#define PORT_INf(reg, fld)		HW_INf(PORT_AD, PCIE_EP, reg, fld)
+#define PORT_OUT(reg, val)		HW_OUT(PORT_AD, PCIE_EP, reg, val)
+#define PORT_OUTf(reg, fld, val)	HW_OUTf(PORT_AD, PCIE_EP, reg, fld, val)
+
+#define PORT_MASK(reg, fld)		HWIO_PCIE_EP_##reg##_##fld##_FLDMASK
+
+#define CSR_AD pcie_ep_dev->clust_mem
+
+#define CSR_IN(reg)			HW_IN(CSR_AD,   PCIE_SS, reg)
+#define CSR_INx(reg, inst)		HW_INx(CSR_AD,  PCIE_SS, reg, inst)
+#define CSR_INf(reg, fld)		HW_INf(CSR_AD,  PCIE_SS, reg, fld)
+#define CSR_OUT(reg, val)		HW_OUT(CSR_AD,  PCIE_SS, reg, val)
+#define CSR_OUTx(reg, inst, val)	HW_OUTx(CSR_AD,  PCIE_SS,\
+						reg, inst, val)
+#define CSR_OUTf(reg, fld, val)		HW_OUTf(CSR_AD, PCIE_SS, reg, fld, val)
+
+#define CSR_MASK(reg, fld)		HWIO_PCIE_SS_##reg##_##fld##_FLDMASK
+
+#define MNH_BAD_ADDR  ((void *)0xFFFFFFFF)
+
 
 #endif

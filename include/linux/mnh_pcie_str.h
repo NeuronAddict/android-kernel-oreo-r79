@@ -42,13 +42,31 @@
 
 #define PCIE_SS_IRQ_MASK	0xF701FF
 
-#define UPPER(address) ((unsigned int)((address & 0xFFFFFFFF00000000) >> 32))
-#define LOWER(address) ((unsigned int)(address & 0x00000000FFFFFFFF))
+#define DMA_READ_DONE_MASK	0xFF		/* 7:0 */
+#define DMA_READ_ABORT_MASK	0xFF00		/* 15:8 */
+#define DMA_WRITE_DONE_MASK	0xFF0000	/* 16:23 */
+#define DMA_WRITE_ABORT_MASK	0xFF000000	/* 24:31 */
 
-struct mnh_pcieep_device {
+
+#define UPPER(address) ((uint32_t)((address & 0xFFFFFFFF00000000) >> 32))
+#define LOWER(address) ((uint32_t)(address & 0x00000000FFFFFFFF))
+
+/* definitions to test Scatter gather API */
+
+#define SGL_BUFFER 256
+#define SGL_SIZE 64
+
+struct mnh_pcie_ep_device {
 	struct device *dev;
-	int irq;
 	char name[64];
+	uint32_t sw_irq;
+	uint32_t cluster_irq;
+	void *conf_mem;
+	void *clust_mem;
+	void *outb_mem;
+	struct resource *config_mem;
+	struct resource *cluster_mem;
+	struct resource *outbound_mem;
 };
 
 
