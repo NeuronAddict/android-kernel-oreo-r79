@@ -54,11 +54,14 @@
 #include <soc/mnh/mnh-hwio-mipi-top.h>
 
 void * dev_addr_map[MIPI_MAX] = { NULL };
+uint32_t mipicsi_read_data;
 
 void mipicsi_util_save_virt_addr(enum mipicsi_top_dev dev, void *base_addr)
 {
   dev_addr_map[dev] = base_addr;
 }
+
+static struct device *mipicsi_top_device;
 
 /* these macros assume a void * in scope named baddr */
 #define TOP_IN(reg)            HW_IN(baddr,   MIPI_TOP, reg)
@@ -68,6 +71,7 @@ void mipicsi_util_save_virt_addr(enum mipicsi_top_dev dev, void *base_addr)
 
 #define TOP_MASK(reg,fld)      HWIO_MIPI_TOP_##reg##_##fld##_FLDMASK
 
+#define MAX_STR_COPY	32
 
 /*
  * Linked list that contains the installed devices
@@ -136,6 +140,22 @@ void top_dphy_write(enum mipicsi_top_dev dev,
 			   uint8_t offset, uint8_t data)
 {
 	/* TO DO - Write for TOP Registers */
+}
+
+void mipicsi_top_reg_write(enum mipicsi_top_dev dev,
+			   uint8_t offset, uint8_t data)
+{
+	writel(data, (uint64_t)dev_addr_map[dev] + offset);
+}
+
+uint32_t mipicsi_top_reg_read(enum mipicsi_top_dev dev,
+			   uint8_t offset)
+{
+	uint32_t ret_val = 0;
+	
+	ret_val = readl((uint64_t)dev_addr_map[dev] + offset);
+
+	return ret_val;
 }
 
 int32_t top_set_pll(struct mipicsi_top_cfg *config)
@@ -470,6 +490,191 @@ void mipicsi_top_get_mux(struct mipicsi_top_mux_data *mux_data)
 	/* TO DO */
 }
 
+static ssize_t show_sysfs_mipicsi_top_init(struct device *dev,
+				struct device_attribute *attr,
+				char *buf)
+{
+
+	/* MIPICSI HW init */
+	mipicsi_top_hw_init();
+	return snprintf(buf, MAX_STR_COPY, "MIPI: HW init\n");
+}
+
+static ssize_t sysfs_mipicsi_top_init(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf,
+				size_t count)
+{
+	return count;
+}
+
+static DEVICE_ATTR(mipicsi_top_init, S_IRUGO | S_IWUSR | S_IWGRP,
+			show_sysfs_mipicsi_top_init, sysfs_mipicsi_top_init);
+			
+
+/* Create sysfs for mipicsi read register */
+static ssize_t show_sysfs_mipicsi_reg_read(struct device *dev,
+				struct device_attribute *attr,
+				char *buf)
+{
+        ssize_t strlen = 0;
+	strlen = snprintf(buf, MAX_STR_COPY, "%lx\n",
+				(unsigned long) mipicsi_read_data);
+	mipicsi_read_data = 0;
+
+	return strlen;
+}
+
+static ssize_t sysfs_mipicsi_reg_read(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf,
+				size_t count)
+{
+        uint32_t val;
+        enum mipicsi_top_dev mipi_dev;
+        uint8_t offset = 0;
+        uint8_t *token;
+        const char *delim = ";";
+
+        token = strsep(&buf, delim);
+        if (token) {
+                if (kstrtoul(token, 0, &val))
+                return -EINVAL;
+        if ((val < MIPI_RX0) || (val > MIPI_MAX))
+                return -EINVAL;
+        mipi_dev = val;
+        } else {
+                return -EINVAL;
+        }
+
+        token = strsep(&buf, delim);
+
+        if (token) {
+                if (kstrtoul(token, 0, &val))
+                return -EINVAL;
+        if ((val < 0) || (val > 0xFF))
+                return -EINVAL;
+        offset = val;
+        } else {
+                return -EINVAL;
+        }
+
+	mipicsi_read_data = mipicsi_top_reg_read(mipi_dev, offset);
+        
+	return count;
+
+}
+
+static DEVICE_ATTR(mipicsi_reg_read, S_IRUGO | S_IWUSR | S_IWGRP,
+			show_sysfs_mipicsi_reg_read, sysfs_mipicsi_reg_read);			
+
+/* Create sysfs for mipicsi write register */
+static ssize_t show_sysfs_mipicsi_reg_write(struct device *dev,
+				struct device_attribute *attr,
+				char *buf)
+{
+
+	return snprintf(buf, MAX_STR_COPY, "MIPICSI: cat mipicsi_reg_write not supported \n");
+}
+
+static ssize_t sysfs_mipicsi_reg_write(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf,
+				size_t count)
+{
+        uint32_t val;
+        enum mipicsi_top_dev mipi_dev;
+        uint8_t offset = 0;
+        uint8_t reg_data = 0;
+        uint8_t *token;
+        const char *delim = ";";
+
+
+        token = strsep(&buf, delim);
+        if (token) {
+                if (kstrtoul(token, 0, &val))
+                return -EINVAL;
+        if ((val < MIPI_RX0) || (val > MIPI_MAX))
+                return -EINVAL;
+        mipi_dev = val;
+        } else {
+                return -EINVAL;
+        }
+
+        token = strsep(&buf, delim);
+
+        if (token) {
+                if (kstrtoul(token, 0, &val))
+                return -EINVAL;
+        if ((val < 0) || (val > 0xFF))
+                return -EINVAL;
+        offset = val;
+        } else {
+                return -EINVAL;
+        }
+
+        token = strsep(&buf, delim);
+
+        if (token) {
+                if (kstrtoul(token, 0, &val))
+                return -EINVAL;
+        if ((val < 0) || (val > 0xFF))
+                return -EINVAL;
+        reg_data = val;
+        } else {
+                return -EINVAL;
+        }
+
+        mipicsi_top_reg_write(mipi_dev, offset, reg_data);
+
+	return count;
+}
+
+static DEVICE_ATTR(mipicsi_reg_write, S_IRUGO | S_IWUSR | S_IWGRP,
+			show_sysfs_mipicsi_reg_write, sysfs_mipicsi_reg_write);					
+static int init_sysfs(void)
+{
+	int ret;
+
+	pr_info("MIPI TOP: init_sysfs\n");
+	ret = device_create_file(mipicsi_top_device,
+			&dev_attr_mipicsi_top_init);
+	if (ret) {
+		dev_err(mipicsi_top_device, "Failed to create sysfs: top init\n");
+		return -EINVAL;
+	}
+
+	pr_info("MIPI TOP: init_sysfs\n");
+	ret = device_create_file(mipicsi_top_device,
+			&dev_attr_mipicsi_reg_read);
+	if (ret) {
+		dev_err(mipicsi_top_device, "Failed to create sysfs: mipicsi_reg_read\n");
+		return -EINVAL;
+	}
+
+	pr_info("MIPI TOP: init_sysfs\n");
+	ret = device_create_file(mipicsi_top_device,
+			&dev_attr_mipicsi_reg_write);
+	if (ret) {
+		dev_err(mipicsi_top_device, "Failed to create sysfs: mipicsi_reg_write\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static void clean_sysfs(void)
+{
+	device_remove_file(mipicsi_top_device,
+			&dev_attr_mipicsi_top_init);
+
+	device_remove_file(mipicsi_top_device,
+			&dev_attr_mipicsi_reg_read);
+
+	device_remove_file(mipicsi_top_device,
+			&dev_attr_mipicsi_reg_write);
+}
+
 int mipicsi_top_probe(struct platform_device *pdev)
 {
 	int ret = 0;
@@ -493,6 +698,9 @@ int mipicsi_top_probe(struct platform_device *pdev)
 
 	/* Update the device node */
 	dev->dev = &pdev->dev;
+
+	/* Initialize sysfs dev */
+        mipicsi_top_device = dev->dev;
 
 #ifdef JUNO_BRINGUP
 	dev_info(dev->dev, "Creating bogus memregion for PO\n");
@@ -554,6 +762,9 @@ int mipicsi_top_probe(struct platform_device *pdev)
 
 	/* HW init */
 	ret = mipicsi_top_hw_init();
+	
+	init_sysfs();
+	
 #if 0
 	if (ret) {
 		dev_err(&pdev->dev, "Could not init Intel MIPI TOP %d\n", ret);
@@ -602,6 +813,7 @@ static int mipicsi_top_remove(struct platform_device *pdev)
 	struct list_head *list;
 
 	dev_dbg(&pdev->dev, "Removing MIPI CSI-2 module\n");
+	clean_sysfs();
 	while (!list_empty(&devlist_global)) {
 		list = devlist_global.next;
 		list_del(list);
