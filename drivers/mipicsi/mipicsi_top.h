@@ -18,6 +18,8 @@
 #define MIPI_TOP_H_
 
 #include <linux/mutex.h>
+#include <linux/mipibridge.h>
+ 
 #include "mipicsi_dc_dphy.h"
 
 #define MIPICSI_TOP_MAX_LINKS 5
@@ -44,7 +46,7 @@ enum TX_BYP_SEL_VALUES {
 
 /* ENABLE EMULATION SUPPORT */
 #define MNH_EMULATION
-
+#if 0
 enum mipicsi_top_dev {
 	MIPI_RX0,
 	MIPI_RX1,
@@ -55,6 +57,7 @@ enum mipicsi_top_dev {
 	MIPI_IPU,
 	MIPI_MAX = MIPI_IPU
 };
+#endif
 
 enum csi_data_type {
 	CSI2_INVALID          = -1,
@@ -130,20 +133,6 @@ struct mipicsi_top_vpg {
 	uint32_t    start_line;   /* start line num */
 	uint32_t    step_line;    /* step line num */
 };
-
-struct mipicsi_top_device {
-	struct device	    *dev;     /* Device node */
-	struct list_head    devlist;  /* Device list */
-	spinlock_t          slock;    /* Spinlock */
-	struct mutex        mutex;    /* Mutex */
-
-	/** Device Tree Information */
-	void __iomem      *base_address;
-	uint32_t           mem_size;
-	uint32_t           top_irq_number;
-	uint32_t           top_irq;
-};
-
 
 int mipicsi_top_start(struct mipicsi_top_cfg *config);
 int mipicsi_top_stop(enum mipicsi_top_dev dev);

@@ -45,10 +45,12 @@
 #include <linux/string.h>
 #include <linux/of_device.h>
 #include <linux/sysfs.h>
+#include "mipicsi_chardev.h"
 #include "mipicsi_top.h"
 #include "mipicsi_host.h"
 #include "mipicsi_device.h"
 #include "mipicsi_util.h"
+#include "mipi_dev.h"
 
 #include <linux/intel-hwio.h>
 #include <soc/mnh/mnh-hwio-mipi-top.h>
@@ -72,6 +74,8 @@ static struct device *mipicsi_top_device;
 #define TOP_MASK(reg,fld)      HWIO_MIPI_TOP_##reg##_##fld##_FLDMASK
 
 #define MAX_STR_COPY	32
+
+#define DEVICE_NAME "mipicsitop"
 
 /*
  * Linked list that contains the installed devices
@@ -145,6 +149,7 @@ void top_dphy_write(enum mipicsi_top_dev dev,
 void mipicsi_top_reg_write(enum mipicsi_top_dev dev,
 			   uint8_t offset, uint8_t data)
 {
+	pr_debug("writing dev %d reg 0x%x val 0x%x \n", dev, offset, data);
 	writel(data, (uint64_t)dev_addr_map[dev] + offset);
 }
 
@@ -153,7 +158,11 @@ uint32_t mipicsi_top_reg_read(enum mipicsi_top_dev dev,
 {
 	uint32_t ret_val = 0;
 	
+	pr_debug("reading dev %d reg 0x%x \n", dev, offset);
+	
 	ret_val = readl((uint64_t)dev_addr_map[dev] + offset);
+	
+	pr_debug("ret_val 0x%x \n", ret_val);
 
 	return ret_val;
 }
@@ -539,10 +548,10 @@ static ssize_t sysfs_mipicsi_reg_read(struct device *dev,
         token = strsep(&buf, delim);
         if (token) {
                 if (kstrtoul(token, 0, &val))
-                return -EINVAL;
-        if ((val < MIPI_RX0) || (val > MIPI_MAX))
-                return -EINVAL;
-        mipi_dev = val;
+                	return -EINVAL;
+        	if ((val < MIPI_RX0) || (val > MIPI_MAX))
+                	return -EINVAL;
+        	mipi_dev = val;
         } else {
                 return -EINVAL;
         }
@@ -558,11 +567,9 @@ static ssize_t sysfs_mipicsi_reg_read(struct device *dev,
         } else {
                 return -EINVAL;
         }
-
 	mipicsi_read_data = mipicsi_top_reg_read(mipi_dev, offset);
-        
+	
 	return count;
-
 }
 
 static DEVICE_ATTR(mipicsi_reg_read, S_IRUGO | S_IWUSR | S_IWGRP,
@@ -675,12 +682,36 @@ static void clean_sysfs(void)
 			&dev_attr_mipicsi_reg_write);
 }
 
+struct mipi_top_operations mipi_top_ioctl = {
+        .set_rx_mux = mipicsi_top_set_mux,
+        .get_rx_mux = mipicsi_top_get_mux,
+	.writereg = mipicsi_top_reg_write,
+	.readreg = mipicsi_top_reg_read,
+};
+
+int mipicsi_top_init_chardev(struct mipicsi_top_device *mipidev)
+{
+        int ret;
+
+        mipidev->chardev.mipidev = mipidev;
+        mipidev->chardev.owner = THIS_MODULE;
+        mipidev->chardev.deviceName = DEVICE_NAME;
+        mipidev->chardev.topOps = mipi_top_ioctl;
+        ret = mipi_chardev_init(&mipidev->chardev);
+        if (ret < 0) {
+                dev_err(mipidev->dev, "Could not init character device\n");
+                return ret;
+        }
+        return 0;
+}
+
 int mipicsi_top_probe(struct platform_device *pdev)
 {
 	int ret = 0;
 	int error = 0;
 	struct mipicsi_top_device *dev;
 	int irq_number = 0;
+
 #ifdef JUNO_BRINGUP
 	void *iomem;
 #else
@@ -730,6 +761,10 @@ int mipicsi_top_probe(struct platform_device *pdev)
 		goto free_mem;
 	}
 #endif
+
+        /* Initialize character device */
+        ret = mipicsi_top_init_chardev(dev);
+
 	pr_info("MIPI TOP: ioremapped to %p\n", dev->base_address);
 	mipicsi_util_save_virt_addr(MIPI_TOP, dev->base_address);
 
