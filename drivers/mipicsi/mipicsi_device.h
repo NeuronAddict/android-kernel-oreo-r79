@@ -17,18 +17,6 @@ struct mipicsi_device_dev {
 	uint32_t           device_irq;
 };
 
-struct mipicsi_pll {
-	uint32_t  output_freq;          /* Active output frequency */
-	uint32_t  input_freq;           /* Active input frequency */
-	uint32_t  ref_freq;             /* Reference Frequency */
-	uint32_t  hsfreq;               /* hsfreq */
-	uint8_t   vco_range;            /* vcorange */
-	uint8_t   cp_current;           /* icpctrl */
-	uint8_t   lpf_resistor;         /* lpfctrl */
-	uint32_t  loop_div;             /* (M) */
-	uint32_t  input_div;            /* (N) */
-	uint8_t	  output_div;           /* (P) */
-};
 
 void mipicsi_device_reset(enum mipicsi_top_dev dev);
 void mipicsi_device_dphy_reset(enum mipicsi_top_dev dev);

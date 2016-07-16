@@ -45,6 +45,7 @@
 #include "mipicsi_device.h"
 #include "mipicsi_util.h"
 #include "mipicsi_dc_dphy.h"
+#include "mipicsi_pll.h"
 
 #include <linux/intel-hwio.h>
 #include <soc/mnh/mnh-hwio-mipi-tx.h>
@@ -158,60 +159,45 @@ int32_t mipicsi_device_set_pll(struct mipicsi_top_cfg *config)
 {
 	enum mipicsi_top_dev dev;
 	struct mipicsi_pll pll;
+	uint32_t val;
 
 	dev = config->dev;
 
 #ifdef MNH_EMULATION
-#if 0
-	/* HARD CODE PLL for 1.5 GHzs, and input 12.5 Mhz */
-	pll.hsfreq = 0x3c;
-	pll.vco_range = 0x03;
-	pll.cp_current = 0x06;
-	pll.lpf_resistor = 0x08;
-	pll.loop_div = 0x12A;
-	pll.input_div = 0x04;
-	pll.output_div = 0;
 
-	/* Configure hsfreqrange according to table Frequency Ranges and
-	 * Defaults in "PLL Locking Mode and AFE Initialization" on page 74
-	 */
+	mipicsi_pll_calc(config->mbps, &pll);
+
+
 	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_HS_RX_CTRL_L0,
 			       (pll.hsfreq << 1));
-
-
-	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_BYPASS, 0x01);
 
 	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_BIAS_FCC_VCO, (0x1 << 7) |
 			       (pll.vco_range << 3) | 0);
 
-	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_CP_LOCK_BYP_ULP,
-			       (0x00 << 4) | (pll.cp_current << 0));
-
 	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_LPF_CP_CTRL, (0x01 << 7) |
 			       (0x01 << 6) | (pll.lpf_resistor << 0));
 
-	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_INPUT_DIV_RAT,
-			       pll.input_div);
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_CP_LOCK_BYP_ULP,
+			       (0x00 << 4) | (pll.cp_current << 0));
 
-	mipicsi_dev_dphy_write_set(dev, R_CSI2_DCPHY_PLL_LOOP_DIV_RAT,
-				   ((pll.loop_div >> 0) & 0x1F), 0, 1);
-	mipicsi_dev_dphy_write_set(dev, R_CSI2_DCPHY_PLL_LOOP_DIV_RAT,
-				   ((pll.loop_div >> 5) & 0x1F), 1, 1);
-
+	/* Program log2(output divider) to register */
+	val = ilog2(pll.output_div);
 	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_DIV_RAT_CTRL,
 			       ((0x1<<5) | (0x1<<4) | (0x1<<2) |
-				(pll.output_div<<0)));
-#else
-	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_HS_RX_CTRL_L0,       0x10);
-	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_BIAS_FCC_VCO,    0x80);
-	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_LPF_CP_CTRL,     0xD0);
-	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_CP_LOCK_BYP_ULP, 0x07);
-	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_DIV_RAT_CTRL,    0x34);
-	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_INPUT_DIV_RAT,   0x09);
-	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_LOOP_DIV_RAT,    0x1E);
-	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_LOOP_DIV_RAT,    0x87);
-#endif // #if 0
+				(val<<0)));
+
+	/* Program N-1 to register */
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_INPUT_DIV_RAT,
+			       pll.input_div-1);
+
+	/* Program M-2 to register */
+	mipicsi_dev_dphy_write_set(dev, R_CSI2_DCPHY_PLL_LOOP_DIV_RAT,
+				   (((pll.loop_div-2) >> 0) & 0x1F), 0, 1);
+	mipicsi_dev_dphy_write_set(dev, R_CSI2_DCPHY_PLL_LOOP_DIV_RAT,
+				   (((pll.loop_div-2) >> 5) & 0x1F), 1, 1);
+
 #endif
+	/* TO DO - Gen 3 Support */
 	return 0;
 }
 
@@ -250,16 +236,16 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 {
 
 #ifdef MNH_EMULATION
-	uint32_t data = 0;
+	uint32_t data = 0, val = 0;
 	uint8_t counter = 0;
 	enum mipicsi_top_dev dev = config->dev;
 	void * baddr = dev_addr_map[dev];
 	const uint32_t stop_mask =
-	  TX_MASK(PHY_STATUS, TXSTOPSTATE_CLK) |
-	  TX_MASK(PHY_STATUS, TXSTOPSTATE_L0) |
-	  TX_MASK(PHY_STATUS, TXSTOPSTATE_L1) | 
-	  TX_MASK(PHY_STATUS, TXSTOPSTATE_L2) |
-	  TX_MASK(PHY_STATUS, TXSTOPSTATE_L3);
+		TX_MASK(PHY_STATUS, TXSTOPSTATE_CLK) |
+		TX_MASK(PHY_STATUS, TXSTOPSTATE_L0) |
+		TX_MASK(PHY_STATUS, TXSTOPSTATE_L1) | 
+		TX_MASK(PHY_STATUS, TXSTOPSTATE_L2) |
+		TX_MASK(PHY_STATUS, TXSTOPSTATE_L3);
 	if (baddr) {
 
 		if ((dev != MIPI_TX0) && (dev != MIPI_TX1)) {
@@ -320,10 +306,14 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 		 * BIASEXTR internal resistor control
 		 * LPTX bias current control
 		 */
-		// Do we really want to send this same test code with different
-		// values?
-		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_AFE_BYPASS_BANDGAP, 0x04);
-		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_AFE_BYPASS_BANDGAP, 0x40);
+		val = 0x04;
+		if (config->mbps > 1000)
+			val |= (1<<10);
+
+		mipicsi_dev_dphy_write_set(dev, R_CSI2_DCPHY_AFE_BYPASS_BANDGAP,
+					   ((val >> 0) & 0x3F), 0, 2);
+		mipicsi_dev_dphy_write_set(dev, R_CSI2_DCPHY_AFE_BYPASS_BANDGAP,
+					   ((val >> 6) & 0x3F), 1, 2);
 
 		TX_OUT(PHY_RSTZ, 0x07);
 		udelay(1);

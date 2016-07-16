@@ -471,7 +471,7 @@ int mipicsi_top_hw_init(void)
 
 	cfg.dev = MIPI_RX0;
 	cfg.num_lanes = 4;
-	cfg.mbps = 1500;
+	cfg.mbps = 640;
 	mipicsi_top_start(&cfg);
 
 	cfg.dev = MIPI_TX0;
