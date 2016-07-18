@@ -159,7 +159,7 @@
 		clocks = <&soc_uartclk>, <&soc_refclk100mhz>;
 		clock-names = "uartclk", "apb_pclk";
 	};
-
+/*
 	spi@64043000 {
 		compatible = "snps,dw-apb-ssi";
 		#address-cells = <1>;
@@ -168,6 +168,7 @@
 		interrupts = <GIC_SPI 168 IRQ_TYPE_LEVEL_HIGH>;
 		num-cs = <4>;
 	};
+*/
 
 	pcie@60102000 {
 		compatible = "snps, dw_pcie_ep";
@@ -212,10 +213,12 @@
 		};
 */	};
 
-	axi@64402000 {
+
+	axi@60000000 {
 		compatible = "arm, mth-interrupt";
-		reg = <0x0 0x64402000 0x0 0x1000>;
+		reg = <0x0 0x60000000 0x0 0x10000000>;
 		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
+		
 	};	
 
     /* i2c devices on mnh */
@@ -225,7 +228,7 @@
 		reg = <0x0 0x60087000 0x0 0x1000>;
 		#address-cells = <1>;
 		#size-cells = <0>;
-		interrupts = <GIC_SPI 168 IRQ_TYPE_LEVEL_HIGH>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
 		clock-frequency = <400000>;
 		i2c-sda-hold-time-ns = <500>;
 		clocks = <&soc_mnh25mhz>;  
@@ -236,7 +239,7 @@
 		reg = <0x0 0x60088000 0x0 0x1000>;
 		#address-cells = <1>;
 		#size-cells = <0>;
-		interrupts = <GIC_SPI 168 IRQ_TYPE_LEVEL_HIGH>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
 		clock-frequency = <400000>;
 		i2c-sda-hold-time-ns = <500>;
 		clocks = <&soc_mnh25mhz>;  
@@ -252,7 +255,7 @@
 		reg = <0x0 0x60089000 0x0 0x1000>;
 		#address-cells = <1>;
 		#size-cells = <0>;
-		interrupts = <GIC_SPI 168 IRQ_TYPE_LEVEL_HIGH>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
 		clock-frequency = <400000>;
 		i2c-sda-hold-time-ns = <500>;
 		clocks = <&soc_mnh25mhz>;  
@@ -263,7 +266,7 @@
 		reg = <0x0 0x6008A000 0x0 0x1000>;
 		#address-cells = <1>;
 		#size-cells = <0>;
-		interrupts = <GIC_SPI 168 IRQ_TYPE_LEVEL_HIGH>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
 		clock-frequency = <400000>;
 		i2c-sda-hold-time-ns = <500>;
 		clocks = <&soc_mnh25mhz>;  
@@ -273,7 +276,7 @@
 		reg = <0x0 0x60086000 0x0 0x1000>;
 		#address-cells = <1>;
 		#size-cells = <0>;
-		interrupts = <GIC_SPI 168 IRQ_TYPE_LEVEL_HIGH>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
 
 		porta:  gpio-controller@0 {
                  compatible = "snps,dw-apb-gpio-port";
@@ -311,7 +314,7 @@
 		reg = <0x0 0x6008B000 0x0 0x1000>;
 		#address-cells = <1>;
 		#size-cells = <0>;
-		interrupts = <GIC_SPI 168 IRQ_TYPE_LEVEL_HIGH>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
 		clock-frequency = <25000000>;
 		reg-shift = <2>;
 		reg-io-width = <4>;
@@ -324,13 +327,14 @@
 		reg = <0x0 0x6008C000 0x0 0x1000>;
 		#address-cells = <1>;
 		#size-cells = <0>;
-		interrupts = <GIC_SPI 168 IRQ_TYPE_LEVEL_HIGH>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
 		clock-frequency = <25000000>;
 		reg-shift = <2>;
 		reg-io-width = <4>;
 		dcd-override;
 		ri-override;
 	};
+
 /*
 	wdt@60082000 {
 		compatible = "snps,dw-wdt";
