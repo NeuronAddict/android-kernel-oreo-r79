@@ -212,9 +212,18 @@
 
 #define TYPE0_IN(reg)			HW_IN(TYPE0_AD, PCIE_EP, reg)
 #define TYPE0_INf(reg, fld)		HW_INf(TYPE0_AD, PCIE_EP, reg, fld)
-#define TYP0_OUT(reg, val)		HW_OUT(TYPE0_AD, PCIE_EP, reg, val)
+#define TYPE0_OUT(reg, val)		HW_OUT(TYPE0_AD, PCIE_EP, reg, val)
 #define TYPE0_OUTf(reg, fld, val)	HW_OUTf(TYPE0_AD, PCIE_EP,\
 							reg, fld, val)
+#define TYPE0_SD (pcie_ep_dev->conf_mem + 0x1000 +\
+					HWIO_PCIE_EP_TYPE0_HDR_BASE_ADDR)
+
+#define TYPE0S_IN(reg)			HW_IN(TYPE0_SD, PCIE_EP, reg)
+#define TYPE0S_INf(reg, fld)		HW_INf(TYPE0_SD, PCIE_EP, reg, fld)
+#define TYPE0S_OUT(reg, val)		HW_OUT(TYPE0_SD, PCIE_EP, reg, val)
+#define TYPE0S_OUTf(reg, fld, val)	HW_OUTf(TYPE0_SD, PCIE_EP,\
+								reg, fld, val)
+
 
 #define TYPE0_MASK(reg, fld)		HWIO_PCIE_EP_##reg##_##fld##_FLDMASK
 

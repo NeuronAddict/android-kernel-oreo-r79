@@ -100,6 +100,16 @@ struct mnh_sg_entry {
 	size_t size;       /**< size of entry */
 };
 
+struct mnh_dma_ll_element {
+	uint32_t header;
+	uint32_t size;
+	uint32_t sar_low;
+	uint32_t sar_high;
+	uint32_t dar_low;
+	uint32_t dar_high;
+};
+
+
 /*******************************************************************************
  *
  *  APIs exposed
@@ -142,13 +152,13 @@ int mnh_pcie_write(uint8_t *buff, uint32_t size, uint64_t adr);
 * @return number of sg[] entries filled out by the routine,
 * negative if overflow.
 */
-int mnh_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg[],
+int mnh_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
 					uint32_t maxsg);
 
 
-int mnh_ll_build(struct mnh_sg_entry *src_sg[], struct mnh_sg_entry *dst_sg[],
-					uint64_t *start_addr);
+int mnh_ll_build(struct mnh_sg_entry *src_sg, struct mnh_sg_entry *dst_sg,
+					phys_addr_t **start_addr);
 
-int mnh_ll_destroy(uint64_t *start_addr);
+int mnh_ll_destroy(phys_addr_t *start_addr);
 
 #endif

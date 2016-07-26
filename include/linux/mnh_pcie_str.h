@@ -51,6 +51,10 @@
 #define UPPER(address) ((uint32_t)((address & 0xFFFFFFFF00000000) >> 32))
 #define LOWER(address) ((uint32_t)(address & 0x00000000FFFFFFFF))
 
+#define B8M_BAR			0x7FFFFF
+#define B4M_BAR			0x3FFFFF
+
+
 /* definitions to test Scatter gather API */
 
 #define SGL_BUFFER 256
@@ -105,13 +109,6 @@ struct mnh_outb_region {
 	uint64_t target_pcie_address;  /**< dest address */
 };
 
-struct mnh_dma_ll_element {
-	uint32_t header;
-	uint32_t size;
-	uint32_t sar_low;
-	uint32_t sar_high;
-	uint32_t dar_low;
-	uint32_t dar_high;
-};
+
 
 #endif
