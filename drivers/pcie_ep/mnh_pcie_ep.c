@@ -161,7 +161,6 @@ static int pcie_link_init(void)
 		* at this point in time
 		*/
 		/* Set BAR sizes */
-		TYPE0_OUT(TYPE0_HDR_DEVICE_ID_VENDOR_ID, 0x31428086);
 
 		TYPE0S_OUT(TYPE0_HDR_BAR2, B8M_BAR);
 		TYPE0S_OUT(TYPE0_HDR_BAR4, B4M_BAR);
