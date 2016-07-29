@@ -59,6 +59,7 @@ ssize_t read_size(struct file *filp, char *buffer, size_t length, loff_t *offset
 ssize_t write_size( struct file *filp, const char __user *buff, size_t len, loff_t *data);
 
 ssize_t write_delete( struct file *filp, const char __user *buff,size_t len, loff_t *data);
+ssize_t write_delete_all( struct file *filp, const char __user *buff,size_t len, loff_t *data);
 ssize_t read_last_id(struct file *filp, char *buffer, size_t length, loff_t *offset);
 
 ssize_t read_address(struct file *filp, char *buffer, size_t length, loff_t *offset);
@@ -73,6 +74,7 @@ static struct proc_dir_entry *proc_entry_buffer;
 static struct proc_dir_entry *proc_entry_create;
 static struct proc_dir_entry *proc_entry_id;
 static struct proc_dir_entry *proc_entry_delete;
+static struct proc_dir_entry *proc_entry_delete_all;
 static struct proc_dir_entry *proc_entry_address;
 static struct proc_dir_entry *proc_entry_size;
 
@@ -120,6 +122,14 @@ static struct file_operations fops_id = {
 static struct file_operations fops_delete = {
   .read = (void *) 0,
   .write =write_delete,
+  .open = open_all,
+  .release = release_all
+
+};
+
+static struct file_operations fops_delete_all = {
+  .read = (void *) 0,
+  .write =write_delete_all,
   .open = open_all,
   .release = release_all
 
@@ -177,6 +187,13 @@ static int __init mnh_pci_test_buffers_init(void){
     printk(KERN_INFO "address file not created\n");
     goto cleanup_4;
   }
+  proc_entry_delete_all = proc_create("pci_test_delete_all", 0222, NULL, &fops_delete_all);
+  if (proc_entry_delete_all==NULL){
+    ret = -1;
+    printk(KERN_INFO "delete all file not created\n");
+    goto cleanup_5;
+  }
+
   proc_entry_size = proc_create("pci_test_size", 0666, NULL, &fops_size);
   if (proc_entry_size ==NULL){
     ret = -1;
@@ -187,8 +204,13 @@ static int __init mnh_pci_test_buffers_init(void){
     ret = 0;
     goto out;
   }
- cleanup_4:
+
+  remove_proc_entry("pci_test_delete_all", proc_entry_address);
+
+ cleanup_5:
   remove_proc_entry("pci_test_address", proc_entry_address);
+ cleanup_4:
+  remove_proc_entry("pci_test_create", proc_entry_address);
  cleanup_3:
   remove_proc_entry("pci_test_delete", proc_entry_delete);
  cleanup_2:
@@ -207,6 +229,7 @@ static void __exit mnh_pci_test_buffers_cleanup(void)
   remove_proc_entry("pci_test_buffer", proc_entry_buffer);
   remove_proc_entry("pci_test_address", proc_entry_address);
   remove_proc_entry("pci_test_size", proc_entry_size);
+  remove_proc_entry("pci_test_delete_all", proc_entry_size);
 
 
 
@@ -333,6 +356,22 @@ ssize_t write_delete(struct file *filp, const char __user *buff,size_t len, loff
     iounmap(buffer_entry->buffer);
     kfree(buffer_entry);
   }
+  return len;
+}
+ssize_t write_delete_all(struct file *filp, const char __user *buff,size_t len, loff_t *data){
+
+  struct id_buffer *temp_entry = (struct id_buffer *) 0;
+  struct list_head *node;
+  struct list_head *tmp;
+  list_for_each_safe(node,tmp, &id_buffer_list){
+    temp_entry = list_entry(node, struct id_buffer, list);
+    printk(KERN_INFO "delete buffer for id %d\n", temp_entry->id);
+    release_mem_region(temp_entry->phys_addr, temp_entry->length);
+    list_del(node);
+    iounmap(temp_entry->buffer);
+    kfree(temp_entry);
+  }
+
   return len;
 }
 
