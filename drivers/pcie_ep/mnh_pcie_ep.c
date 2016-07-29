@@ -74,7 +74,6 @@ uint32_t rw_address_sysfs, rw_size_sysfs;
 struct mnh_pcie_irq sysfs_irq;
 
 static int pcie_set_inbound_iatu(struct mnh_inb_window *inb);
-static int pcie_clear_msi_mask(void);
 static int pcie_ll_destroy(phys_addr_t *start_addr);
 
 /* read from pcie cluster register */
@@ -139,7 +138,6 @@ static int pcie_link_up(void)
 
 static int pcie_link_init(void)
 {
-	struct mnh_inb_window iatu;
 
 	if (!pcie_link_up()) {
 		/* Magic value Only used during boot */
@@ -178,7 +176,6 @@ static int pcie_link_init(void)
 
 	/* Enable interupts */
 	CSR_OUT(PCIE_SS_INTR_EN, PCIE_SS_IRQ_MASK);
-	pcie_clear_msi_mask();
 
 	return  CSR_INx(PCIE_GP, 0);
 }
@@ -202,7 +199,12 @@ static int pcie_send_msi_p(uint32_t msi)
 	data = CSR_IN(PCIE_MSI_TRIG) &
 		CSR_MASK(PCIE_MSI_TRIG, PCIE_VEN_MSI_REQ);
 	tc = MNH_TC0 << 13;
-	msg = msi << 8;
+	if (pcie_ep_dev->msimode == 2)
+		msg = msi << 8;
+	else {
+		msg = 0x0 << 8;
+		CSR_OUTx(PCIE_GP, 3, msi);
+	}
 	data |= tc | msg;
 	CSR_OUT(PCIE_MSI_TRIG, data);
 	CSR_OUTf(PCIE_MSI_TRIG, PCIE_VEN_MSI_REQ, 1);
@@ -227,32 +229,22 @@ static int pcie_get_msi_mask(void)
 	return mask;
 }
 
-static int pcie_clear_msi_mask(void)
-{
-	uint32_t data;
-
-	data = MSICAP_INf(MSI_CAP_PCI_MSI_CAP_ID_NEXT_CTRL,
-			PCI_MSI_64_BIT_ADDR_CAP);
-	if (data) {
-	/* 64 bit ADDR used */
-		MSICAP_OUT(MSI_CAP_MSI_CAP_OFF_10H, 0);
-	} else {
-	/* 32 bit ADDR used */
-		MSICAP_OUT(MSI_CAP_MSI_CAP_OFF_0CH, 0);
-	}
-
-	return 0;
-}
-
 static int pcie_check_msi_mask(uint32_t msi)
 {
 	uint32_t vmask, mask;
 
-	vmask = 0x1 << (msi-1);
+	if (pcie_ep_dev->msimode == 2)
+		vmask = 0x1 << (msi);
+	else
+		vmask = 0x1;
 	mask = pcie_get_msi_mask();
 	if (mask & vmask) {
 		/* need to set pending bit, than start polling */
-		CSR_OUT(PCIE_MSI_PEND, CSR_IN(PCIE_MSI_PEND) | mask);
+		if (CSR_IN(PCIE_MSI_PEND) & vmask)
+			dev_err(pcie_ep_dev->dev, "PEND MSI overflow\n");
+		CSR_OUT(PCIE_MSI_PEND, CSR_IN(PCIE_MSI_PEND) | vmask);
+		if (pcie_ep_dev->msimode == 1)
+			pcie_ep_dev->pendingmsi = msi;
 		cancel_delayed_work_sync(&msi_work);
 		schedule_delayed_work(&msi_work, MSI_DELAY);
 		return 1;
@@ -272,7 +264,12 @@ static void process_pend_msi(uint32_t pend, uint32_t vmask, uint32_t arg)
 {
 	if ((pend & b2h(arg)) &&
 		!(vmask & b2h(arg))) {
-		pcie_send_msi_p(arg);
+		if (pcie_ep_dev->msimode == 2)
+			pcie_send_msi_p(arg);
+		else {
+			pcie_send_msi_p(pcie_ep_dev->pendingmsi);
+			pcie_ep_dev->pendingmsi = 0;
+		}
 		CSR_OUT(PCIE_MSI_PEND, (pend & ~b2h(arg)));
 	}
 }
@@ -284,9 +281,11 @@ static void send_pending_msi(void)
 	vmask = pcie_get_msi_mask();
 	pend = pcie_cluster_read(MNH_PCIE_MSI_PEND_REG);
 	process_pend_msi(pend, vmask, MSG_SEND_M);
-	process_pend_msi(pend, vmask, PET_WATCHDOG);
-	process_pend_msi(pend, vmask, CRASH_DUMP);
-	process_pend_msi(pend, vmask, BOOTSTRAP_SET);
+	if (pcie_ep_dev->msimode == 2) {
+		process_pend_msi(pend, vmask, PET_WATCHDOG);
+		process_pend_msi(pend, vmask, CRASH_DUMP);
+		process_pend_msi(pend, vmask, BOOTSTRAP_SET);
+	}
 }
 
 static void pcie_msi_worker(struct work_struct *work)
@@ -303,10 +302,22 @@ static void pcie_msi_worker(struct work_struct *work)
 
 }
 
+static void pcie_set_msi_mode(void)
+{
+	if (MSICAP_INf(MSI_CAP_PCI_MSI_CAP_ID_NEXT_CTRL,
+			PCI_MSI_MULTIPLE_MSG_EN) == 0)
+		pcie_ep_dev->msimode = 1;
+	else
+		pcie_ep_dev->msimode = 2;
+}
+
+
 static int pcie_send_msi(uint32_t msi)
 {
 	uint32_t pend;
 
+	if (pcie_ep_dev->msimode == 0)
+		pcie_set_msi_mode();
 	if ((msi < 1) || (msi > 32))
 		return -EINVAL;
 	force_link_up();
@@ -1879,6 +1890,8 @@ static int mnh_pcie_ep_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 	pcie_ep_dev->dev = &pdev->dev;
+	pcie_ep_dev->pendingmsi = 0;
+	pcie_ep_dev->msimode = 0;
 	strcpy(pcie_ep_dev->name, DEVICE_NAME);
 	irq_callback = NULL;
 	dma_callback = NULL;

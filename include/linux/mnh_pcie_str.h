@@ -65,6 +65,8 @@ struct mnh_pcie_ep_device {
 	char name[64];
 	uint32_t sw_irq;
 	uint32_t cluster_irq;
+	uint32_t pendingmsi;
+	uint32_t msimode;
 	void *conf_mem;
 	void *clust_mem;
 	void *outb_mem;
