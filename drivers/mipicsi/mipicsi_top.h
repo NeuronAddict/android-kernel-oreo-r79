@@ -22,6 +22,30 @@
  
 #include "mipicsi_dc_dphy.h"
 
+#define BIT0_MASK 0x0001
+#define BIT1_MASK 0x0002
+#define BIT2_MASK 0x0004
+#define BIT3_MASK 0x0008
+#define BIT4_MASK 0x0010
+#define BIT5_MASK 0x0020
+#define BIT6_MASK 0x0040
+#define BIT7_MASK 0x0080
+#define BIT8_MASK 0x0100
+#define BIT9_MASK 0x0200
+#define BIT10_MASK 0x0400
+#define BIT11_MASK 0x0800
+#define BIT12_MASK 0x1000
+#define BIT13_MASK 0x2000
+#define BIT14_MASK 0x4000
+#define BIT15_MASK 0x8000
+
+#define RX_MODE_IPU_EN_MASK        BIT3_MASK
+#define RX_MODE_TX0_BYP_EN_MASK    BIT4_MASK
+#define RX_MODE_TX1_BYP_EN_MASK    BIT5_MASK
+#define TX_CMODE_IPU_EN_MASK       BIT3_MASK
+#define TX_CMODE_RX0_BYP_EN_MASK   BIT4_MASK
+#define TX_CMODE_RX1_BYP_EN_MASK   BIT5_MASK
+
 #define MIPICSI_TOP_MAX_LINKS 5
 
 enum TX_BYP_SEL_VALUES {
@@ -30,19 +54,6 @@ enum TX_BYP_SEL_VALUES {
 	TX_BYPASS_RX1 = 2,
 	TX_BYPASS_RX2 = 3
 };
-
-#if 0
-/* RX[x]_MODE */
-#define RX_IPU_EN               (0x1 << 0)
-#define RX_BYP_Tx0_EN           (0x1 << 1)
-#define RX_BYP_Tx1_EN           (0x1 << 2)
-#define RX_MODE_MASK            (0x7 << 3)
-#define RX_FORCE_OFF            (0x1 << 6)
-#define RX_VC0_EN               (0x1 << 7)
-#define RX_VC1_EN               (0x1 << 8)
-#define RX_VC2_EN               (0x1 << 9)
-#define RX_VC3_EN               (0x1 << 10)
-#endif // #if 0
 
 /* ENABLE EMULATION SUPPORT */
 #define MNH_EMULATION
@@ -138,6 +149,7 @@ int mipicsi_top_start(struct mipicsi_top_cfg *config);
 int mipicsi_top_stop(enum mipicsi_top_dev dev);
 int mipicsi_top_set_mux(struct mipicsi_top_mux *mux);
 void mipicsi_top_get_mux(struct mipicsi_top_mux_data *mux_data);
+int mipicsi_top_get_mux_status(struct mipicsi_top_mux *mux);
 int mipicsi_top_set_irq_mask(uint8_t mask);
 int mipicsi_top_read(struct mipicsi_top_reg *reg);
 int mipicsi_top_write(struct mipicsi_top_reg *reg);
