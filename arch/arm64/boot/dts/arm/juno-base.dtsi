@@ -159,16 +159,23 @@
 		clocks = <&soc_uartclk>, <&soc_refclk100mhz>;
 		clock-names = "uartclk", "apb_pclk";
 	};
-/*
-	spi@64043000 {
+
+	spi@60085000 {
 		compatible = "snps,dw-apb-ssi";
 		#address-cells = <1>;
 		#size-cells = <0>;
-		reg = <0x0 0x64043000 0x0 0x1000>;
-		interrupts = <GIC_SPI 168 IRQ_TYPE_LEVEL_HIGH>;
+		reg = <0x0 0x60085000 0x0 0x1000>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
 		num-cs = <4>;
+		clocks = <&soc_mnh25mhz>;
+		bus-num = <0>;
+		status = "okay";
+		spidev@0 {
+			 compatible = "spidev";
+			 spi-max-frequency = <5000000>;
+			 reg = <0>;
+		};
 	};
-*/
 
 	pcie@60102000 {
 		compatible = "snps, dw_pcie_ep";
@@ -282,7 +289,7 @@
                  compatible = "snps,dw-apb-gpio-port";
                  gpio-controller;
                  #gpio-cells = <2>;
-                 snps,nr-gpios = <18>;
+                 snps,nr-gpios = <16>;
                  reg = <0>;
          };
  /* 
