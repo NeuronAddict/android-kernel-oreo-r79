@@ -14,7 +14,7 @@ struct mipicsi_pll {
 	uint16_t  output_freq;      /* Active output frequency */
 	uint16_t  input_freq;       /* Active input frequency */
 	uint16_t  ref_freq;         /* Reference Frequency */
-	uint16_t  hsfreq;           /* hsfreq */
+	uint8_t   hsfreq;           /* hsfreq */
 	uint8_t   vco_range;        /* vcorange */
 	uint16_t  loop_div;         /* (M) */
 	uint8_t   cp_current;       /* icpctrl */
@@ -23,6 +23,7 @@ struct mipicsi_pll {
 	uint8_t	  output_div;       /* (P) */
 };
 
+int mipicsi_pll_get_hsfreq (uint16_t mbps, uint8_t *hsfreq);
 int mipicsi_pll_calc(uint16_t mbps, struct mipicsi_pll *pll);
 
 #endif /* MIPICSI_PLL_H_ */

@@ -135,11 +135,30 @@ struct pll_cp_lpf_ctrl pll_cp_lpf_ctrl_dc[]= {
 	{1320, 2000, 0x03, 0x06, 0x08}
 };
 
+int mipicsi_pll_get_hsfreq (uint16_t mbps, uint8_t *hsfreq)
+{
+
+	uint8_t i;
+	uint32_t bps = mbps*1000*1000;
+
+	for (i = 0; i < (sizeof(freqrange_dc))/(sizeof(struct pll_freqrange));
+	     i++) {
+		if ((bps == freqrange_dc[i].default_bps) ||
+		    ((bps > freqrange_dc[i].min_range) &&
+		     (bps < freqrange_dc[i].max_range))) {
+			*hsfreq = freqrange_dc[i].hsfreq;
+			return 0;
+		}
+	}
+
+	pr_info ("%s: HS Freq not found\n");
+	return -EINVAL;
+}
 
 int mipicsi_pll_calc(uint16_t mbps, struct mipicsi_pll *pll)
 {
 	uint16_t i, M, N, P, N_min, N_max, fout, delta = 0xffff;
-	uint32_t bps, fvco;
+	uint32_t fvco;
 	bool found = false;
 
 	if ((mbps < MIPICSI_PLL_MIN_FREQ) || (mbps > MIPICSI_PLL_MAX_FREQ))
@@ -204,23 +223,9 @@ int mipicsi_pll_calc(uint16_t mbps, struct mipicsi_pll *pll)
 		}
 	}
 
-	bps = pll->output_freq*1000*1000;
-
-	for (i = 0; i < (sizeof(freqrange_dc))/(sizeof(struct pll_freqrange));
-	     i++) {
-		if ((bps == freqrange_dc[i].default_bps) ||
-		    ((bps > freqrange_dc[i].min_range) &&
-		     (bps < freqrange_dc[i].max_range))) {
-			pll->hsfreq = freqrange_dc[i].hsfreq;
-			found = true;
-			break;
-		}
-	}
-
-	if (!found)
+	if (mipicsi_pll_get_hsfreq(mbps, &(pll->hsfreq)) != 0)
 		return -EINVAL;
 
-	found = false;
 	fvco = pll->output_freq*pll->output_div;
 	for (i=0; i<(sizeof(pll_cp_lpf_ctrl_dc))/
 		     (sizeof(struct pll_cp_lpf_ctrl)); i++) {
