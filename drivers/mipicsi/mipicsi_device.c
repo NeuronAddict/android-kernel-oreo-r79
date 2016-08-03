@@ -56,11 +56,11 @@ extern void * dev_addr_map[];
 static LIST_HEAD(devlist_global);
 
 /* these macros assume a void * in scope named baddr */
-#define TX_IN(reg)            HW_IN(baddr,   MIPI_TX, reg)
-#define TX_OUT(reg,val)       HW_OUT(baddr,  MIPI_TX, reg, val)
-#define TX_OUTf(reg,fld,val)  HW_OUTf(baddr, MIPI_TX, reg, fld, val)
+#define TX_IN(reg)             HW_IN(baddr,   MIPI_TX, reg)
+#define TX_OUT(reg, val)       HW_OUT(baddr,  MIPI_TX, reg, val)
+#define TX_OUTf(reg, fld, val) HW_OUTf(baddr, MIPI_TX, reg, fld, val)
 
-#define TX_MASK(reg, fld)     HWIO_MIPI_TX_##reg##_##fld##_FLDMASK
+#define TX_MASK(reg, fld)      HWIO_MIPI_TX_##reg##_##fld##_FLDMASK
 
 void mipicsi_dev_dphy_write(enum mipicsi_top_dev dev,
 			    uint8_t command, uint8_t data)
@@ -364,6 +364,40 @@ int mipicsi_device_hw_init(enum mipicsi_top_dev dev)
 	return 0;
 }
 
+static irqreturn_t mipicsi_device_irq(int irq, void *dev_id)
+{
+
+	struct mipicsi_device_dev *dev = dev_id;
+	u32 int_status, ind_status;
+	void *baddr = dev->base_address;
+	int ret = IRQ_NONE;
+
+	spin_lock(&dev->slock);
+
+	int_status = TX_IN(INT_ST_MAIN);
+
+	if (int_status & TX_MASK(INT_ST_MAIN, INT_ST_VPG)) {
+		ind_status = TX_IN(INT_ST_VPG);
+		dev_info(dev->dev, "CSI INT_ST_VPG: %x\n", ind_status);
+		ret = IRQ_HANDLED;
+	}
+
+	if (int_status & TX_MASK(INT_ST_MAIN, INT_ST_IDI)) {
+		ind_status = TX_IN(INT_ST_IDI);
+		dev_info(dev->dev, "CSI INT_ST_IDI: %x\n", ind_status);
+		ret = IRQ_HANDLED;
+	}
+
+	if (int_status & TX_MASK(INT_ST_MAIN, INT_ST_PHY)) {
+		ind_status = TX_IN(INT_ST_PHY);
+		dev_info(dev->dev, "CSI INT_ST_PHY: %x\n", ind_status);
+		ret = IRQ_HANDLED;
+	}
+
+	spin_unlock(&dev->slock);
+
+	return ret;
+}
 
 int mipicsi_device_probe(struct platform_device *pdev)
 {
@@ -423,17 +457,6 @@ int mipicsi_device_probe(struct platform_device *pdev)
 	 * (unsigned int)dev->base_address);
 	 */
 
-	/* Device tree information: Get interrupts numbers */
-	irq_number = platform_get_irq(pdev, 0);
-#if 0
-	if (irq_number <= 0) {
-		dev_err(&pdev->dev, "IRQ num not set. See device tree.\n");
-		error = -EINVAL;
-		goto free_mem;
-	}
-#endif
-	dev->device_irq_number = irq_number;
-
 	/* Init locks */
 	dev_info(&pdev->dev, "Init locks\n");
 	spin_lock_init(&dev->slock);
@@ -441,6 +464,19 @@ int mipicsi_device_probe(struct platform_device *pdev)
 	/* Init mutex */
 	dev_info(&pdev->dev, "Init mutex\n");
 	mutex_init(&dev->mutex);
+
+	/* Device tree information: Get interrupts numbers */
+	irq_number = platform_get_irq(pdev, 0);
+	if (irq_number > 0) {
+		dev->device_irq_number = irq_number;
+
+		/* Register interrupt */
+		ret = request_irq(dev->device_irq_number, mipicsi_device_irq,
+				IRQF_SHARED, dev_name(&pdev->dev), dev);
+		if (ret)
+			dev_err(&pdev->dev, "Could not register controller interrupt\n");
+	} else
+		dev_err(&pdev->dev, "IRQ num not set. See device tree.\n");
 
 	/* Now that everything is fine, let's add it to device list */
 	list_add_tail(&dev->devlist, &devlist_global);
@@ -451,22 +487,6 @@ int mipicsi_device_probe(struct platform_device *pdev)
 	ret = mipicsi_device_hw_init();
 	if (ret) {
 		dev_err(&pdev->dev, "Could not init the SNPS MIPI %d\n", ret);
-		goto unreg_dev;
-	}
-
-	/* Register interrupt */
-	ret = devm_request_irq(&pdev->dev, dev->device_irq,
-				   mipicsi_device_irq1, IRQF_SHARED,
-				   dev_name(&pdev->dev), dev);
-	if (ret) {
-		dev_err(&pdev->dev, "Couldn't register controller interrupt\n");
-		goto unreg_dev;
-	}
-
-	irq_number = platform_get_irq(pdev, 1);
-	if (irq_number <= 0) {
-		dev_err(&pdev->dev, "IRQ number not set. See device tree.\n");
-		error = -EINVAL;
 		goto unreg_dev;
 	}
 

@@ -399,66 +399,38 @@
 		dma-names = "tx";
 	};
 
-	mipitop: mipitop@1234 {
+	mipitop: mipitop@60057000 {
 		compatible = "intel,mipicsi_top";
 		reg = <0x0 0x60057000 0x0 0x0FFF>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
 	};
 
-	mipi_rx0: mipihost@0 {
+	mipi_rx0: mipihost@60054000 {
 		compatible = "snps,mipicsi_host";
 		reg = <0x0 0x60054000 0x0 0xFFF>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
 	};
 /*
-	mipi_rx1: mipihost@1 {
+	mipi_rx1: mipihost@60013000 {
 		compatible = "snps,mipicsi_host";
 		reg = <0x0 0x60013000 0x0 0xFFF>;
-	};
-	mipi_rx2: mipihost@2 {
-		compatible = "snps,mipicsi_host";
-		reg = <0x0 0x64014000 0x0 0xFFF>;
-	};
-*/
-	mipi_tx0: mipidevice@0 {
-		compatible = "snps,mipicsi_device";
-		reg = <0x0 0x60052000 0x0 0xFFF>;
-	};
-/*
-	mipi_tx1: mipidevice@64011000 {
-		compatible = "snps,mipicsi_device";
-		reg = <0x0 0x64011000 0x0 0xFFF>;
-	};
-*/
-
-
-
-/*
-	mipitop: mipitop@64015000 {
-		compatible = "intel,mipicsi_top";
-		reg = <0x0 0x64015000 0x0 0x0FFF>;
-	};
-
-	mipi_rx0: mipihost@64012000 {
-		compatible = "snps,mipicsi_host";
-		reg = <0x0 0x64012000 0x0 0xFFF>;
-	};
-	mipi_rx1: mipihost@64013000 {
-		compatible = "snps,mipicsi_host";
-		reg = <0x0 0x64013000 0x0 0xFFF>;
 	};
 	mipi_rx2: mipihost@64014000 {
 		compatible = "snps,mipicsi_host";
 		reg = <0x0 0x64014000 0x0 0xFFF>;
 	};
-	mipi_tx0: mipidevice@64010000 {
+*/
+	mipi_tx0: mipidevice@60052000 {
 		compatible = "snps,mipicsi_device";
-		reg = <0x0 0x64010000 0x0 0xFFF>;
+		reg = <0x0 0x60052000 0x0 0xFFF>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
 	};
+/*
 	mipi_tx1: mipidevice@64011000 {
 		compatible = "snps,mipicsi_device";
 		reg = <0x0 0x64011000 0x0 0xFFF>;
 	};
 */
-
 
 	smb {
 		compatible = "simple-bus";

@@ -66,12 +66,12 @@ void mipicsi_util_save_virt_addr(enum mipicsi_top_dev dev, void *base_addr)
 static struct device *mipicsi_top_device;
 
 /* these macros assume a void * in scope named baddr */
-#define TOP_IN(reg)            HW_IN(baddr,   MIPI_TOP, reg)
-#define TOP_INf(reg,fld)       HW_INf(baddr,  MIPI_TOP, reg, fld)
-#define TOP_OUT(reg,val)       HW_OUT(baddr,  MIPI_TOP, reg, val)
-#define TOP_OUTf(reg,fld,val)  HW_OUTf(baddr, MIPI_TOP, reg, fld, val)
+#define TOP_IN(reg)             HW_IN(baddr,   MIPI_TOP, reg)
+#define TOP_INf(reg, fld)       HW_INf(baddr,  MIPI_TOP, reg, fld)
+#define TOP_OUT(reg, val)       HW_OUT(baddr,  MIPI_TOP, reg, val)
+#define TOP_OUTf(reg, fld, val) HW_OUTf(baddr, MIPI_TOP, reg, fld, val)
 
-#define TOP_MASK(reg,fld)      HWIO_MIPI_TOP_##reg##_##fld##_FLDMASK
+#define TOP_MASK(reg, fld)      HWIO_MIPI_TOP_##reg##_##fld##_FLDMASK
 
 #define MAX_STR_COPY	32
 
@@ -262,10 +262,15 @@ int32_t top_start_tx(struct mipicsi_top_cfg *config)
 		if ((vc > 0) && (vc <= VC_MAX))
 			vc_en |= 1<<(vc-1);
 	}
-	if (config->dev == MIPI_TX0)
+	if (config->dev == MIPI_TX0) {
 		TOP_OUTf(TX0_IPU_VC_EN, TX0_IPU_VC_EN, vc_en);
-	else
+		/* Enable TOP level interrupt */
+		TOP_OUTf(TX0_BYPINT, TX0_INT_EN, 1);
+	} else {
 		TOP_OUTf(TX1_IPU_VC_EN, TX1_IPU_VC_EN, vc_en);
+		/* Enable TOP level interrupt */
+		TOP_OUTf(TX1_BYPINT, TX1_INT_EN, 1);
+	}
 
 	return 0;
 }
@@ -878,6 +883,35 @@ int mipicsi_top_init_chardev(struct mipicsi_top_device *mipidev)
         return 0;
 }
 
+static irqreturn_t mipicsi_top_irq(int irq, void *dev_id)
+{
+
+	struct mipicsi_top_device *dev = dev_id;
+	u32 status, ind_status;
+	void *baddr = dev->base_address;
+	int ret = IRQ_NONE;
+
+	spin_lock(&dev->slock);
+
+	status = TOP_IN(TX0_BYPINT);
+	if (status & TOP_MASK(TX0_BYPINT, TX0_BYP_OF)) {
+		dev_info(dev->dev, "TX0_BYPINT BYP_OF occurred\n");
+		/* TODO clear the interrupt*/
+		ret = IRQ_HANDLED;
+	}
+
+	status = TOP_IN(TX1_BYPINT);
+	if (status & TOP_MASK(TX1_BYPINT, TX1_BYP_OF)) {
+		dev_info(dev->dev, "TX1_BYPINT BYP_OF occurred\n");
+		/* TODO clear the interrupt*/
+		ret = IRQ_HANDLED;
+	}
+
+	spin_unlock(&dev->slock);
+
+	return ret;
+}
+
 int mipicsi_top_probe(struct platform_device *pdev)
 {
 	int ret = 0;
@@ -938,24 +972,14 @@ int mipicsi_top_probe(struct platform_device *pdev)
         /* Initialize character device */
         ret = mipicsi_top_init_chardev(dev);
 
-	pr_info("MIPI TOP: ioremapped to %p\n", dev->base_address);
+	dev_info(&pdev->dev, "MIPI TOP: ioremapped to %p\n",
+		 dev->base_address);
+
 	mipicsi_util_save_virt_addr(MIPI_TOP, dev->base_address);
 
 	/* dev_info(&pdev->dev, "Intel Device at 0x%08x\n",
 	 * (unsigned int)dev->base_address);
 	 */
-
-
-	/* Device tree information: Get interrupts numbers */
-	irq_number = platform_get_irq(pdev, 0);
-#if 0
-	if (irq_number <= 0) {
-		dev_err(&pdev->dev, "IRQ num not set. See device tree.\n");
-		error = -EINVAL;
-		goto free_mem;
-	}
-#endif
-	dev->top_irq_number = irq_number;
 
 	/* Init locks */
 	dev_info(&pdev->dev, "Init locks\n");
@@ -965,33 +989,31 @@ int mipicsi_top_probe(struct platform_device *pdev)
 	dev_info(&pdev->dev, "Init mutex\n");
 	mutex_init(&dev->mutex);
 
+	/* Device tree information: Get interrupts numbers */
+	irq_number = platform_get_irq(pdev, 0);
+	if (irq_number > 0) {
+		/* Register interrupt */
+		ret = request_irq(dev->top_irq_number, mipicsi_top_irq,
+				IRQF_SHARED, dev_name(&pdev->dev), dev);
+		if (ret)
+			dev_err(&pdev->dev, "Could not register top interrupt\n");
+	} else
+		dev_err(&pdev->dev, "IRQ num not set. See device tree.\n");
+
+	dev->top_irq_number = irq_number;
+
+
 	/* Now that everything is fine, let's add it to device list */
 	list_add_tail(&dev->devlist, &devlist_global);
 
 	/* HW init */
 	ret = mipicsi_top_hw_init();
-	
+
 	init_sysfs();
-	
+
 #if 0
 	if (ret) {
 		dev_err(&pdev->dev, "Could not init Intel MIPI TOP %d\n", ret);
-		goto unreg_dev;
-	}
-
-	/* Register interrupt */
-	ret = devm_request_irq(&pdev->dev, dev->top_irq,
-				   mipicsi_top_irq1, IRQF_SHARED,
-				   dev_name(&pdev->dev), dev);
-	if (ret) {
-		dev_err(&pdev->dev, "Couldn't register controller interrupt\n");
-		goto unreg_dev;
-	}
-
-	irq_number = platform_get_irq(pdev, 1);
-	if (irq_number <= 0) {
-		dev_err(&pdev->dev, "IRQ number not set. See device tree.\n");
-		error = -EINVAL;
 		goto unreg_dev;
 	}
 

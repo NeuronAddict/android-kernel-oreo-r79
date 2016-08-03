@@ -53,11 +53,12 @@
 extern void * dev_addr_map[];
 
 /* These macros assume a void * in scope named baddr */
-#define RX_IN(reg)            HW_IN(baddr,   MIPI_RX, reg)
-#define RX_OUT(reg,val)       HW_OUT(baddr,  MIPI_RX, reg, val)
-#define RX_OUTf(reg,fld,val)  HW_OUTf(baddr, MIPI_RX, reg, fld, val)
+#define RX_IN(reg)             HW_IN(baddr,   MIPI_RX, reg)
+#define RX_INf(reg, fld)       HW_INf(baddr,   MIPI_RX, reg, fld)
+#define RX_OUT(reg, val)       HW_OUT(baddr,  MIPI_RX, reg, val)
+#define RX_OUTf(reg, fld, val) HW_OUTf(baddr, MIPI_RX, reg, fld, val)
 
-#define RX_MASK(reg, fld)     HWIO_MIPI_RX_##reg##_##fld##_FLDMASK
+#define RX_MASK(reg, fld)      HWIO_MIPI_RX_##reg##_##fld##_FLDMASK
 
 
 /*
@@ -316,6 +317,53 @@ int mipicsi_host_hw_init(enum mipicsi_top_dev dev)
 	return 0;
 }
 
+static irqreturn_t mipicsi_host_irq(int irq, void *dev_id)
+{
+
+	struct mipicsi_host_dev *dev = dev_id;
+	u32 int_status, ind_status;
+	int ret = IRQ_NONE;
+	void *baddr = dev->base_address;
+
+	spin_lock(&dev->slock);
+
+	int_status = RX_IN(INT_ST_MAIN);
+
+	if (int_status & RX_MASK(INT_ST_MAIN, STATUS_INT_PHY_FATAL)) {
+		ind_status = RX_IN(INT_ST_PHY_FATAL);
+		dev_info(dev->dev, "CSI INT PHY FATAL: %x\n", ind_status);
+		ret = IRQ_HANDLED;
+	}
+
+	if (int_status & RX_MASK(INT_ST_MAIN, STATUS_INT_PKT_FATAL)) {
+		ind_status = RX_IN(INT_ST_PKT_FATAL);
+		dev_info(dev->dev, "CSI INT PKT FATAL: %x\n", ind_status);
+		ret = IRQ_HANDLED;
+	}
+
+	if (int_status & RX_MASK(INT_ST_MAIN, STATUS_INT_FRAME_FATAL)) {
+		ind_status = RX_IN(INT_ST_FRAME_FATAL);
+		dev_info(dev->dev, "CSI INT FRAME FATAL: %x\n", ind_status);
+		ret = IRQ_HANDLED;
+	}
+
+	if (int_status & RX_MASK(INT_ST_MAIN, STATUS_INT_PHY)) {
+		ind_status = RX_IN(INT_ST_PHY);
+		dev_info(dev->dev, "CSI INT PHY: %x\n", ind_status);
+		ret = IRQ_HANDLED;
+	}
+
+	if (int_status & RX_MASK(INT_ST_MAIN, STATUS_INT_PKT)) {
+		ind_status = RX_IN(INT_ST_PKT);
+		dev_info(dev->dev, "CSI INT PKT: %x\n", ind_status);
+		ret = IRQ_HANDLED;
+	}
+
+	spin_unlock(&dev->slock);
+
+	return ret;
+}
+
 int mipicsi_host_probe(struct platform_device *pdev)
 {
 	int ret = 0;
@@ -365,24 +413,14 @@ int mipicsi_host_probe(struct platform_device *pdev)
 		goto free_mem;
 	}
 #endif
-	pr_info("MIPI HOST: ioremapped to %p\n", dev->base_address);
+
+	dev_info(&pdev->dev, "MIPI HOST: ioremapped to %p\n",
+		 dev->base_address);
 	mipicsi_util_save_virt_addr(MIPI_RX0, dev->base_address);
 
 	/* dev_info(&pdev->dev, "SNPS Device at 0x%08x\n",
 	 * (unsigned int)dev->base_address);
 	 */
-
-	/* Device tree information: Get interrupts numbers */
-	irq_number = platform_get_irq(pdev, 0);
-#if 0
-	if (irq_number <= 0) {
-		dev_err(&pdev->dev, "IRQ num not set. See device tree.\n");
-		error = -EINVAL;
-		goto free_mem;
-	}
-#endif
-	dev->host_irq_number = irq_number;
-
 	/* Init locks */
 	dev_info(&pdev->dev, "Init locks\n");
 	spin_lock_init(&dev->slock);
@@ -390,6 +428,21 @@ int mipicsi_host_probe(struct platform_device *pdev)
 	/* Init mutex */
 	dev_info(&pdev->dev, "Init mutex\n");
 	mutex_init(&dev->mutex);
+
+	/* Device tree information: Get interrupts numbers */
+	irq_number = platform_get_irq(pdev, 0);
+
+	if (irq_number > 0) {
+		dev->host_irq_number = irq_number;
+
+		/* Register interrupt */
+		ret = request_irq(dev->host_irq_number, mipicsi_host_irq,
+				IRQF_SHARED, dev_name(&pdev->dev), dev);
+		if (ret)
+			dev_err(&pdev->dev, "Could not register controller interrupt\n");
+	} else
+		dev_err(&pdev->dev, "IRQ num not set. See device tree.\n");
+
 
 	/* Now that everything is fine, let's add it to device list */
 	list_add_tail(&dev->devlist, &devlist_global);
@@ -400,22 +453,6 @@ int mipicsi_host_probe(struct platform_device *pdev)
 	ret = mipicsi_host_hw_init();
 	if (ret) {
 		dev_err(&pdev->dev, "Could not init the SNPS MIPI %d\n", ret);
-		goto unreg_dev;
-	}
-
-	/* Register interrupt */
-	ret = devm_request_irq(&pdev->dev, dev->host_irq,
-				   mipicsi_host_irq1, IRQF_SHARED,
-				   dev_name(&pdev->dev), dev);
-	if (ret) {
-		dev_err(&pdev->dev, "Could not register controller interrupt\n");
-		goto unreg_dev;
-	}
-
-	irq_number = platform_get_irq(pdev, 1);
-	if (irq_number <= 0) {
-		dev_err(&pdev->dev, "IRQ number not set. See device tree.\n");
-		error = -EINVAL;
 		goto unreg_dev;
 	}
 
