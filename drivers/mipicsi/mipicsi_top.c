@@ -190,6 +190,13 @@ int32_t top_set_pll(struct mipicsi_top_cfg *config)
 
 int32_t top_start_rx(struct mipicsi_top_cfg *config)
 {
+	uint8_t i, vc, vc_en;
+	void * baddr = dev_addr_map[MIPI_TOP];
+	if (!baddr) {
+		pr_err("%s missing address for top\n", __func__);
+		return -EINVAL;
+	}
+
 #ifdef MNH_EMULATION
 	mipicsi_host_hw_init(config->dev);
 	mipicsi_host_start(config);
@@ -204,11 +211,31 @@ int32_t top_start_rx(struct mipicsi_top_cfg *config)
 	/* TO DO Update MUX */
 
 #endif /* MNH_EMULATION */
+	/* Configure safe switching */
+	for (i=0; i<MIPICSI_VC_DT_MAX_PAIRS; i++) {
+		vc = config->vc_dt[i].vc;
+		if ((vc > 0) && (vc <= VC_MAX))
+			vc_en |= 1<<(vc-1);
+	}
+	if (config->dev == MIPI_RX0)
+		TOP_OUTf(RX0_MODE, RX0_VC_EN, vc_en);
+	else if (config->dev == MIPI_RX1)
+		TOP_OUTf(RX1_MODE, RX1_VC_EN, vc_en);
+	else
+		TOP_OUTf(RX2_MODE, RX2_VC_EN, vc_en);
+
 	return 0;
 }
 
 int32_t top_start_tx(struct mipicsi_top_cfg *config)
 {
+	uint8_t i, vc, vc_en;
+	void * baddr = dev_addr_map[MIPI_TOP];
+	if (!baddr) {
+		pr_err("%s missing address for top\n", __func__);
+		return -EINVAL;
+	}
+
 #ifdef MNH_EMULATION
 	mipicsi_device_hw_init(config->dev);
 	mipicsi_device_start(config);
@@ -228,6 +255,18 @@ int32_t top_start_tx(struct mipicsi_top_cfg *config)
 	/* TO DO - Update MUX */
 
 #endif /* MNH_EMULATION */
+
+	/* Configure safe switching */
+	for (i=0; i<MIPICSI_VC_DT_MAX_PAIRS; i++) {
+		vc = config->vc_dt[i].vc;
+		if ((vc > 0) && (vc <= VC_MAX))
+			vc_en |= 1<<(vc-1);
+	}
+	if (config->dev == MIPI_TX0)
+		TOP_OUTf(TX0_IPU_VC_EN, TX0_IPU_VC_EN, vc_en);
+	else
+		TOP_OUTf(TX1_IPU_VC_EN, TX1_IPU_VC_EN, vc_en);
+
 	return 0;
 }
 
@@ -618,6 +657,8 @@ int mipicsi_top_hw_init(void)
 	cfg.dev = MIPI_RX0;
 	cfg.num_lanes = 4;
 	cfg.mbps = 640;
+	memset(&cfg.vc_dt[0], 0, sizeof(cfg.vc_dt));
+
 	mipicsi_top_start(&cfg);
 
 	cfg.dev = MIPI_TX0;

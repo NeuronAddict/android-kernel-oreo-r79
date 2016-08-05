@@ -47,6 +47,8 @@
 #define TX_CMODE_RX1_BYP_EN_MASK   BIT5_MASK
 
 #define MIPICSI_TOP_MAX_LINKS 5
+#define MIPICSI_VC_DT_MAX_PAIRS 8
+
 
 enum TX_BYP_SEL_VALUES {
 	TX_POWER_OFF = 0,
@@ -101,7 +103,7 @@ enum virt_chan {
 };
 
 struct csi2_vc_dt_pair {
-	enum virt_chan      ch;
+	enum virt_chan      vc;
 	enum csi_data_type  dt;
 };
 
@@ -109,7 +111,7 @@ struct mipicsi_top_cfg {
 	enum mipicsi_top_dev dev;         /* device */
 	uint32_t       num_lanes;         /* number of lanes */
 	uint32_t       mbps;              /* bitrate (per lane) */
-	struct csi2_vc_dt_pair vc_dt[8];  /* virtchan/data type pairs */
+	struct csi2_vc_dt_pair vc_dt[MIPICSI_VC_DT_MAX_PAIRS];  /* vc/dt pairs */
 };
 
 struct mipicsi_top_mux {
