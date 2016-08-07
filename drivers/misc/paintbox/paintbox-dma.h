@@ -67,6 +67,9 @@ int dma_bind_interrupt(struct paintbox_data *pb,
 int dma_unbind_interrupt(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel, struct paintbox_irq *irq);
 
+int get_completed_transfer_count_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg);
+
 int dma_setup_dram_to_lbp_transfer(struct paintbox_data *pb,
 		struct paintbox_session *session,
 		struct paintbox_dma_channel *channel,

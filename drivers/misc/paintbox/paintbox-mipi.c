@@ -380,9 +380,11 @@ int dump_mipi_input_stream_registers(struct paintbox_debug *debug, char *buf,
 
 	val = readl(pb->io_ipu.ipu_base + MPI_STRM_CNFG0_L);
 	ret = dump_io_ipu_reg_verbose(pb, MPI_STRM_CNFG0_L, buf, &written, len,
-			"\tVC %u DT_IN %u DT_PROC %u\n", val & MPI_VC_MASK,
+			"\tVC %u DT_IN %u DT_PROC %u STRP_HEIGHT %u\n",
+			val & MPI_VC_MASK,
 			(val & MPI_DT_IN_MASK) >> MPI_DT_IN_SHIFT,
-			(val & MPI_DT_PROC_MASK) >> MPI_DT_PROC_SHIFT);
+			(val & MPI_DT_PROC_MASK) >> MPI_DT_PROC_SHIFT,
+			(val & MPI_STRP_HEIGHT_MASK) >> MPI_STRP_HEIGHT_SHIFT);
 	if (ret < 0)
 		return ret;
 
@@ -398,10 +400,12 @@ int dump_mipi_input_stream_registers(struct paintbox_debug *debug, char *buf,
 	if (ret < 0)
 		return ret;
 
+	val = readl(pb->io_ipu.ipu_base + MPI_STRM_CNFG1_H);
 	ret = dump_io_ipu_reg_verbose(pb, MPI_STRM_CNFG1_H, buf, &written, len,
-			"\tSEG_WORDS_PER_ROW %u\n",
-			readl(pb->io_ipu.ipu_base + MPI_STRM_CNFG1_H) &
-			MPI_SEG_WORDS_PER_ROW_MASK);
+			"\tSEGS_PER_ROW %u SEG_WORDS_PER_ROW %u\n",
+			val & MPI_SEGS_PER_ROW_MASK, (val &
+			MPI_SEG_WORDS_PER_ROW_MASK) >>
+			MPI_SEG_WORDS_PER_ROW_SHIFT );
 	if (ret < 0)
 		return ret;
 
@@ -426,10 +430,12 @@ int dump_mipi_input_stream_registers(struct paintbox_debug *debug, char *buf,
 	if (ret < 0)
 		return ret;
 
+	val = readl(pb->io_ipu.ipu_base + MPI_STRM_CNFG1_H_RO);
 	ret = dump_io_ipu_reg_verbose(pb, MPI_STRM_CNFG1_H_RO, buf, &written,
-			len, "\tSEG_WORDS_PER_ROW %u\n",
-			readl(pb->io_ipu.ipu_base + MPI_STRM_CNFG1_H_RO) &
-			MPI_SEG_WORDS_PER_ROW_MASK);
+			len, "\tSEGS_PER_ROW %u SEG_WORDS_PER_ROW %u\n",
+			val & MPI_SEGS_PER_ROW_MASK, (val &
+			MPI_SEG_WORDS_PER_ROW_MASK) >>
+			MPI_SEG_WORDS_PER_ROW_SHIFT );
 	if (ret < 0)
 		return ret;
 
@@ -453,9 +459,11 @@ int dump_mipi_output_stream_registers(struct paintbox_debug *debug, char *buf,
 
 	val = readl(pb->io_ipu.ipu_base + MPO_STRM_CNFG0_L);
 	ret = dump_io_ipu_reg_verbose(pb, MPO_STRM_CNFG0_L, buf, &written, len,
-			"\tVC %u DT_OUT %u DT_PROC %u\n", val & MPO_VC_MASK,
+			"\tVC %u DT_OUT %u DT_PROC %u STRP_HEIGHT %u\n",
+			val & MPO_VC_MASK,
 			(val & MPO_DT_OUT_MASK) >> MPO_DT_OUT_SHIFT,
-			(val & MPO_DT_PROC_MASK) >> MPO_DT_PROC_SHIFT);
+			(val & MPO_DT_PROC_MASK) >> MPO_DT_PROC_SHIFT,
+			(val & MPO_STRP_HEIGHT_MASK) >> MPO_STRP_HEIGHT_SHIFT);
 	if (ret < 0)
 		return ret;
 
@@ -464,29 +472,32 @@ int dump_mipi_output_stream_registers(struct paintbox_debug *debug, char *buf,
 	if (ret < 0)
 		return ret;
 
+	val = readl(pb->io_ipu.ipu_base + MPO_STRM_CNFG1);
 	ret = dump_io_ipu_reg_verbose(pb, MPO_STRM_CNFG1, buf, &written, len,
-			"\tSEGS_PER_ROW %u\n",
-			readl(pb->io_ipu.ipu_base + MPO_STRM_CNFG1) &
-			MPO_SEGS_PER_ROW_MASK);
+			"\tSEG_END %u SEGS_PER_ROW %u\n",
+			val & MPO_SEG_END_MASK, (val & MPO_SEGS_PER_ROW_MASK) >>
+			MPO_SEGS_PER_ROW_SHIFT);
 	if (ret < 0)
 		return ret;
 
 	val = readl(pb->io_ipu.ipu_base + MPO_STRM_CNFG0_L_RO);
 	ret = dump_io_ipu_reg_verbose(pb, MPO_STRM_CNFG0_L_RO, buf, &written,
-			len, "\tVC %u DT_OUT %u DT_PROC %u\n",
+			len, "\tVC %u DT_OUT %u DT_PROC %u STRP_HEIGHT %u\n",
 			val & MPO_VC_MASK,
 			(val & MPO_DT_OUT_MASK) >> MPO_DT_OUT_SHIFT,
-			(val & MPO_DT_PROC_MASK) >> MPO_DT_PROC_SHIFT);
+			(val & MPO_DT_PROC_MASK) >> MPO_DT_PROC_SHIFT,
+			(val & MPO_STRP_HEIGHT_MASK) >> MPO_STRP_HEIGHT_SHIFT);
 
 	ret = dump_io_ipu_strm_cnfg0_high(pb, MPO_STRM_CNFG0_H, buf, &written,
 			len);
 	if (ret < 0)
 		return ret;
 
+	val = readl(pb->io_ipu.ipu_base + MPO_STRM_CNFG1_RO);
 	ret = dump_io_ipu_reg_verbose(pb, MPO_STRM_CNFG1_RO, buf, &written, len,
-			"\tSEGS_PER_ROW %u\n",
-			readl(pb->io_ipu.ipu_base + MPO_STRM_CNFG1_RO) &
-			MPO_SEGS_PER_ROW_MASK);
+			"\tSEG_END %u SEGS_PER_ROW %u\n",
+			val & MPO_SEG_END_MASK, (val & MPO_SEGS_PER_ROW_MASK) >>
+			MPO_SEGS_PER_ROW_SHIFT);
 	if (ret < 0)
 		return ret;
 
@@ -715,6 +726,10 @@ static int validate_mipi_input_stream_setup(struct paintbox_data *pb,
 		return -EINVAL;
 	}
 
+	/* TODO(ahampson): Determine bounds checking for SEGS_PER_ROW and
+	 * and STRP_HEIGHT if these are to be passed in.
+	 */
+
 	dev_dbg(&pb->pdev->dev, "\tseg start %u, seg end %u, seg words per row "
 			"%u\n", setup->input.seg_start, setup->input.seg_end,
 			setup->input.seg_words_per_row);
@@ -768,6 +783,10 @@ int setup_mipi_input_stream(struct paintbox_data *pb,
 	val = setup->img_width & MPI_IMG_WIDTH_MASK;
 	val |= (setup->img_height & MPI_IMG_HEIGHT_M) << MPI_IMG_HEIGHT_SHIFT;
 	writel(val, pb->io_ipu.ipu_base + MPI_STRM_CNFG0_H);
+
+	/* TODO(ahampson): Determine if SEGS_PER_ROW and STRP_HEIGHT should be
+	 * passed in or computed in the driver.
+	 */
 
 	val = setup->input.seg_start & MPI_SEG_START_MASK;
 	val |= (setup->input.seg_end & MPI_SEG_END_M) <<  MPI_SEG_END_SHIFT;

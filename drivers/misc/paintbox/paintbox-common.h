@@ -16,11 +16,11 @@
 #ifndef __PAINTBOX_COMMON_H__
 #define __PAINTBOX_COMMON_H__
 
+#include <linux/atomic.h>
 #include <linux/miscdevice.h>
 #include <linux/paintbox.h>
 #include <linux/platform_device.h>
 
-#define MAX_REUSE_ROWS       15
 #define MAX_CHAN_OFFSET      15
 
 #define IRQ_NO_DMA_CHANNEL   0xFF
@@ -176,7 +176,6 @@ struct paintbox_dma_transfer {
 	uint32_t chan_va_bdry_low;
 	uint32_t chan_va_bdry_high;
 	uint32_t chan_noc_xfer_low;
-	uint32_t chan_noc_xfer_high;
 	uint32_t chan_node;
 };
 
@@ -198,6 +197,8 @@ struct paintbox_dma_channel {
 	struct paintbox_dma_transfer transfer;
 	uint8_t channel_id;
 	uint8_t interrupt_id;
+	atomic_t completed_unread;
+	bool read_transfer;
 };
 
 struct paintbox_dma {

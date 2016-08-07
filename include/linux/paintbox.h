@@ -139,14 +139,14 @@ struct padding_params {
 };
 
 struct line_buffer_config {
+	int32_t x_offset_pixels;
+	int32_t y_offset_pixels;
+	int32_t fb_offset_pixels;
 	uint8_t lb_pool_id;
 	uint8_t lb_id;
 	uint8_t num_read_ptrs;
 	uint8_t num_reuse_rows;
 	uint8_t num_channels;
-	uint8_t fb_offset_pixels;
-	uint8_t x_offset_pixels;
-	uint8_t y_offset_pixels;
 	uint8_t chan_offset_pixels;
 	uint16_t fb_rows;
 	uint16_t width_pixels;
@@ -205,28 +205,36 @@ struct ipu_sram_read {
 	uint32_t ram_target;
 };
 
-struct ipu_sram_vector_write {
+struct sram_vector_coordinate_write {
 	const void __user *buf;
 	size_t len_bytes;
-	/* Logical Lane Coordinates */
-	uint8_t lane_x_start;
-	uint8_t lane_x_end;
-	uint8_t lane_y_start;
-	uint8_t lane_y_end;
-	uint8_t offset_in_bank;
-	uint8_t priority;
-	uint8_t id;
+	uint32_t lane_group_x;
+	uint32_t lane_group_y;
+	uint32_t sheet_slot;
+	uint32_t byte_offset_in_lane_group;
+	uint32_t id;
+	bool write_alu_registers;
 };
 
-struct ipu_sram_vector_read {
+struct sram_vector_replicate_write {
+	const void __user *buf;
+	size_t len_bytes;
+	uint32_t sheet_slot;
+	uint32_t byte_offset_in_lane_group;
+	uint32_t id;
+	bool write_alu_registers;
+	bool write_halo_lanes;
+};
+
+struct sram_vector_coordinate_read {
 	void __user *buf;
 	size_t len_bytes;
-	/* Logical Lane Coordinates */
-	uint8_t lane_x;
-	uint8_t lane_y;
-	uint8_t offset_in_bank;
-	uint8_t priority;
-	uint8_t id;
+	uint32_t lane_group_x;
+	uint32_t lane_group_y;
+	uint32_t sheet_slot;
+	uint32_t byte_offset_in_lane_group;
+	uint32_t id;
+	bool read_alu_registers;
 };
 
 struct mipi_input_stream_setup {
@@ -312,28 +320,37 @@ struct mipi_interrupt_wait {
 #define PB_RESUME_PROCESSOR          _IOW('p', 29, unsigned int)
 #define PB_RESET_PROCESSOR           _IOW('p', 30, unsigned int)
 #define PB_GET_PROGRAM_STATE        _IOWR('p', 31, struct stp_program_state)
-#define PB_WRITE_STP_VECTOR_MEMORY   _IOW('p', 32, struct ipu_sram_vector_write)
-#define PB_READ_STP_VECTOR_MEMORY   _IOWR('p', 33, struct ipu_sram_vector_read)
-#define PB_READ_DMA_TRANSFER         _IOW('p', 34, struct dma_transfer_read)
-#define PB_ALLOCATE_MIPI_IN_STREAM   _IOW('p', 35, unsigned int)
-#define PB_RELEASE_MIPI_IN_STREAM    _IOW('p', 36, unsigned int)
-#define PB_SETUP_MIPI_IN_STREAM      _IOW('p', 37, struct mipi_stream_setup)
-#define PB_ENABLE_MIPI_IN_STREAM     _IOW('p', 38, unsigned int)
-#define PB_DISABLE_MIPI_IN_STREAM    _IOW('p', 39, unsigned int)
-#define PB_RESET_MIPI_IN_STREAM      _IOW('p', 40, unsigned int)
-#define PB_CLEANUP_MIPI_IN_STREAM    _IOW('p', 41, unsigned int)
-#define PB_ENABLE_MIPI_IN_INTERRUPT  _IOW('p', 42, unsigned int)
-#define PB_DISABLE_MIPI_IN_INTERRUPT _IOW('p', 43, unsigned int)
-#define PB_WAIT_FOR_MIPI_IN_INTERRUPT _IOW('p', 44, struct mipi_interrupt_wait)
-#define PB_ALLOCATE_MIPI_OUT_STREAM  _IOW('p', 45, unsigned int)
-#define PB_RELEASE_MIPI_OUT_STREAM   _IOW('p', 46, unsigned int)
-#define PB_SETUP_MIPI_OUT_STREAM     _IOW('p', 47, struct mipi_stream_setup)
-#define PB_ENABLE_MIPI_OUT_STREAM    _IOW('p', 48, unsigned int)
-#define PB_DISABLE_MIPI_OUT_STREAM   _IOW('p', 49, unsigned int)
-#define PB_RESET_MIPI_OUT_STREAM     _IOW('p', 50, unsigned int)
-#define PB_CLEANUP_MIPI_OUT_STREAM   _IOW('p', 51, unsigned int)
-#define PB_ENABLE_MIPI_OUT_INTERRUPT _IOW('p', 52, unsigned int)
-#define PB_DISABLE_MIPI_OUT_INTERRUPT _IOW('p', 53, unsigned int)
-#define PB_WAIT_FOR_MIPI_OUT_INTERRUPT _IOW('p', 54, struct mipi_interrupt_wait)
+#define PB_WRITE_VECTOR_SRAM_COORDINATES _IOW('p', 32, \
+		struct sram_vector_coordinate_write)
+#define PB_WRITE_VECTOR_SRAM_REPLICATE _IOW('p', 33,   \
+		struct sram_vector_replicate_write)
+#define PB_READ_VECTOR_SRAM_COORDINATES _IOW('p', 34, \
+		struct sram_vector_coordinate_read)
+#define PB_READ_DMA_TRANSFER         _IOW('p', 35, struct dma_transfer_read)
+#define PB_ALLOCATE_MIPI_IN_STREAM   _IOW('p', 36, unsigned int)
+#define PB_RELEASE_MIPI_IN_STREAM    _IOW('p', 37, unsigned int)
+#define PB_SETUP_MIPI_IN_STREAM      _IOW('p', 38, struct mipi_stream_setup)
+#define PB_ENABLE_MIPI_IN_STREAM     _IOW('p', 39, unsigned int)
+#define PB_DISABLE_MIPI_IN_STREAM    _IOW('p', 40, unsigned int)
+#define PB_RESET_MIPI_IN_STREAM      _IOW('p', 41, unsigned int)
+#define PB_CLEANUP_MIPI_IN_STREAM    _IOW('p', 42, unsigned int)
+#define PB_ENABLE_MIPI_IN_INTERRUPT  _IOW('p', 43, unsigned int)
+#define PB_DISABLE_MIPI_IN_INTERRUPT _IOW('p', 44, unsigned int)
+#define PB_WAIT_FOR_MIPI_IN_INTERRUPT _IOW('p', 45, struct mipi_interrupt_wait)
+#define PB_ALLOCATE_MIPI_OUT_STREAM  _IOW('p', 46, unsigned int)
+#define PB_RELEASE_MIPI_OUT_STREAM   _IOW('p', 47, unsigned int)
+#define PB_SETUP_MIPI_OUT_STREAM     _IOW('p', 48, struct mipi_stream_setup)
+#define PB_ENABLE_MIPI_OUT_STREAM    _IOW('p', 49, unsigned int)
+#define PB_DISABLE_MIPI_OUT_STREAM   _IOW('p', 50, unsigned int)
+#define PB_RESET_MIPI_OUT_STREAM     _IOW('p', 51, unsigned int)
+#define PB_CLEANUP_MIPI_OUT_STREAM   _IOW('p', 52, unsigned int)
+#define PB_ENABLE_MIPI_OUT_INTERRUPT _IOW('p', 53, unsigned int)
+#define PB_DISABLE_MIPI_OUT_INTERRUPT _IOW('p', 54, unsigned int)
+#define PB_WAIT_FOR_MIPI_OUT_INTERRUPT _IOW('p', 55, struct mipi_interrupt_wait)
+
+/* Returns the number of transfers that have completed and are ready to be
+ * read back into the userspace buffer.
+ */
+#define PB_GET_COMPLETED_UNREAD_COUNT _IOW('p', 56, unsigned int)
 
 #endif /* __PAINTBOX_H__ */

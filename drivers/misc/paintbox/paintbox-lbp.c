@@ -135,8 +135,10 @@ static const char *lbp_reg_names[LBP_NUM_REGS] = {
 	REG_NAME_ENTRY(LBP_PMON_CNT_1_CFG),
 	REG_NAME_ENTRY(LBP_PMON_CNT_1),
 	REG_NAME_ENTRY(LBP_PMON_CNT_1_STS),
-	REG_NAME_ENTRY(LB_CTRL0),
-	REG_NAME_ENTRY(LB_OFFSET),
+	REG_NAME_ENTRY(LB_CTRL0_L),
+	REG_NAME_ENTRY(LB_CTRL0_H),
+	REG_NAME_ENTRY(LB_OFFSET_L),
+	REG_NAME_ENTRY(LB_OFFSET_H),
 	REG_NAME_ENTRY(LB_BDRY),
 	REG_NAME_ENTRY(LB_IMG_SIZE),
 	REG_NAME_ENTRY(LB_SB_SIZE),
@@ -302,10 +304,9 @@ int dump_lb_registers(struct paintbox_debug *debug, char *buf, size_t len)
 	writel(lbp->pool_id | (lb->lb_id << LBP_LB_SEL_SHIFT),
 			pb->lbp_base + LBP_SEL);
 
-	val = readl(pb->lbp_base + LB_CTRL0);
-	ret = dump_lbp_reg_verbose(pb, LB_CTRL0, buf, &written, len,
-			"\tREUSE_ROWS %u FB_ROWS %u CHANs %u RPTRs %u\n",
-			(val & LB_REUSE_ROWS_MASK) >> LB_REUSE_ROWS_SHIFT,
+	val = readl(pb->lbp_base + LB_CTRL0_L);
+	ret = dump_lbp_reg_verbose(pb, LB_CTRL0_L, buf, &written, len,
+			"\tFB_ROWS %u CHANs %u RPTRs %u\n",
 			(val & LB_FB_ROWS_MASK) >> LB_FB_ROWS_SHIFT,
 			(val & LB_NUM_CHAN_MASK) >> LB_NUM_CHAN_SHIFT,
 			val & LB_NUM_RPTR_MASK);
@@ -313,13 +314,28 @@ int dump_lb_registers(struct paintbox_debug *debug, char *buf, size_t len)
 	if (ret < 0)
 		return ret;
 
-	val = readl(pb->lbp_base + LB_OFFSET);
-	ret = dump_lbp_reg_verbose(pb, LB_OFFSET, buf, &written, len,
-			"\tFB_OFFSET %u OFFSET_CHAN %u OFFSET_X %u OFFSET_Y %u"
-			"\n", (val & LB_FB_OFFSET_MASK) >> LB_FB_OFFSET_SHIFT,
-			(val & LB_OFFSET_CHAN_MASK) >> LB_OFFSET_CHAN_SHIFT,
-			(val & LB_OFFSET_X_MASK) >> LB_OFFSET_X_SHIFT,
-			val & LB_OFFSET_Y_MASK);
+	val = readl(pb->lbp_base + LB_CTRL0_H);
+	ret = dump_lbp_reg_verbose(pb, LB_CTRL0_H, buf, &written, len,
+			"\tREUSE_ROWS %u\n", val & LB_REUSE_ROWS_MASK);
+
+	if (ret < 0)
+		return ret;
+
+	val = readl(pb->lbp_base + LB_OFFSET_L);
+	ret = dump_lbp_reg_verbose(pb, LB_OFFSET_L, buf, &written, len,
+			"\tOFFSET_X %d OFFSET_Y %d\n",
+			(int16_t)(val & LB_OFFSET_X_MASK),
+			(int16_t)((val & LB_OFFSET_Y_MASK) >>
+			LB_OFFSET_Y_SHIFT));
+	if (ret < 0)
+		return ret;
+
+	val = readl(pb->lbp_base + LB_OFFSET_H);
+	ret = dump_lbp_reg_verbose(pb, LB_OFFSET_H, buf, &written, len,
+			"\tFB_OFFSET %d OFFSET_CHAN %u\n",
+			(int8_t)((val & LB_FB_OFFSET_MASK) >>
+					LB_FB_OFFSET_SHIFT),
+			val & LB_OFFSET_CHAN_MASK);
 	if (ret < 0)
 		return ret;
 
@@ -431,12 +447,12 @@ static int validate_lb_config(struct paintbox_data *pb,
 		return -EINVAL;
 	}
 
-	if (lb_config->num_reuse_rows > MAX_REUSE_ROWS) {
+	if (lb_config->num_reuse_rows > LB_REUSE_ROWS_MAX) {
 		dev_err(&pb->pdev->dev,
 				"%s: lb%u.%u: invalid reuse rows, %u >= %u\n",
 				__func__, lb_config->lb_pool_id,
 				lb_config->lb_id, lb_config->num_reuse_rows,
-				MAX_REUSE_ROWS);
+				LB_REUSE_ROWS_MAX);
 		return -EINVAL;
 	}
 
@@ -466,6 +482,26 @@ static int validate_lb_config(struct paintbox_data *pb,
 				__func__, lb_config->lb_pool_id,
 				lb_config->lb_id, lb_config->fb_rows);
 		return -EINVAL;
+	}
+
+	if (lb_config->x_offset_pixels > LB_OFFSET_MAX ||
+			lb_config->x_offset_pixels < LB_OFFSET_MIN) {
+		dev_err(&pb->pdev->dev,
+				"%s: lbp%u lb%u: x offset out of bounds, %d <= "
+				"%d <= %d\n", __func__, lb_config->lb_pool_id,
+				lb_config->lb_id, LB_OFFSET_MIN,
+				lb_config->x_offset_pixels, LB_OFFSET_MAX);
+		return -ERANGE;
+	}
+
+	if (lb_config->y_offset_pixels > LB_OFFSET_MAX ||
+			lb_config->y_offset_pixels < LB_OFFSET_MIN) {
+		dev_err(&pb->pdev->dev,
+				"%s: lbp%u lb%u: y offset out of bounds, %d <= "
+				"%d <= %d\n", __func__, lb_config->lb_pool_id,
+				lb_config->lb_id, LB_OFFSET_MIN,
+				lb_config->y_offset_pixels, LB_OFFSET_MAX);
+		return -ERANGE;
 	}
 
 	if (lb_config->chan_offset_pixels > MAX_CHAN_OFFSET) {
@@ -498,8 +534,8 @@ static int validate_lb_config(struct paintbox_data *pb,
 			lb_config->width_pixels, lb_config->height_pixels,
 			lb_config->num_channels);
 	dev_dbg(&pb->pdev->dev,
-			"\tfb offset %u x offset: %u y offset: %u chan offset "
-			"%u\n", lb_config->fb_offset_pixels,
+			"\tfb offset %u x offset: %d y offset: %d chan offset "
+			"%d\n", lb_config->fb_offset_pixels,
 			lb_config->x_offset_pixels, lb_config->y_offset_pixels,
 			lb_config->chan_offset_pixels);
 	dev_dbg(&pb->pdev->dev,
@@ -723,19 +759,25 @@ int setup_lb_ioctl(struct paintbox_data *pb,
 
 	reset_line_buffer(pb, lb);
 
-	writel(lb_config.num_reuse_rows << LB_REUSE_ROWS_SHIFT |
-			lb_config.fb_rows << LB_FB_ROWS_SHIFT |
-			lb_config.num_channels << LB_NUM_CHAN_SHIFT |
-			lb_config.num_read_ptrs, pb->lbp_base + LB_CTRL0);
+	writel(lb_config.fb_rows << LB_FB_ROWS_SHIFT | lb_config.num_channels <<
+			LB_NUM_CHAN_SHIFT | lb_config.num_read_ptrs,
+			pb->lbp_base + LB_CTRL0_L);
+
+	writel(lb_config.num_reuse_rows, pb->lbp_base + LB_CTRL0_H);
 
 	lb->fb_rows = lb_config.fb_rows;
 	lb->num_read_ptrs = lb_config.num_read_ptrs;
 	lb->num_channels = lb_config.num_channels;
 
-	writel(lb_config.fb_offset_pixels << LB_FB_OFFSET_SHIFT |
-			lb_config.chan_offset_pixels << LB_OFFSET_CHAN_SHIFT |
-			lb_config.x_offset_pixels << LB_OFFSET_X_SHIFT |
-			lb_config.y_offset_pixels, pb->lbp_base + LB_OFFSET);
+	val = (uint16_t)lb_config.y_offset_pixels;
+	val <<= LB_OFFSET_Y_SHIFT;
+	val |= (uint16_t)lb_config.x_offset_pixels;
+	writel(val, pb->lbp_base + LB_OFFSET_L);
+
+	val = (uint8_t)lb_config.fb_offset_pixels;
+	val <<= LB_FB_OFFSET_SHIFT;
+	val |= lb_config.chan_offset_pixels;
+	writel(val, pb->lbp_base + LB_OFFSET_H);
 
 	writel(lb_bdry, pb->lbp_base + LB_BDRY);
 

@@ -13,6 +13,7 @@
  * GNU General Public License for more details.
  */
 
+#include <linux/atomic.h>
 #include <linux/debugfs.h>
 #include <linux/dma-mapping.h>
 #include <linux/err.h>
@@ -389,10 +390,10 @@ int dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
 
 	val = readl(pb->dma.dma_base + DMA_CHAN_IMG_POS_H);
 	ret = dump_dma_reg_verbose(pb, DMA_CHAN_IMG_POS_H, buf, &written, len,
-			"\tLB_START_Y %u LB_START_X %u\n",
-			(val & DMA_CHAN_LB_START_Y_MASK) >>
-					DMA_CHAN_LB_START_Y_SHIFT,
-			val & DMA_CHAN_LB_START_X_MASK);
+			"\tLB_START_Y %d LB_START_X %d\n",
+			(int16_t)((val & DMA_CHAN_LB_START_Y_MASK) >>
+					DMA_CHAN_LB_START_Y_SHIFT),
+			(int16_t)(val & DMA_CHAN_LB_START_X_MASK));
 	if (ret < 0)
 		goto err_exit;
 
@@ -452,7 +453,8 @@ int dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
 	val = readl(pb->dma.dma_base + DMA_CHAN_NOC_XFER_L);
 	ret = dump_dma_reg_verbose(pb, DMA_CHAN_NOC_XFER_L, buf, &written, len,
 			"\tOUTSTANDING %u SHEET_HEIGHT %u SHEET_WIDTH %u\n",
-			!!(val & DMA_CHAN_NOC_OUTSTANDING),
+			(val & DMA_CHAN_NOC_OUTSTANDING_MASK) >>
+					DMA_CHAN_NOC_OUTSTANDING_SHIFT,
 			(val & DMA_CHAN_SHEET_HEIGHT_MASK) >>
 					DMA_CHAN_SHEET_HEIGHT_SHIFT,
 			val & DMA_CHAN_SHEET_WIDTH_MASK);
@@ -575,28 +577,29 @@ static int set_dma_lbp_parameters(struct paintbox_data *pb,
 		return ret;
 
 	if (config->read_ptr_id >= lb->num_read_ptrs) {
-		dev_err(&pb->pdev->dev, "%s: dma%u invalid rptr id %u\n",
-				__func__, channel->channel_id,
-				config->read_ptr_id);
+		dev_err(&pb->pdev->dev,
+				"%s: dma channel%u invalid rptr id, %u, num "
+				"read ptrs %u\n", __func__, channel->channel_id,
+				config->read_ptr_id, lb->num_read_ptrs);
 		return -EINVAL;
 	}
 
 	if (config->start_x_pixels > DMA_CHAN_LB_START_MAX ||
 			config->start_x_pixels < DMA_CHAN_LB_START_MIN) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma%u lb_start x out of bounds (%d <= %d "
-				"<= %d\n", __func__, channel->channel_id,
-				DMA_CHAN_LB_START_MIN, config->start_x_pixels,
-				DMA_CHAN_LB_START_MAX);
+				"%s: dma channel%u lb_start x out of bounds, %d"
+				" (%d..%d)\n", __func__,
+				channel->channel_id, config->start_x_pixels,
+				DMA_CHAN_LB_START_MIN, DMA_CHAN_LB_START_MAX);
 		return -ERANGE;
 	}
 
 	if (config->start_y_pixels > DMA_CHAN_LB_START_MAX ||
 			config->start_y_pixels < DMA_CHAN_LB_START_MIN) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma%u lb_start y out of bounds (%d <= %d "
-				"<= %d\n", __func__, channel->channel_id,
-				DMA_CHAN_LB_START_MIN, config->start_y_pixels,
+				"%s: dma channel%u lb_start y out of bounds, %d"
+				" (%d..%d)\n", __func__, channel->channel_id,
+				config->start_y_pixels, DMA_CHAN_LB_START_MIN,
 				DMA_CHAN_LB_START_MAX);
 		return -ERANGE;
 	}
@@ -607,10 +610,9 @@ static int set_dma_lbp_parameters(struct paintbox_data *pb,
 	transfer->chan_node |= config->read_ptr_id << DMA_CHAN_RPTR_ID_SHIFT;
 
 	/* Set the line buffer image position */
-	transfer->chan_img_pos_high = config->start_x_pixels;
-	transfer->chan_img_pos_high |= config->start_y_pixels <<
-			DMA_CHAN_LB_START_Y_SHIFT;
-
+	transfer->chan_img_pos_high = (uint16_t)config->start_y_pixels;
+	transfer->chan_img_pos_high <<= DMA_CHAN_LB_START_Y_SHIFT;
+	transfer->chan_img_pos_high |= (uint16_t)config->start_x_pixels;
 	return 0;
 }
 
@@ -622,41 +624,27 @@ static int validate_dma_image_parameters(struct paintbox_data *pb,
 	/* Image Size */
 	if (config->width_pixels > DMA_CHAN_IMG_SIZE_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma%u image width %u > %u too large\n",
-				__func__,
-				channel->channel_id, config->width_pixels,
-				DMA_CHAN_IMG_SIZE_MAX);
+				"%s: dma channel%u image width too large, %u > "
+				"%u\n", __func__, channel->channel_id,
+				config->width_pixels, DMA_CHAN_IMG_SIZE_MAX);
 		return -ERANGE;
 	}
 
 	if (config->height_pixels > DMA_CHAN_IMG_SIZE_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma%u image height %u > %u too large\n",
-				__func__,
-				channel->channel_id, config->height_pixels,
-				DMA_CHAN_IMG_SIZE_MAX);
+				"%s: dma channel%u image height too large, %u >"
+				"%u\n", __func__, channel->channel_id,
+				config->height_pixels, DMA_CHAN_IMG_SIZE_MAX);
 		return -ERANGE;
 	}
-
-	if (config->start_x_pixels > DMA_CHAN_START_MAX)
-		pr_info("START_X OVERFLOW\n");
-
-	if (config->start_x_pixels < DMA_CHAN_START_MIN)
-		pr_info("START_X UNDERFLOW\n");
-
-	if (config->start_y_pixels > DMA_CHAN_START_MAX)
-		pr_info("START_Y OVERFLOW\n");
-
-	if (config->start_y_pixels < DMA_CHAN_START_MIN)
-		pr_info("START_Y UNDERFLOW\n");
 
 	/* Image Position */
 	if (config->start_x_pixels > DMA_CHAN_START_MAX ||
 			config->start_x_pixels < DMA_CHAN_START_MIN) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma%u start x out of bounds (%d <= %d <= "
-				"%d\n", __func__, channel->channel_id,
-				DMA_CHAN_START_MIN, config->start_x_pixels,
+				"%s: dma channel%u start x out of bounds, %d "
+				"(%d..%d)\n", __func__, channel->channel_id,
+				config->start_x_pixels, DMA_CHAN_START_MIN,
 				DMA_CHAN_START_MAX);
 		return -ERANGE;
 	}
@@ -664,9 +652,9 @@ static int validate_dma_image_parameters(struct paintbox_data *pb,
 	if (config->start_y_pixels > DMA_CHAN_START_MAX ||
 			config->start_y_pixels < DMA_CHAN_START_MIN) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma%u start y out of bounds (%d <= %d <= "
-				"%d\n", __func__, channel->channel_id,
-				DMA_CHAN_START_MIN, config->start_y_pixels,
+				"%s: dma channel%u start y out of bounds, %d "
+				"(%d..%d)\n", __func__, channel->channel_id,
+				config->start_y_pixels, DMA_CHAN_START_MIN,
 				DMA_CHAN_START_MAX);
 		return -ERANGE;
 	}
@@ -675,33 +663,40 @@ static int validate_dma_image_parameters(struct paintbox_data *pb,
 	if (config->components < DMA_CHAN_MIN_COMPONENTS ||
 			config->components > DMA_CHAN_MAX_COMPONENTS) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma%u invalid number of components, %u\n",
-				__func__, channel->channel_id,
-				config->components);
+				"%s: dma channel%u invalid number of components"
+				", %u (%u..%u)\n", __func__,
+				channel->channel_id, config->components,
+				DMA_CHAN_MIN_COMPONENTS,
+				DMA_CHAN_MAX_COMPONENTS);
 		return -EINVAL;
 	}
 
 	if (config->planes < DMA_CHAN_MIN_PLANES ||
 			config->planes > DMA_CHAN_MAX_PLANES) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma%u invalid number of planes, %u\n",
-				__func__, channel->channel_id, config->planes);
+				"%s: dma channel%u invalid number of planes, %u"
+				" (%u..%u)\n", __func__, channel->channel_id,
+				config->planes, DMA_CHAN_MIN_PLANES,
+				DMA_CHAN_MAX_PLANES);
 		return -EINVAL;
 	}
 
 	/* Image Layout */
 	if (config->row_stride_bytes > DMA_CHAN_ROW_STRIDE_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma%u invalid row stride, %u\n", __func__,
-				channel->channel_id, config->row_stride_bytes);
+				"%s: dma channel%u invalid row stride, %u >= %u"
+				"\n", __func__, channel->channel_id,
+				config->row_stride_bytes,
+				DMA_CHAN_ROW_STRIDE_MAX);
 		return -EINVAL;
 	}
 
 	if (config->plane_stride_bytes > DMA_CHAN_PLANE_STRIDE_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma%u invalid plane stride, %llu\n",
-				__func__, channel->channel_id,
-				config->plane_stride_bytes);
+				"%s: dma channel%u invalid plane stride, %llu "
+				" >= %llu\n", __func__, channel->channel_id,
+				config->plane_stride_bytes,
+				DMA_CHAN_PLANE_STRIDE_MAX);
 		return -EINVAL;
 	}
 
@@ -721,9 +716,10 @@ static int set_dma_image_parameters(struct paintbox_data *pb,
 		return ret;
 
 	/* Image Start Position */
-	transfer->chan_img_pos_low = config->start_x_pixels;
-	transfer->chan_img_pos_low |= config->start_y_pixels <<
-			DMA_CHAN_START_Y_SHIFT;
+	transfer->chan_img_pos_low = (uint16_t)config->start_y_pixels;
+	transfer->chan_img_pos_low <<= DMA_CHAN_START_Y_SHIFT;
+	transfer->chan_img_pos_low |= (uint16_t)config->start_x_pixels;
+
 
 	/* Image Size */
 	transfer->chan_img_size = config->width_pixels;
@@ -757,8 +753,9 @@ static int set_dma_image_parameters(struct paintbox_data *pb,
 				DMA_CHAN_BIT_DEPTH_SHIFT;
 		break;
 	default:
-		dev_err(&pb->pdev->dev, "%s: dma%u: unsupported bit depth %u",
-			__func__, channel->channel_id, config->bit_depth);
+		dev_err(&pb->pdev->dev,
+			"%s: dma channel%u: unsupported bit depth %u", __func__,
+			channel->channel_id, config->bit_depth);
 		return -EINVAL;
 	};
 
@@ -777,8 +774,9 @@ static int set_dma_image_parameters(struct paintbox_data *pb,
 				DMA_CHAN_RGBA_FORMAT_SHIFT;
 		break;
 	default:
-		dev_err(&pb->pdev->dev, "%s: dma%u: invalid RGBA format %u",
-			__func__, channel->channel_id, config->rgba_format);
+		dev_err(&pb->pdev->dev,
+			"%s: dma channel%u: invalid RGBA format %u", __func__,
+			channel->channel_id, config->rgba_format);
 		return -EINVAL;
 	};
 
@@ -829,31 +827,34 @@ static int set_dma_transfer_region_parameters(struct paintbox_data *pb,
 		struct dma_transfer_config *config)
 {
 	if (config->stripe_height > DMA_CHAN_MAX_STRIPES) {
-		dev_err(&pb->pdev->dev, "%s: dma%u: invalid stripe height %u",
-			__func__, channel->channel_id, config->stripe_height);
+		dev_err(&pb->pdev->dev,
+			"%s: dma channel%u: invalid stripe height %u >= %u\n",
+			__func__, channel->channel_id, config->stripe_height,
+			DMA_CHAN_MAX_STRIPES);
 		return -EINVAL;
 	}
 
 	if (config->sheet_width > DMA_CHAN_MAX_SHEET_WIDTH) {
-		dev_err(&pb->pdev->dev, "%s: dma%u: invalid sheet width %u",
-			__func__, channel->channel_id, config->sheet_width);
+		dev_err(&pb->pdev->dev,
+			"%s: dma channel%u: invalid sheet width %u >= %u",
+			__func__, channel->channel_id, config->sheet_width,
+			DMA_CHAN_MAX_SHEET_WIDTH);
 		return -EINVAL;
 	}
 
 	if (config->sheet_height > DMA_CHAN_MAX_SHEET_HEIGHT) {
-		dev_err(&pb->pdev->dev, "%s: dma%u: invalid sheet height %u",
-			__func__, channel->channel_id, config->sheet_height);
+		dev_err(&pb->pdev->dev,
+			"%s: dma channel%u: invalid sheet height %u >= %u\n",
+			__func__, channel->channel_id, config->sheet_height,
+			DMA_CHAN_MAX_SHEET_HEIGHT);
 		return -EINVAL;
 	}
 
 	transfer->chan_bif_xfer = config->stripe_height;
-	transfer->chan_bif_xfer |= DMA_CHAN_OUTSTANDING_DEF <<
-			DMA_CHAN_OUTSTANDING_SHIFT;
 
 	transfer->chan_noc_xfer_low = config->sheet_width;
 	transfer->chan_noc_xfer_low |= config->sheet_height <<
 			DMA_CHAN_SHEET_HEIGHT_SHIFT;
-	transfer->chan_noc_xfer_high = DMA_CHAN_RETRY_INTERVAL_DEF;
 
 	return 0;
 }
@@ -1056,6 +1057,7 @@ static void commit_transfer_to_hardware(struct paintbox_data *pb,
 {
 	struct paintbox_dma_transfer *transfer;
 	struct paintbox_dma *dma = &pb->dma;
+	uint32_t val;
 
 	io_disable_dma_interrupts(pb);
 
@@ -1075,15 +1077,22 @@ static void commit_transfer_to_hardware(struct paintbox_data *pb,
 			DMA_CHAN_IMG_LAYOUT_L);
 	writel(transfer->chan_img_layout_high, dma->dma_base +
 			DMA_CHAN_IMG_LAYOUT_H);
-	writel(transfer->chan_bif_xfer, dma->dma_base + DMA_CHAN_BIF_XFER);
+
+	val = readl(dma->dma_base + DMA_CHAN_BIF_XFER);
+	val &= ~DMA_CHAN_STRIPE_HEIGHT_MASK;
+	val |= transfer->chan_bif_xfer;
+	writel(val, dma->dma_base + DMA_CHAN_BIF_XFER);
+
 	writel(transfer->chan_va_low, dma->dma_base + DMA_CHAN_VA_L);
 	writel(transfer->chan_va_high, dma->dma_base + DMA_CHAN_VA_H);
 	writel(transfer->chan_va_bdry_low, dma->dma_base + DMA_CHAN_VA_BDRY_L);
 	writel(transfer->chan_va_bdry_high, dma->dma_base + DMA_CHAN_VA_BDRY_H);
-	writel(transfer->chan_noc_xfer_low, dma->dma_base +
-			DMA_CHAN_NOC_XFER_L);
-	writel(transfer->chan_noc_xfer_high, dma->dma_base +
-			DMA_CHAN_NOC_XFER_H);
+
+	val = readl(dma->dma_base + DMA_CHAN_NOC_XFER_L);
+	val &= ~(DMA_CHAN_SHEET_WIDTH_MASK | DMA_CHAN_SHEET_HEIGHT_MASK);
+	val |= transfer->chan_noc_xfer_low;
+	writel(val, dma->dma_base + DMA_CHAN_NOC_XFER_L);
+
 	writel(transfer->chan_node, dma->dma_base + DMA_CHAN_NODE);
 
 	/* Enable interrupts for the channel */
@@ -1242,6 +1251,7 @@ int paintbox_dma_init(struct paintbox_data *pb)
 		struct paintbox_dma_channel *channel = &pb->dma.channels[i];
 		channel->channel_id = i;
 		channel->interrupt_id = DMA_NO_INTERRUPT;
+		atomic_set(&channel->completed_unread, 0);
 #ifdef CONFIG_DEBUG_FS
 		paintbox_debug_create_entry(pb, &channel->debug,
 				pb->dma.debug.debug_dir, "channel", i,

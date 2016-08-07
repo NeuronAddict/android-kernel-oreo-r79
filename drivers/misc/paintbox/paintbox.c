@@ -40,6 +40,7 @@
 #include "paintbox-mipi.h"
 #include "paintbox-stp.h"
 #include "paintbox-stp-sim.h"
+#include "paintbox-stp-sram.h"
 
 #include "paintbox-regs.h"
 #include "paintbox-sim-regs.h"
@@ -340,6 +341,8 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 		return start_dma_transfer_ioctl(pb, session, arg);
 	case PB_RELEASE_DMA_CHANNEL:
 		return release_dma_channel_ioctl(pb, session, arg);
+	case PB_GET_COMPLETED_UNREAD_COUNT:
+		return get_completed_transfer_count_ioctl(pb, session, arg);
 	case PB_ALLOCATE_LINE_BUFFER_POOL:
 		return allocate_lbp_ioctl(pb, session, arg);
 	case PB_SETUP_LINE_BUFFER:
@@ -359,13 +362,16 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 	case PB_SETUP_PROCESSOR:
 		return setup_stp_ioctl(pb, session, arg);
 	case PB_WRITE_STP_MEMORY:
-		return write_stp_memory_ioctl(pb, session, arg);
+		return write_stp_scalar_sram_ioctl(pb, session, arg);
 	case PB_READ_STP_MEMORY:
-		return read_stp_memory_ioctl(pb, session, arg);
-	case PB_WRITE_STP_VECTOR_MEMORY:
-		return write_stp_vector_memory_ioctl(pb, session, arg);
-	case PB_READ_STP_VECTOR_MEMORY:
-		return read_stp_vector_memory_ioctl(pb, session, arg);
+		return read_stp_scalar_sram_ioctl(pb, session, arg);
+	case PB_WRITE_VECTOR_SRAM_COORDINATES:
+		return write_stp_vector_sram_coordinates_ioctl(pb, session,
+				arg);
+	case PB_WRITE_VECTOR_SRAM_REPLICATE:
+		return write_stp_vector_sram_replicate_ioctl(pb, session, arg);
+	case PB_READ_VECTOR_SRAM_COORDINATES:
+		return read_stp_vector_sram_coordinates_ioctl(pb, session, arg);
 	case PB_START_PROCESSOR:
 		return start_stp_ioctl(pb, session, arg);
 	case PB_STOP_PROCESSOR:

@@ -13,6 +13,7 @@
  * GNU General Public License for more details.
  */
 
+#include <linux/atomic.h>
 #include <linux/completion.h>
 #include <linux/dma-mapping.h>
 #include <linux/kernel.h>
@@ -324,6 +325,8 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 			return -EFAULT;
 		}
 
+		channel->read_transfer = false;
+
 		/* TODO(ahampson):  This needs to be conditionalized for IOMMU
 		 * or CMA.
 		 */
@@ -339,6 +342,8 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 				transfer, &config);
 		break;
 	case DMA_DRAM_TO_STP:
+		channel->read_transfer = false;
+
 		ret = dma_setup_dram_to_stp_transfer(pb, session, channel,
 				transfer, &config);
 		break;
@@ -353,6 +358,8 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 			mutex_unlock(&pb->lock);
 			return -EFAULT;
 		}
+
+		channel->read_transfer = true;
 
 		/* TODO(ahampson):  This needs to be conditionalized for IOMMU
 		 * or CMA.
@@ -369,6 +376,7 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 				transfer, &config);
 		break;
 	case DMA_STP_TO_DRAM:
+		channel->read_transfer = true;
 		ret = dma_setup_stp_to_dram_transfer(pb, session, channel,
 				transfer, &config);
 		break;
@@ -409,6 +417,16 @@ int read_dma_transfer_ioctl(struct paintbox_data *pb,
 	if (ret < 0) {
 		mutex_unlock(&pb->lock);
 		return ret;
+	}
+
+	smp_mb();
+
+	/* TODO(ahampson):  This will need to be changed when the DMA code is
+	 * changed to have a done queue.
+	 */
+	if (atomic_cmpxchg(&channel->completed_unread, 1, 0) == 0) {
+		mutex_unlock(&pb->lock);
+		return -EAGAIN;
 	}
 
 	if (!access_ok(VERIFY_READ, req.host_vaddr, req.len_bytes)) {
@@ -565,10 +583,44 @@ int unbind_dma_interrupt_ioctl(struct paintbox_data *pb,
 	return 0;
 }
 
+/* Returns the number of DMA transfers that have been completed and are ready
+ * to be read out by the HAL.
+ */
+int get_completed_transfer_count_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg)
+{
+	unsigned int channel_id = (unsigned int)arg;
+	struct paintbox_dma_channel *channel;
+	int ret;
+
+	mutex_lock(&pb->lock);
+	channel = get_dma_channel(pb, session, channel_id, &ret);
+	if (ret < 0) {
+		mutex_unlock(&pb->lock);
+		return ret;
+	}
+
+	/* TODO(ahampson): When the driver is switched over to using a transfer
+	 * queue this should return the number of transfers in the completed
+	 * queue.
+	 */
+	ret = atomic_read(&channel->completed_unread);
+
+	mutex_unlock(&pb->lock);
+
+	return ret;
+}
+
+/* This function is called in an interrupt context */
 void dma_report_completion(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel, int err)
 {
 	struct paintbox_irq *irq;
+
+	if (channel->read_transfer) {
+		smp_wmb();
+		atomic_inc(&channel->completed_unread);
+	}
 
 	if (channel->interrupt_id == DMA_NO_INTERRUPT)
 		return;

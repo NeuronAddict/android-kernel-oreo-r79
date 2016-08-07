@@ -40,16 +40,6 @@ int reset_stp_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 int setup_stp_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
-int write_stp_memory_ioctl(struct paintbox_data *pb,
-		struct paintbox_session *session, unsigned long arg);
-int read_stp_memory_ioctl(struct paintbox_data *pb,
-		struct paintbox_session *session, unsigned long arg);
-int write_stp_vector_memory_ioctl(struct paintbox_data *pb,
-		struct paintbox_session *session, unsigned long arg);
-int write_stp_vector_memory_replicate_ioctl(struct paintbox_data *pb,
-		struct paintbox_session *session, unsigned long arg);
-int read_stp_vector_memory_ioctl(struct paintbox_data *pb,
-		struct paintbox_session *session, unsigned long arg);
 int get_program_state_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 
