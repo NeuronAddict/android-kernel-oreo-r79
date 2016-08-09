@@ -32,6 +32,9 @@
 
 #define HW_IN(bAddr,mod,reg)        readl(HWIO_##mod##_##reg##_ADDR(bAddr, 0))
 #define HW_INx(bAddr,mod,reg,inst)  readl(HWIO_##mod##_##reg##_ADDR(bAddr, inst))
+#define HW_PRTx(bAddr, mod, reg, inst) printk(#mod" "#reg" "#inst" %p\n",\
+	HWIO_##mod##_##reg##_ADDR(bAddr, inst))
+
 #define HW_INf(bAddr,mod,reg,fld)                                       \
   ((readl(HWIO_##mod##_##reg##_ADDR(bAddr, 0)) & HWIO_##mod##_##reg##_##fld##_FLDMASK) >> \
    HWIO_##mod##_##reg##_##fld##_FLDSHFT)
@@ -40,6 +43,9 @@
    HWIO_##mod##_##reg##_##fld##_FLDSHFT)
 
 #define HW_OUT(bAddr,mod,reg,val)       writel(val, HWIO_##mod##_##reg##_ADDR(bAddr, 0))
+#define HW_PRT(bAddr, mod, reg)       printk(#mod" "#reg" %p\n",\
+	HWIO_##mod##_##reg##_ADDR(bAddr, 0))
+
 #define HW_OUTx(bAddr,mod,reg,inst,val) writel(val, HWIO_##mod##_##reg##_ADDR(bAddr, inst))
 
 #define HW_OUTf(bAddr,mod,reg,fld,val)					\

@@ -17,6 +17,7 @@ obj-y				+= pwm/
 obj-$(CONFIG_PCI)		+= pci/
 obj-$(CONFIG_MNH_PCIE_EP)	+= pcie_ep/
 obj-$(CONFIG_MIPICSI_TOP)	+= mipicsi/
+obj-$(CONFIG_MNH_PERF_MON)		+= perfmon/
 obj-$(CONFIG_PARISC)		+= parisc/
 obj-$(CONFIG_RAPIDIO)		+= rapidio/
 obj-y				+= video/
