@@ -75,42 +75,4 @@ struct mnh_pcie_ep_device {
 	struct resource *outbound_mem;
 };
 
-
-/*****************************************************************************
- *
- *  Data structures for iATU programming
- *
- ****************************************************************************/
-
-/** enum value used for mode setting of mnh_set_inbound() API */
-typedef enum {
-	ADDR_MATCH = 0,
-	BAR_MATCH
-} mnh_iatu_mode_t;
-
-/** structure used for mnh_set_inbound() API */
-struct mnh_inb_window {
-	uint8_t mode;				 /**< type of region */
-	uint32_t bar;				 /**< BAR ignored in addr mode */
-	uint8_t region;              /**< iATU region to be programmed */
-	uint8_t memmode;
-	uint64_t base_pcie_address;  /**< start of src buffer
-								 *ignored in BAR mode
-								 */
-	uint32_t limit_pcie_address; /**< end of src buffer
-								 *ignored in BAR mode
-								 */
-	uint64_t target_mnh_address; /**< dest address */
-};
-
-/** structure used for mnh_set_outbound() API */
-struct mnh_outb_region {
-	uint8_t region;                /**< iATU region to be programmed */
-	uint64_t base_mnh_address;     /**< start of src buffer */
-	uint32_t limit_mnh_address;    /**< end of src buffer */
-	uint64_t target_pcie_address;  /**< dest address */
-};
-
-
-
 #endif

@@ -20,7 +20,7 @@
 #include <linux/types.h>
 #ifndef __LINUX_MNH_PCIE_EP_H
 #define __LINUX_MNH_PCIE_EP_H
-#define MNH_PCIE_CONFIG_VENDOR_API_SUPPORT 1
+#define MNH_PCIE_DEBUG_ENABLE 1
 /* TODO implement to mask sysfs and other code */
 
 /*****************************************************************************
@@ -100,6 +100,13 @@ struct mnh_sg_entry {
 	size_t size;       /**< size of entry */
 };
 
+struct mnh_sg_list {
+	struct page **mypage;
+	struct scatterlist *sc_list;
+	int n_num;
+};
+
+
 struct mnh_dma_ll_element {
 	uint32_t header;
 	uint32_t size;
@@ -153,7 +160,9 @@ int mnh_pcie_write(uint8_t *buff, uint32_t size, uint64_t adr);
 * negative if overflow.
 */
 int mnh_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
-					uint32_t maxsg);
+				struct mnh_sg_list *sgl, uint32_t maxsg);
+
+int mnh_sg_destroy(struct mnh_sg_list *sgl);
 
 
 int mnh_ll_build(struct mnh_sg_entry *src_sg, struct mnh_sg_entry *dst_sg,
