@@ -172,7 +172,7 @@ int32_t mipicsi_device_set_pll(struct mipicsi_top_cfg *config)
 			       (pll.hsfreq << 1));
 
 	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_BIAS_FCC_VCO, (0x1 << 7) |
-			       (pll.vco_range << 3) | 0);
+			       (pll.vco_range << 3) | 1);
 
 	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_LPF_CP_CTRL, (0x01 << 7) |
 			       (0x01 << 6) | (pll.lpf_resistor << 0));
@@ -183,8 +183,7 @@ int32_t mipicsi_device_set_pll(struct mipicsi_top_cfg *config)
 	/* Program log2(output divider) to register */
 	val = ilog2(pll.output_div);
 	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_DIV_RAT_CTRL,
-			       ((0x1<<5) | (0x1<<4) | (0x1<<2) |
-				(val<<0)));
+			       ((0x1<<5) | (0x1<<4) | (val<<0)));
 
 	/* Program N-1 to register */
 	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_INPUT_DIV_RAT,
@@ -272,7 +271,7 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 		/* Set MASTERSLAVEZ = 1 for Master mode selection (1'b0 for Slave mode
 		 * selection).
 		 */
-		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_MASTER_SLAVEZ, 0x0F);
+		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_MASTER_SLAVEZ, 0x0E);
 
 		/* need PHY_STOP_WAIT_TIME in PHY_IF_CFG ?
 		   original code overwrote the entire register with 0x03
