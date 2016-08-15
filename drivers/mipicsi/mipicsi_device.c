@@ -356,8 +356,8 @@ int mipicsi_device_hw_init(enum mipicsi_top_dev dev)
 
 		mipicsi_device_reset(dev);
 
-		TX_OUT(INT_MASK_VPG, 0xFFFFFFFF);
-		TX_OUT(INT_MASK_IDI, 0xFFFFFFFF);
+		TX_OUT(INT_MASK_N_VPG, 0xFFFFFFFF);
+		TX_OUT(INT_MASK_N_IDI, 0xFFFFFFFF);
 
 		/* another fictitious register?  
 		   mipicsi_write(dev, R_CSI2_DEV_INT_MASK_MEM, 0xFFFFFFFF);
