@@ -286,6 +286,7 @@ static void send_pending_msi(void)
 		process_pend_msi(pend, vmask, PET_WATCHDOG);
 		process_pend_msi(pend, vmask, CRASH_DUMP);
 		process_pend_msi(pend, vmask, BOOTSTRAP_SET);
+		process_pend_msi(pend, vmask, APPDEFINED_1_M);
 	}
 }
 
@@ -469,6 +470,12 @@ static void msi_rx_worker(struct work_struct *work)
 		if (apirq & (0x1 << DMA_STATUS))
 			dma_rx_handler();
 
+		if (apirq & (0x1 << APPDEFINED_1_I)) {
+			if (irq_callback != NULL) {
+				inc.msi_irq =  APPDEFINED_1_I;
+				irq_callback(&inc);
+			}
+		}
 		/* Clear all interrupts */
 		CSR_OUT(PCIE_SW_INTR_TRIGG, MNH_PCIE_SW_IRQ_CLEAR);
 	}

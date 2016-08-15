@@ -35,7 +35,8 @@ enum  mnh_msi_msg_t {
 	MSG_SEND_M,
 	PET_WATCHDOG,
 	CRASH_DUMP,
-	BOOTSTRAP_SET
+	BOOTSTRAP_SET,
+	APPDEFINED_1_M,
 };
 
 /** enum value used for irq structure passed IRQ callback function */
@@ -43,6 +44,7 @@ enum mnh_irq_msg_t {
 	INVAL_IRQ = 0,
 	MSG_SEND_I,
 	DMA_STATUS,
+	APPDEFINED_1_I,
 };
 
 /** enum value used for pcie interupts passed to IRQ callback function */
