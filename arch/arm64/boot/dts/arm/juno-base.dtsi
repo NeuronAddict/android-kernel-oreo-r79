@@ -490,10 +490,9 @@
 		/include/ "juno-motherboard.dtsi"
 	};
 
-	apb_reg@0x60000000 {
+	apb_reg@0x6004E000 {
 		compatible = "uio_pdrv_genirq", "generic,paintbox";
-		reg = <0x0 0x60000000 0x0 0xFFFF >,
-		      <0x0 0x60010000 0x0 0x0FFF >;
-		interrupts = <GIC_SPI 168 IRQ_TYPE_LEVEL_HIGH>;
+		reg = <0x0 0x6004E000 0x0 0x3FFF>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
 	};
 

@@ -606,6 +606,7 @@ static const struct file_operations pb_debug_regs_fops = {
 
 static void paintbox_debug_init(struct paintbox_data *pb)
 {
+  pr_err("paintbox create debugfs\n");
 	pb->debug_root = debugfs_create_dir("paintbox", NULL);
 
 	pb->regs_dentry = debugfs_create_file("regs", 0644, pb->debug_root,
@@ -618,6 +619,7 @@ static int paintbox_probe(struct platform_device *pdev)
 	int ret;
 	struct resource *r;
 	struct paintbox_data *pb;
+	dev_err(&pdev->dev, "paintbox probe\n");
 
 	pb = devm_kzalloc(&pdev->dev, sizeof(*pb), GFP_KERNEL);
 	if (pb == NULL)
