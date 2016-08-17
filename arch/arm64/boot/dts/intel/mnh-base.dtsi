@@ -1,0 +1,27 @@
+	timer {
+		compatible = "arm,armv8-timer";
+		interrupts = <GIC_PPI 13 (GIC_CPU_MASK_SIMPLE(6) | IRQ_TYPE_LEVEL_LOW)>,
+			     <GIC_PPI 14 (GIC_CPU_MASK_SIMPLE(6) | IRQ_TYPE_LEVEL_LOW)>,
+			     <GIC_PPI 11 (GIC_CPU_MASK_SIMPLE(6) | IRQ_TYPE_LEVEL_LOW)>,
+			     <GIC_PPI 10 (GIC_CPU_MASK_SIMPLE(6) | IRQ_TYPE_LEVEL_LOW)>;
+	};
+
+	/include/ "mnh-clocks.dtsi"
+
+	soc_uart0: uart@04049000 {
+		compatible = "snps,dw-apb-uart";
+		reg = <0x0 0x04049000 0x0 0x1000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		interrupts = <GIC_SPI 49 IRQ_TYPE_EDGE_RISING>;
+		clock-frequency = <25000000>;
+		reg-shift = <2>;
+		reg-io-width = <4>;
+		dcd-override;
+		ri-override;
+	};
+
+	memory@40000000 {
+		device_type = "memory";
+		reg = <0x00000000 0x40000000 0x0 0x20000000>;
+	};

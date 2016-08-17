@@ -48,6 +48,13 @@ config ARCH_MEDIATEK
 	help
 	  Support for Mediatek MT65xx & MT81xx ARMv8 SoCs
 
+config ARCH_MNH
+       bool "Intel Monette Hill"
+       select ARM_GIC
+       select ARM_GIC_V3
+       select MNH_PCIE_EP
+       select MIPICSI_TOP
+
 config ARCH_QCOM
 	bool "Qualcomm Platforms"
 	select PINCTRL
