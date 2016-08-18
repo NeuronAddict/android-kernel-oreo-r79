@@ -23,6 +23,7 @@
 #include <linux/version.h>
 
 #include "paintbox-dma.h"
+#include "paintbox-io.h"
 #include "paintbox-lbp.h"
 #include "paintbox-regs.h"
 #include "paintbox-sim-regs.h"
@@ -100,6 +101,8 @@ int release_dma_channel(struct paintbox_data *pb,
 	ret = dma_stop_transfer(pb, channel);
 	if (ret < 0)
 		return ret;
+
+	io_disable_dma_channel(pb, channel->channel_id);
 
 	/* TODO(ahampson):  We will need to walk the transfer queue here and
 	 * unmap any buffers associated with transfers.  In the interim, just
@@ -182,6 +185,7 @@ int allocate_dma_channel_ioctl(struct paintbox_data *pb,
 	channel->session = session;
 	list_add_tail(&channel->entry, &session->dma_list);
 
+	io_enable_dma_channel(pb, channel_id);
 	mutex_unlock(&pb->lock);
 
 	return 0;
@@ -212,22 +216,28 @@ static int dma_map_buffer_cma(struct paintbox_data *pb,
 		return -ENOMEM;
 	}
 
-	if (dir == DMA_TO_DEVICE) {
-		if (copy_from_user(transfer->buf_vaddr, buf, len_bytes)) {
-			dma_free_coherent(&pb->pdev->dev, len_bytes,
-					transfer->buf_vaddr,
-					transfer->buf_paddr);
+	/* Copy the entire user buffer into the transfer buffer for both
+	 * directions in case the actual transfer is just a stripe.  This will
+	 * ensure that portions of the buffer outside of the stripe will be
+	 * consistent between the user buffer and the transfer buffer.
+	 *
+	 * TODO(ahampson):  Once the driver switches to locked user buffers this
+	 * will no longer be necessary.  b/28405438
+	 */
+	if (copy_from_user(transfer->buf_vaddr, buf, len_bytes)) {
+		dma_free_coherent(&pb->pdev->dev, len_bytes,
+				transfer->buf_vaddr, transfer->buf_paddr);
 
-			transfer->len_bytes = 0;
-			transfer->buf_vaddr = NULL;
-			transfer->buf_paddr = 0;
+		transfer->len_bytes = 0;
+		transfer->buf_vaddr = NULL;
+		transfer->buf_paddr = 0;
 
-			return -EFAULT;
-		}
-
-		dma_sync_single_for_device(&pb->pdev->dev,
-			transfer->buf_paddr, len_bytes, DMA_TO_DEVICE);
+		return -EFAULT;
 	}
+
+	if (dir == DMA_TO_DEVICE)
+		dma_sync_single_for_device(&pb->pdev->dev, transfer->buf_paddr,
+				len_bytes, DMA_TO_DEVICE);
 
 	transfer->len_bytes = len_bytes;
 
@@ -293,15 +303,16 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 		return ret;
 	}
 
+	/* TODO(ahampson):  Eventually we are going to need to allocate a
+	 * transfer object, populate it, and enqueue it.  In the interim we are
+	 * going to just have a single transfer associated with each DMA
+	 * channel.
+	 */
+	transfer = &channel->transfer;
+	memset(transfer, 0, sizeof(struct paintbox_dma_transfer));
+
 	switch (config.transfer_type) {
 	case DMA_DRAM_TO_LBP:
-		/* TODO(ahampson):  Eventually we are going to need to allocate
-		 * a transfer object, populate it, and enqueue it.  In the
-		 * interim we are going to just have a single transfer
-		 * associated with each DMA channel.
-		 */
-		transfer = &channel->transfer;
-
 		if (config.src.dram.len_bytes > DMA_MAX_IMG_TRANSFER_LEN) {
 			mutex_unlock(&pb->lock);
 			return -ERANGE;
@@ -328,24 +339,10 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 				transfer, &config);
 		break;
 	case DMA_DRAM_TO_STP:
-		/* TODO(ahampson):  Eventually we are going to need to allocate
-		 * a transfer object, populate it, and enqueue it.  In the
-		 * interim we are going to just have a single transfer
-		 * associated with each DMA channel.
-		 */
-		transfer = &channel->transfer;
-
 		ret = dma_setup_dram_to_stp_transfer(pb, session, channel,
 				transfer, &config);
 		break;
 	case DMA_LBP_TO_DRAM:
-		/* TODO(ahampson):  Eventually we are going to need to allocate
-		 * a transfer object, populate it, and enqueue it.  In the
-		 * interim we are going to just have a single transfer
-		 * associated with each DMA channel.
-		 */
-		transfer = &channel->transfer;
-
 		if (config.dst.dram.len_bytes > DMA_MAX_IMG_TRANSFER_LEN) {
 			mutex_unlock(&pb->lock);
 			return -ERANGE;
@@ -372,25 +369,15 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 				transfer, &config);
 		break;
 	case DMA_STP_TO_DRAM:
-		/* TODO(ahampson):  Eventually we are going to need to allocate
-		 * a transfer object, populate it, and enqueue it.  In the
-		 * interim we are going to just have a single transfer
-		 * associated with each DMA channel.
-		 */
-		transfer = &channel->transfer;
-
 		ret = dma_setup_stp_to_dram_transfer(pb, session, channel,
 				transfer, &config);
 		break;
 	case DMA_MIPI_TO_LBP:
-		/* TODO(ahampson):  Eventually we are going to need to allocate
-		 * a transfer object, populate it, and enqueue it.  In the
-		 * interim we are going to just have a single transfer
-		 * associated with each DMA channel.
-		 */
-		transfer = &channel->transfer;
-
 		ret = dma_setup_mipi_to_lbp_transfer(pb, session, channel,
+				transfer, &config);
+		break;
+	case DMA_LBP_TO_MIPI:
+		ret = dma_setup_lbp_to_mipi_transfer(pb, session, channel,
 				transfer, &config);
 		break;
 	default:

@@ -26,18 +26,12 @@
 #define IRQ_NO_DMA_CHANNEL   0xFF
 #define DMA_NO_INTERRUPT     0xFF
 
-#define RESOURCE_NAME_LEN    7
+#define RESOURCE_NAME_LEN    16
 
-/* TODO(ahampson): This information should be retrieved through CAPS registers
- * on the FPGA but there are currently no CAPS registers.  In the interim this
- * information will be hardcoded here.
+/* TODO(ahampson): Temporary FPGA_VERSION.  This should be removed once
+ * b/30112936 is fixed.
  */
 #define FPGA_VERSION         2
-#define FPGA_STP_COUNT       1
-#define FPGA_INT_COUNT       2
-#define FPGA_LBP_COUNT       3
-#define FPGA_LB_COUNT        1
-#define FPGA_DMA_COUNT       2
 
 struct paintbox_data;
 
@@ -50,20 +44,91 @@ struct paintbox_session {
 	struct list_head dma_list;
 	struct list_head stp_list;
 	struct list_head lbp_list;
+	struct list_head mipi_input_list;
+	struct list_head mipi_output_list;
+};
+
+struct paintbox_debug_reg_entry;
+struct paintbox_debug;
+
+typedef int (*register_dump_t)(struct paintbox_debug *debug, char *buf,
+			size_t len);
+
+typedef void (*register_write_t)(struct paintbox_debug_reg_entry *reg_entry,
+		uint32_t val);
+typedef uint32_t (*register_read_t)(struct paintbox_debug_reg_entry *reg_entry);
+
+
+struct paintbox_debug_reg_entry {
+	struct paintbox_debug *debug;
+	struct dentry *debug_dentry;
+	unsigned int reg_offset;
+	register_write_t write;
+	register_read_t read;
+};
+
+struct paintbox_debug {
+	struct paintbox_data *pb;
+	struct dentry *debug_dir;
+
+	/* Debug FS entry used for dumping all registers in a block (STP, LBP,
+	 * etc.) including field details.
+	 */
+	struct dentry *reg_dump_dentry;
+
+	/* Array of Debug FS entries sized to number of registers in the block.
+	 * (STP, LBP, etc.).  Each entry is used for read and write access
+	 * to an individual register in the block.
+	 */
+	struct paintbox_debug_reg_entry *reg_entries;
+	size_t num_reg_entries;
+	const char *name;
+	int resource_id;
+	register_dump_t register_dump;
 };
 
 struct paintbox_io {
-	struct dentry *debug_dir;
-	struct dentry *regs_dentry;
+	struct paintbox_debug axi_debug;
+	struct paintbox_debug apb_debug;
 	void __iomem *axi_base;
 	void __iomem *apb_base;
 	int irq;
+	unsigned int mipi_input_start;
+	unsigned int mipi_output_start;
 	uint32_t dma_mask;
-#ifdef CONFIG_PAINTBOX_FPGA_SUPPORT
-	void __iomem *fpga_base;
-	struct dentry *fpga_debug_dir;
-	struct dentry *fpga_regs_dentry;
-#endif
+	uint32_t mipi_input_mask;
+	uint32_t mipi_output_mask;
+	uint32_t dma_imr;
+	uint32_t mipi_imr;
+	bool dma_disabled;
+	bool mipi_disabled;
+
+	/* io_lock is used to protect the interrupt control registers */
+	spinlock_t io_lock;
+};
+
+struct paintbox_mipi_stream {
+	struct list_head entry;
+	struct paintbox_debug debug;
+	struct completion completion;
+	struct paintbox_session *session;
+	unsigned long irq_flags;
+	unsigned int stream_id;
+	uint32_t ctrl_offset;
+	uint32_t select_offset;
+	int error;
+	bool is_input;
+	bool enabled;
+	int wait_count;
+};
+
+struct paintbox_io_ipu {
+	struct paintbox_debug debug;
+	void __iomem *ipu_base;
+	struct paintbox_mipi_stream *mipi_input_streams;
+	struct paintbox_mipi_stream *mipi_output_streams;
+	unsigned int num_mipi_input_streams;
+	unsigned int num_mipi_output_streams;
 };
 
 /* Data structure for information specific to an interrupt.
@@ -115,21 +180,6 @@ struct paintbox_dma_transfer {
 	uint32_t chan_node;
 };
 
-#ifdef CONFIG_PAINTBOX_FPGA_SUPPORT
-struct paintbox_fpga_dma_channel {
-	void __iomem *xilinx_base;
-	uint32_t requested_transfer_len;
-	uint32_t transfer_len;
-	uint32_t bytes_transferred;
-	bool to_ipu;
-};
-
-struct paintbox_fpga_dma {
-	struct dentry *xilinx_debug_dir;
-	struct dentry *xilinx_regs_dentry;
-};
-#endif
-
 /* Data structure for information specific to a DMA channel.
  * One entry will be allocated for each channel on a DMA controller.
  *
@@ -139,30 +189,22 @@ struct paintbox_fpga_dma {
  */
 struct paintbox_dma_channel {
 	struct list_head entry;
-	struct paintbox_data *pb;
+	struct paintbox_debug debug;
 	struct paintbox_session *session;
-#ifdef CONFIG_PAINTBOX_FPGA_SUPPORT
-	struct paintbox_fpga_dma_channel fpga;
-#endif
+
 	/* TODO(ahampson):  Initially only a single transfer will be supported.
 	 * a transfer queue will be implemented in the future.
 	 */
 	struct paintbox_dma_transfer transfer;
-	struct dentry *debug_dir;
-	struct dentry *regs_dentry;
 	uint8_t channel_id;
 	uint8_t interrupt_id;
 };
 
 struct paintbox_dma {
+	struct paintbox_debug debug;
 	struct paintbox_dma_channel *channels;
 	unsigned int num_channels;
 	void __iomem *dma_base;
-	struct dentry *debug_dir;
-	struct dentry *regs_dentry;
-#ifdef CONFIG_PAINTBOX_FPGA_SUPPORT
-	struct paintbox_fpga_dma fpga;
-#endif
 };
 
 /* Data structure for information specific to a Stencil Processor.
@@ -174,11 +216,14 @@ struct paintbox_dma {
  */
 struct paintbox_stp {
 	struct list_head entry;
-	struct paintbox_data *pb;
+	struct paintbox_debug debug;
 	struct paintbox_session *session;
-	struct dentry *debug_dir;
-	struct dentry *regs_dentry;
-	uint8_t stp_id;
+	unsigned int stp_id;
+	unsigned int inst_mem_size_in_words;
+	unsigned int scalar_mem_size_in_words;
+	unsigned int const_mem_size_in_words;
+	unsigned int vector_mem_size_in_words;
+	unsigned int halo_mem_size_in_words;
 };
 
 struct paintbox_lbp;
@@ -187,9 +232,8 @@ struct paintbox_lbp;
  * One entry will be allocated for each line buffer in a pool.
  */
 struct paintbox_lb {
+	struct paintbox_debug debug;
 	struct paintbox_lbp *lbp;
-	struct dentry *debug_dir;
-	struct dentry *regs_dentry;
 	unsigned int lb_id;
 	unsigned int fb_rows;
 	unsigned int num_channels;
@@ -210,11 +254,9 @@ struct paintbox_lb {
  */
 struct paintbox_lbp {
 	struct list_head entry;
-	struct paintbox_data *pb;
+	struct paintbox_debug debug;
 	struct paintbox_session *session;
 	struct paintbox_lb *lbs;
-	struct dentry *debug_dir;
-	struct dentry *regs_dentry;
 	uint32_t mem_size;
 	uint32_t max_fb_rows;
 	uint32_t max_lbs;
@@ -242,6 +284,7 @@ struct paintbox_data {
 	struct dentry *regs_dentry;
 
 	struct paintbox_io io;
+	struct paintbox_io_ipu io_ipu;
 	struct paintbox_dma dma;
 	struct paintbox_irq *irqs;
 	struct paintbox_stp *stps;

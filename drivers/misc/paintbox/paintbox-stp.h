@@ -65,9 +65,11 @@ void release_stp(struct paintbox_data *pb,
 		struct paintbox_session *session, struct paintbox_stp *stp);
 void enable_stp_access_to_lbp(struct paintbox_data *pb,
 		struct paintbox_session *session, struct paintbox_lbp *lbp);
+void disable_stp_access_to_lbp(struct paintbox_data *pb,
+		struct paintbox_session *session, struct paintbox_lbp *lbp);
 
 #if defined(CONFIG_DEBUG_FS) || defined(VERBOSE_DEBUG)
-int dump_stp_registers(struct paintbox_data *pb, char *buf, size_t len);
+int dump_stp_registers(struct paintbox_debug *debug, char *buf, size_t len);
 #endif
 
 #endif /* __PAINTBOX_STP_H__ */

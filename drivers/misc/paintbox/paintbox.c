@@ -35,9 +35,9 @@
 
 #include "paintbox-common.h"
 #include "paintbox-dma.h"
-#include "paintbox-dma-fpga.h"
 #include "paintbox-io.h"
 #include "paintbox-lbp.h"
+#include "paintbox-mipi.h"
 #include "paintbox-stp.h"
 #include "paintbox-stp-sim.h"
 
@@ -250,6 +250,8 @@ static int paintbox_open(struct inode *ip, struct file *fp)
 	INIT_LIST_HEAD(&session->dma_list);
 	INIT_LIST_HEAD(&session->stp_list);
 	INIT_LIST_HEAD(&session->lbp_list);
+	INIT_LIST_HEAD(&session->mipi_input_list);
+	INIT_LIST_HEAD(&session->mipi_output_list);
 
 	fp->private_data = session;
 
@@ -264,6 +266,7 @@ static int paintbox_release(struct inode *ip, struct file *fp)
 	struct paintbox_dma_channel *dma, *dma_next;
 	struct paintbox_stp *stp, *stp_next;
 	struct paintbox_lbp *lbp, *lbp_next;
+	struct paintbox_mipi_stream *stream, *stream_next;
 
 	mutex_lock(&pb->lock);
 
@@ -291,6 +294,16 @@ static int paintbox_release(struct inode *ip, struct file *fp)
 	/* Release any Line Buffer Pools associated with the channel */
 	list_for_each_entry_safe(lbp, lbp_next, &session->lbp_list, entry)
 		release_lbp(pb, session, lbp);
+
+	/* Release any MIPI Input Streams associated with the channel */
+	list_for_each_entry_safe(stream, stream_next, &session->mipi_input_list,
+			entry)
+		release_mipi_stream(pb, session, stream);
+
+	/* Release any MIPI Output Streams associated with the channel */
+	list_for_each_entry_safe(stream, stream_next, &session->mipi_output_list,
+			entry)
+		release_mipi_stream(pb, session, stream);
 
 	mutex_unlock(&pb->lock);
 
@@ -333,6 +346,10 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 		return setup_lb_ioctl(pb, session, arg);
 	case PB_RELEASE_LINE_BUFFER_POOL:
 		return release_lbp_ioctl(pb, session, arg);
+	case PB_RESET_LINE_BUFFER_POOL:
+		return reset_lbp_ioctl(pb, session, arg);
+	case PB_RESET_LINE_BUFFER:
+		return reset_lb_ioctl(pb, session, arg);
 	case PB_WRITE_LBP_MEMORY:
 		return write_lbp_memory_ioctl(pb, session, arg);
 	case PB_READ_LBP_MEMORY:
@@ -382,6 +399,46 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 		return setup_dma_transfer_ioctl(pb, session, arg);
 	case PB_READ_DMA_TRANSFER:
 		return read_dma_transfer_ioctl(pb, session, arg);
+	case PB_ALLOCATE_MIPI_IN_STREAM:
+		return allocate_mipi_input_stream_ioctl(pb, session, arg);
+	case PB_RELEASE_MIPI_IN_STREAM:
+		return release_mipi_stream_ioctl(pb, session, arg, true);
+	case PB_SETUP_MIPI_IN_STREAM:
+		return setup_mipi_stream_ioctl(pb, session, arg, true);
+	case PB_ENABLE_MIPI_IN_STREAM:
+		return enable_mipi_stream_ioctl(pb, session, arg, true);
+	case PB_DISABLE_MIPI_IN_STREAM:
+		return disable_mipi_stream_ioctl(pb, session, arg, true);
+	case PB_RESET_MIPI_IN_STREAM:
+		return reset_mipi_stream_ioctl(pb, session, arg, true);
+	case PB_CLEANUP_MIPI_IN_STREAM:
+		return cleanup_mipi_stream_ioctl(pb, session, arg, true);
+	case PB_ENABLE_MIPI_IN_INTERRUPT:
+		return enable_mipi_interrupt_ioctl(pb, session, arg, true);
+	case PB_DISABLE_MIPI_IN_INTERRUPT:
+		return disable_mipi_interrupt_ioctl(pb, session, arg, true);
+	case PB_WAIT_FOR_MIPI_IN_INTERRUPT:
+		return wait_for_mipi_interrupt_ioctl(pb, session, arg, true);
+	case PB_ALLOCATE_MIPI_OUT_STREAM:
+		return allocate_mipi_output_stream_ioctl(pb, session, arg);
+	case PB_RELEASE_MIPI_OUT_STREAM:
+		return release_mipi_stream_ioctl(pb, session, arg, false);
+	case PB_SETUP_MIPI_OUT_STREAM:
+		return setup_mipi_stream_ioctl(pb, session, arg, false);
+	case PB_ENABLE_MIPI_OUT_STREAM:
+		return enable_mipi_stream_ioctl(pb, session, arg, false);
+	case PB_DISABLE_MIPI_OUT_STREAM:
+		return disable_mipi_stream_ioctl(pb, session, arg, false);
+	case PB_RESET_MIPI_OUT_STREAM:
+		return reset_mipi_stream_ioctl(pb, session, arg, false);
+	case PB_CLEANUP_MIPI_OUT_STREAM:
+		return cleanup_mipi_stream_ioctl(pb, session, arg, false);
+	case PB_ENABLE_MIPI_OUT_INTERRUPT:
+		return enable_mipi_interrupt_ioctl(pb, session, arg, false);
+	case PB_DISABLE_MIPI_OUT_INTERRUPT:
+		return disable_mipi_interrupt_ioctl(pb, session, arg, false);
+	case PB_WAIT_FOR_MIPI_OUT_INTERRUPT:
+		return wait_for_mipi_interrupt_ioctl(pb, session, arg, false);
 	default:
 		dev_err(&pb->pdev->dev, "%s: unknown ioctl 0x%0x\n", __func__,
 				cmd);
@@ -412,6 +469,9 @@ static int paintbox_irq_init(struct paintbox_data *pb)
 {
 	unsigned int i;
 
+	pb->caps.num_interrupts = pb->dma.num_channels;
+	pb->caps.num_interrupts += pb->caps.num_stps;
+
 	pb->irqs = kzalloc(sizeof(struct paintbox_irq) *
 			pb->caps.num_interrupts, GFP_KERNEL);
 	if (!pb->irqs)
@@ -433,43 +493,12 @@ static int paintbox_irq_init(struct paintbox_data *pb)
 
 #define SIM_GROUP_OFFSET IPU_RESERVED_OFFSET
 
-static int paintbox_sim_init(struct paintbox_data *pb)
+static void paintbox_sim_init(struct paintbox_data *pb)
 {
-	uint32_t caps;
-
 	pb->sim_base = pb->reg_base + SIM_GROUP_OFFSET;
 
-	pb->caps.version = readl(pb->sim_base + SIM_ID);
-
-	caps = readl(pb->sim_base + SIM_CAP0);
-
-	pb->caps.num_interrupts = (caps & SIM_CAP0_INT_MASK) >>
-			SIM_CAP0_INT_SHIFT;
-	pb->caps.num_lbps = (caps & SIM_CAP0_LBP_MASK) >>
-			SIM_CAP0_LBP_SHIFT;
-	pb->caps.num_stps = (caps & SIM_CAP0_STP_MASK) >>
-			SIM_CAP0_STP_SHIFT;
-
-	dev_dbg(&pb->pdev->dev, "sim: base %p len %u ints%u id 0x%08x\n",
-			pb->sim_base, SIM_BLOCK_LEN, pb->caps.num_interrupts,
-			pb->caps.version);
-
-	return 0;
-}
-#endif
-
-#ifdef CONFIG_PAINTBOX_FPGA_SUPPORT
-static int paintbox_fpga_init(struct paintbox_data *pb)
-{
-	pb->caps.version = FPGA_VERSION;
-	pb->caps.num_interrupts = FPGA_INT_COUNT;
-	pb->caps.num_lbps = FPGA_LBP_COUNT;
-	pb->caps.num_stps = FPGA_STP_COUNT;
-
-	dev_dbg(&pb->pdev->dev, "ints%u id 0x%08x\n",
-			pb->caps.num_interrupts, pb->caps.version);
-
-	return 0;
+	dev_dbg(&pb->pdev->dev, "sim: base %p len %u\n", pb->sim_base,
+			SIM_BLOCK_LEN);
 }
 #endif
 
@@ -500,28 +529,71 @@ static int pb_debug_regs_show(struct seq_file *s, void *unused)
 
 	mutex_lock(&pb->lock);
 
-#ifdef CONFIG_PAINTBOX_FPGA_SUPPORT
-	ret = dump_io_fpga_registers(pb, buf + written, len - written);
-	if (ret < 0)
-		goto err_exit;
-
-	written += ret;
-#endif
-
-	ret = dump_io_axi_registers(pb, buf + written, len - written);
+	ret = dump_io_apb_registers(&pb->io.apb_debug, buf + written,
+			len - written);
 	if (ret < 0)
 		goto err_exit;
 
 	written += ret;
 
-	ret = dump_dma_registers(pb, buf + written, len - written);
+	ret = dump_io_apb_registers(&pb->io.apb_debug, buf + written,
+			len - written);
+	if (ret < 0)
+		goto err_exit;
+
+	written += ret;
+
+	ret = dump_io_axi_registers(&pb->io.axi_debug, buf + written,
+			len - written);
+	if (ret < 0)
+		goto err_exit;
+
+	written += ret;
+
+	ret = dump_io_ipu_registers(&pb->io_ipu.debug, buf + written,
+			len - written);
+	if (ret < 0)
+		goto err_exit;
+
+	written += ret;
+
+	for (i = 0; i < pb->io_ipu.num_mipi_input_streams; i++) {
+		ret = dump_mipi_input_stream_registers(
+				&pb->io_ipu.mipi_input_streams[i].debug,
+				buf + written, len - written);
+		if (ret < 0)
+			goto err_exit;
+
+		written += ret;
+	}
+
+	for (i = 0; i < pb->io_ipu.num_mipi_output_streams; i++) {
+		ret = dump_mipi_output_stream_registers(
+				&pb->io_ipu.mipi_output_streams[i].debug,
+				buf + written, len - written);
+		if (ret < 0)
+			goto err_exit;
+
+		written += ret;
+	}
+
+	ret = dump_dma_registers(&pb->dma.debug, buf + written, len - written);
 	if (ret < 0)
 		goto err_exit;
 
 	written += ret;
 
 	for (i = 0; i < pb->dma.num_channels; i++) {
-		ret = dump_dma_channel_registers(pb, i, buf + written,
+		ret = dump_dma_channel_registers(&pb->dma.channels[i].debug,
+				buf + written, len - written);
+		if (ret < 0)
+			goto err_exit;
+
+		written += ret;
+	}
+
+	for (i = 0; i < pb->caps.num_stps; i++) {
+		ret = dump_stp_registers(&pb->stps[i].debug, buf + written,
 				len - written);
 		if (ret < 0)
 			goto err_exit;
@@ -529,42 +601,23 @@ static int pb_debug_regs_show(struct seq_file *s, void *unused)
 		written += ret;
 	}
 
-	for (i = 1; i <= pb->caps.num_stps; i++) {
-		writel(i, pb->stp_base + STP_SEL);
-		ret = dump_stp_registers(pb, buf + written, len - written);
-		if (ret < 0)
-			goto err_exit;
-
-		written += ret;
-	}
-
 	for (i = 0; i < pb->caps.num_lbps; i++) {
-		writel(i, pb->lbp_base + LBP_SEL);
-		ret = dump_lbp_registers(pb, buf + written, len - written);
+		ret = dump_lbp_registers(&pb->lbps[i].debug, buf + written,
+				len - written);
 		if (ret < 0)
 			goto err_exit;
 
 		written += ret;
 
 		for (j = 0; j < pb->caps.max_line_buffers; j++) {
-			writel(i | (j << LBP_LB_SEL_SHIFT),
-					pb->lbp_base + LBP_SEL);
-			ret = dump_lb_registers(pb, buf + written,
-					len - written);
+			ret = dump_lb_registers(&pb->lbps[i].lbs[j].debug,
+					buf + written, len - written);
 			if (ret < 0)
 				goto err_exit;
 
 			written += ret;
 		}
 	}
-
-#ifdef CONFIG_PAINTBOX_FPGA_SUPPORT
-	ret = dump_xilinx_registers(pb, buf + written, len - written);
-	if (ret < 0)
-		goto err_exit;
-
-	written += ret;
-#endif
 
 	mutex_unlock(&pb->lock);
 
@@ -589,9 +642,6 @@ static int pb_debug_regs_open(struct inode *inode, struct file *file)
 	len += pb->caps.num_lbps * LBP_DEBUG_BUFFER_SIZE;
 	len += pb->caps.num_lbps * pb->caps.max_line_buffers *
 			LB_DEBUG_BUFFER_SIZE;
-#ifdef CONFIG_PAINTBOX_FPGA_SUPPORT
-	len += IO_DEBUG_BUFFER_SIZE + XILINX_DEBUG_BUFFER_SIZE;
-#endif
 
 	return single_open_size(file, pb_debug_regs_show, inode->i_private,
 			len);
@@ -606,13 +656,46 @@ static const struct file_operations pb_debug_regs_fops = {
 
 static void paintbox_debug_init(struct paintbox_data *pb)
 {
-  pr_err("paintbox create debugfs\n");
 	pb->debug_root = debugfs_create_dir("paintbox", NULL);
 
 	pb->regs_dentry = debugfs_create_file("regs", 0644, pb->debug_root,
 			pb, &pb_debug_regs_fops);
 }
 #endif
+
+static void paintbox_get_version(struct paintbox_data *pb)
+{
+#ifndef CONFIG_PAINTBOX_FPGA_SUPPORT
+	uint32_t version = readl(pb->reg_base + IPU_VERSION);
+
+	pb->caps.version_major = (version & IPU_VERSION_MAJOR_MASK) >>
+			IPU_VERSION_MAJOR_SHIFT;
+	pb->caps.version_minor = (version & IPU_VERSION_MINOR_MASK) >>
+			IPU_VERSION_MAJOR_SHIFT;
+	pb->caps.version_build = version & IPU_VERSION_INCR_MASK;
+	pb->caps.is_fpga = !!(version & IPU_VERSION_FPGA_BUILD);
+
+#if defined(CONFIG_PAINTBOX_SIMULATOR_SUPPORT)
+	pb->caps.is_simulator = true;
+
+	/* TODO(ahampson):  The RTL tests expect the version register to be zero
+	 * so we are passing the hardware id out of band throughg simulator
+	 * specific registers.  There needs to be some clean up of the hardware
+	 * id system so that version 0.0.0 corresponds to the hardware id of
+	 * Easel configuration.  b/30112936
+	 */
+	pb->caps.version_major = readl(pb->sim_base + SIM_ID);
+#endif
+
+#else
+	pb->caps.version_major = FPGA_VERSION;
+#endif
+
+	dev_info(&pb->pdev->dev, "Paintbox IPU Version %u.%u Build %u %s\n",
+			pb->caps.version_major, pb->caps.version_minor,
+			pb->caps.version_build, pb->caps.is_simulator ?
+			"Simulator" : pb->caps.is_fpga ? "FPGA" : "");
+}
 
 static int paintbox_probe(struct platform_device *pdev)
 {
@@ -656,24 +739,20 @@ static int paintbox_probe(struct platform_device *pdev)
 #endif
 
 #if defined(CONFIG_PAINTBOX_SIMULATOR_SUPPORT)
-	ret = paintbox_sim_init(pb);
-#elif defined(CONFIG_PAINTBOX_FPGA_SUPPORT)
-	ret = paintbox_fpga_init(pb);
-#else
-	ret = -ENOSYS;
+	paintbox_sim_init(pb);
 #endif
+
+	paintbox_get_version(pb);
+
+	ret = paintbox_io_axi_init(pb);
 	if (ret < 0)
 		return ret;
 
-	ret = paintbox_io_init(pb);
+	ret = paintbox_mipi_init(pb);
 	if (ret < 0)
 		return ret;
 
 	ret = paintbox_dma_init(pb);
-	if (ret < 0)
-		return ret;
-
-	ret = paintbox_irq_init(pb);
 	if (ret < 0)
 		return ret;
 
@@ -685,6 +764,17 @@ static int paintbox_probe(struct platform_device *pdev)
 	if (ret < 0)
 		return ret;
 
+	/* Initialize the IO APB block last.  It needs to have all the interrupt
+	 * sources initialized first.
+	 */
+	ret = paintbox_io_apb_init(pb);
+	if (ret < 0)
+		return ret;
+
+	ret = paintbox_irq_init(pb);
+	if (ret < 0)
+		return ret;
+
 	/* TODO(ahampson):  This works on the assumption that all lbps have the
 	 * same number of lbs.
 	 */
@@ -692,7 +782,6 @@ static int paintbox_probe(struct platform_device *pdev)
 	pb->caps.max_read_ptrs = pb->lbps[0].max_rptrs;
 	pb->caps.max_channels = pb->lbps[0].max_channels;
 	pb->caps.max_fb_rows = pb->lbps[0].max_fb_rows;
-	pb->caps.mem_size = pb->lbps[0].mem_size;
 
 	/* register the misc device */
 	pb->misc_device.minor = MISC_DYNAMIC_MINOR,
@@ -716,10 +805,8 @@ static int paintbox_remove(struct platform_device *pdev)
 
 	paintbox_deinit(pb);
 
-	/* TODO(ahampson): The FPGA does not currently present an interrupt. */
-#ifndef CONFIG_PAINTBOX_FPGA_SUPPORT
 	devm_free_irq(&pdev->dev, pb->io.irq, pb);
-#endif
+
 	devm_iounmap(&pdev->dev, pb->reg_base);
 
 	mutex_destroy(&pb->lock);
@@ -730,7 +817,7 @@ static int paintbox_remove(struct platform_device *pdev)
 }
 
 static const struct of_device_id paintbox_of_match[] = {
-	{ .compatible = "generic,paintbox", },
+	{ .compatible = "google,paintbox", },
 	{},
 };
 MODULE_DEVICE_TABLE(of, paintbox_of_match);

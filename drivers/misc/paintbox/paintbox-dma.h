@@ -97,6 +97,12 @@ int dma_setup_mipi_to_lbp_transfer(struct paintbox_data *pb,
 		struct paintbox_dma_transfer *transfer,
 		struct dma_transfer_config *config);
 
+int dma_setup_lbp_to_mipi_transfer(struct paintbox_data *pb,
+		struct paintbox_session *session,
+		struct paintbox_dma_channel *channel,
+		struct paintbox_dma_transfer *transfer,
+		struct dma_transfer_config *config);
+
 int dma_start_transfer(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel);
 
@@ -112,9 +118,10 @@ irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 int paintbox_dma_init(struct paintbox_data *pb);
 
 #if defined(CONFIG_DEBUG_FS) || defined(VERBOSE_DEBUG)
-int dump_dma_registers(struct paintbox_data *pb, char *buf, size_t len);
-int dump_dma_channel_registers(struct paintbox_data *pb,
-		unsigned int channel_id, char *buf, size_t len);
+int dump_dma_registers(struct paintbox_debug *debug, char *buf,
+		size_t len);
+int dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
+		size_t len);
 #endif
 
 #endif  /* __PAINTBOX_DMA_H__ */

@@ -33,6 +33,10 @@ int release_lbp_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 int setup_lb_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
+int reset_lbp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
+		unsigned long arg);
+int reset_lb_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
+		unsigned long arg);
 int write_lbp_memory_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 int read_lbp_memory_ioctl(struct paintbox_data *pb,
@@ -53,8 +57,8 @@ void release_lbp(struct paintbox_data *pb, struct paintbox_session *session,
 		struct paintbox_lbp *lbp);
 
 #if defined(CONFIG_DEBUG_FS) || defined(VERBOSE_DEBUG)
-int dump_lbp_registers(struct paintbox_data *pb, char *buf, size_t len);
-int dump_lb_registers(struct paintbox_data *pb, char *buf, size_t len);
+int dump_lbp_registers(struct paintbox_debug *debug, char *buf, size_t len);
+int dump_lb_registers(struct paintbox_debug *debug, char *buf, size_t len);
 #endif
 
 #endif /* __PAINTBOX_LBP_H__ */

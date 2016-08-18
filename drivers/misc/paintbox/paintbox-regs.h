@@ -42,28 +42,86 @@
 #define IPU_REGISTER_SPACE_LEN         0x3FFF
 
 /* IO APB Register Group Offsets */
-#define IPU_ISR               0x00
-#define IPU_IMR               0x08
-#define CLK_GATE_CONTROL_STP_IDLE_GATE_DIS 0x10
-#define CLK_GATE_CONTROL_LBP_IDLE_GATE_DIS 0x18
-#define CLK_GATE_CONTROL      0x20
-#define IPU_CORE_PAIRS_EN     0x28
-#define CORE_POWER_ON_N       0x30
-#define CORE_ISO_ON           0x38
-#define CORE_RAM_ON_N         0x40
-#define IO_APB_BLOCK_LEN      0x48
+#define IPU_VERSION           0x00
+#define IPU_CHECKSUM_L        0x08
+#define IPU_CHECKSUM_H        0x0C
+#define IPU_ISR               0x10
+#define IPU_IMR               0x18
+#define IPU_CAP               0x20
+#define CLK_GATE_CONTROL_STP_IDLE_GATE_DIS 0x28
+#define CLK_GATE_CONTROL_LBP_IDLE_GATE_DIS 0x30
+#define CLK_GATE_CONTROL      0x38
+#define IPU_CORE_PAIRS_EN     0x40
+#define CORE_POWER_ON_N       0x48
+#define CORE_ISO_ON           0x50
+#define CORE_RAM_ON_N         0x58
+#define IPU_DMA_CHAN_EN       0x60
+#define IO_APB_BLOCK_LEN      0x68
 #define IO_APB_NUM_REGS      (IO_APB_BLOCK_LEN / IPU_REG_WIDTH)
+
+/* IPU_VERSION Register Bits */
+#define IPU_VERSION_INCR_MASK 0xFF
+#define IPU_VERSION_MINOR_M   0xFF
+#define IPU_VERSION_MINOR_SHIFT 8
+#define IPU_VERSION_MINOR_MASK (IPU_VERSION_MINOR_M << IPU_VERSION_MINOR_SHIFT)
+#define IPU_VERSION_FPGA_BUILD (1 << 23)
+#define IPU_VERSION_MAJOR_M   0xFF
+#define IPU_VERSION_MAJOR_SHIFT 24
+#define IPU_VERSION_MAJOR_MASK (IPU_VERSION_MAJOR_M << IPU_VERSION_MAJOR_SHIFT)
+
+/* IPU_CAP Register Bits */
+#define NUM_STP_MASK          0xFF
+#define NUM_LBP_M             0xFF
+#define NUM_LBP_SHIFT         8
+#define NUM_LBP_MASK          (NUM_LBP_M << NUM_LBP_SHIFT)
 
 /* IO AXI Register Group Offsets */
 #define MMU_CTRL              0x00
 #define MMU_TABLE_BASE        0x08
 #define MMU_ERR_BASE          0x10
-#define BIF_AXI_CTRL_DMA      0x18
-#define BIF_AXI_CTRL_MMU      0x20
-#define BIF_ERR_CFG_STS       0x28
-#define BIF_ERR_LOG           0x30
-#define BIF_ERR_LOG_BUS_ADDR  0x38
-#define IO_AXI_BLOCK_LEN      0x40
+#define MMU_SYNC              0x18
+#define MMU_FLUSH_CHANNEL     0x20
+#define MMU_FLUSH_ADDRESS     0x28
+#define MMU_FLUSH_FIFO_LEVEL  0x30
+#define MMU_FLUSH_FIFO_FULL   0x38
+#define MMU_ISR               0x40
+#define MMU_IMR               0x48
+#define MMU_ISR_OVF           0x50
+#define MMU_ERR_LOG_L         0x58
+#define MMU_ERR_LOG_H         0x5C
+#define BIF_AXI_CTRL_DMA0     0x80
+#define BIF_AXI_CTRL_DMA1     0x88
+#define BIF_AXI_CTRL_DMA2     0x90
+#define BIF_AXI_CTRL_DMA3     0x98
+#define BIF_AXI_CTRL_DMA4     0xA0
+#define BIF_AXI_CTRL_DMA5     0xA8
+#define BIF_AXI_CTRL_MMU      0xB0
+#define BIF_IMR               0xB8
+#define BIF_ISR               0xC0
+#define BIF_ISR_OVF           0xC8
+#define BIF_ERR_CFG_STS       0xD0
+#define BIF_ERR_LOG_L         0xD8
+#define BIF_ERR_LOG_H         0xDC
+#define BIF_ERR_LOG_BUS_ADDR  0xE0
+#define BIF_PMON_CFG          0x100
+#define BIF_PMON_CNT_0_CFG    0x108
+#define BIF_PMON_CNT_0        0x110
+#define BIF_PMON_CNT_0_STS_ACC 0x118
+#define BIF_PMON_CNT_0_STS    0x120
+#define BIF_PMON_CNT_1_CFG    0x128
+#define BIF_PMON_CNT_1        0x130
+#define BIF_PMON_CNT_1_STS_ACC 0x138
+#define BIF_PMON_CNT_1_STS    0x140
+#define MMU_PMON_CFG          0x1C0
+#define MMU_PMON_CNT_0_CFG    0x1C8
+#define MMU_PMON_CNT_0        0x1D0
+#define MMU_PMON_CNT_0_STS_ACC 0x1D8
+#define MMU_PMON_CNT_0_STS    0x1E0
+#define MMU_PMON_CNT_1_CFG    0x1E8
+#define MMU_PMON_CNT_1        0x1F0
+#define MMU_PMON_CNT_1_STS_ACC 0x1F8
+#define MMU_PMON_CNT_1_STS    0x200
+#define IO_AXI_BLOCK_LEN      0x208
 #define IO_AXI_NUM_REGS      (IO_AXI_BLOCK_LEN / IPU_REG_WIDTH)
 
 /* MMU_CTRL Register Bits */
@@ -74,6 +132,145 @@
 
 /* MMU_ERROR_BASE_Register Bits */
 #define MMU_ERROR_BASE_RSHIFT 12
+
+/* IO IPU Register Group Offsets */
+#define MPI_CAP               0x00
+#define MPI_STRM_SEL          0x08
+#define MPI_COMMON_BLOCK_END  0x10
+#define MPI_COMMON_BLOCK_LEN  MPI_COMMON_BLOCK_END
+#define MPI_COMMON_NUM_REGS  (MPI_COMMON_BLOCK_LEN / IPU_REG_WIDTH)
+
+#define MPI_STRM_BLOCK_START MPI_COMMON_BLOCK_LEN
+#define MPI_STRM_CTRL         MPI_STRM_BLOCK_START
+#define MPI_STRM_CNFG0_L      0x18
+#define MPI_STRM_CNFG0_H      0x1C
+#define MPI_STRM_CNFG1_L      0x20
+#define MPI_STRM_CNFG1_H      0x24
+#define MPI_STRM_CNFG0_L_RO   0x28
+#define MPI_STRM_CNFG0_H_RO   0x2C
+#define MPI_STRM_CNFG1_L_RO   0x30
+#define MPI_STRM_CNFG1_H_RO   0x34
+#define MPI_STRM_BLOCK_END    0x38
+#define MPI_STRM_BLOCK_LEN    (MPI_STRM_BLOCK_END - MPI_STRM_BLOCK_START)
+#define MPI_STRM_NUM_REGS     (MPI_STRM_BLOCK_LEN / IPU_REG_WIDTH)
+
+#define MPO_COMMON_BLOCK_START MPI_STRM_BLOCK_END
+#define MPO_CAP               MPO_COMMON_BLOCK_START
+#define MPO_STRM_SEL          (MPO_COMMON_BLOCK_START + 0x08)
+#define MPO_COMMON_BLOCK_END  (MPO_COMMON_BLOCK_START + 0x10)
+#define MPO_COMMON_BLOCK_LEN  (MPO_COMMON_BLOCK_END - MPO_COMMON_BLOCK_START)
+#define MPO_COMMON_NUM_REGS   (MPO_COMMON_BLOCK_LEN / IPU_REG_WIDTH)
+#define MPO_STRM_BLOCK_START  MPO_COMMON_BLOCK_END
+#define MPO_STRM_CTRL         MPO_STRM_BLOCK_START
+#define MPO_STRM_CNFG0_L      0x50
+#define MPO_STRM_CNFG0_H      0x54
+#define MPO_STRM_CNFG1        0x58
+#define MPO_STRM_CNFG0_L_RO   0x60
+#define MPO_STRM_CNFG0_H_RO   0x64
+#define MPO_STRM_CNFG1_RO     0x68
+#define MPO_STRM_BLOCK_END    0x70
+#define MPO_STRM_BLOCK_LEN    (MPO_STRM_BLOCK_END - MPO_STRM_BLOCK_START)
+#define MPO_STRM_NUM_REGS     (MPO_STRM_BLOCK_LEN / IPU_REG_WIDTH)
+
+#define IO_IPU_BLOCK_LEN       MPO_STRM_BLOCK_END
+#define IO_IPU_NUM_REGS       (IO_IPU_BLOCK_LEN / IPU_REG_WIDTH)
+
+/* MPI_CAP Register Bits */
+#define MPI_MAX_STRM_MASK     0x0F
+
+/* MPI_STRM_SEL Register Bits */
+#define MPI_STRM_SEL_MASK     0x0F
+#define MPI_STRM_SEL_DEF      15
+
+/* MPI_STRM_CTRL Register Bits */
+#define MPI_STRM_EN           (1 << 0)
+#define MPI_STRM_CLEANUP      (1 << 1)
+#define MPI_STRM_RST          (1 << 2)
+#define MPI_STRM_IRQ          (1 << 3)
+#define MPI_STRM_IMR          (1 << 4)
+
+/* MPI_STRM_CNFG0_L Register Bits */
+#define MPI_VC_MASK           0x03
+#define MPI_DT_IN_M           0x3F
+#define MPI_DT_IN_SHIFT       8
+#define MPI_DT_IN_MASK        (MPI_DT_IN_M << MPI_DT_IN_SHIFT)
+#define MPI_DT_PROC_M         0x3F
+#define MPI_DT_PROC_SHIFT     16
+#define MPI_DT_PROC_MASK      (MPI_DT_PROC_M << MPI_DT_PROC_SHIFT)
+
+#define MPI_VC_MAX            MPI_VC_MASK
+#define MPI_DT_IN_MAX         MPI_DT_IN_M
+#define MPI_DT_IN_DEF         42
+#define MPI_DT_PROC_MAX       MPI_DT_PROC_M
+#define MPI_DT_PROC_DEF       46
+
+/* MPI_STRM_CNFG0_H Register Bits */
+#define MPI_IMG_WIDTH_MASK    0xFFFF
+#define MPI_IMG_HEIGHT_M      0xFFFF
+#define MPI_IMG_HEIGHT_SHIFT  16
+#define MPI_IMG_HEIGHT_MASK   (MPI_IMG_HEIGHT_M << MPI_IMG_HEIGHT_SHIFT)
+
+#define MPI_IMG_WIDTH_MAX     MPI_IMG_WIDTH_MASK
+#define MPI_IMG_WIDTH_DEF     640
+#define MPI_IMG_HEIGHT_MAX    MPI_IMG_HEIGHT_M
+#define MPI_IMG_HEIGHT_DEF    480
+
+/* MPI_STRM_CNFG1_L Register Bits */
+#define MPI_SEG_START_MASK    0x7F
+#define MPI_SEG_END_M         0x7F
+#define MPI_SEG_END_SHIFT     16
+#define MPI_SEG_END_MASK      (MPI_SEG_END_M << MPI_SEG_END_SHIFT)
+
+#define MPI_SEG_START_MAX     MPI_SEG_START_MASK
+#define MPI_SEG_END_MAX       MPI_SEG_END_M
+
+/* MPI_STRM_CNFG1_H Register Bits */
+#define MPI_SEG_WORDS_PER_ROW_MASK 0xFFF
+
+#define MPI_SEG_WORDS_PER_ROW_MAX MPI_SEG_WORDS_PER_ROW_MASK
+#define MPI_SEG_WORDS_PER_ROW_DEF 39
+
+/* MPO_CAP Register Bits */
+#define MPO_MAX_STRM_MASK     0x0F
+
+/* MPO_STRM_SEL Register Bits */
+#define MPO_STRM_SEL_MASK     0x0F
+#define MPO_STRM_SEL_DEF      3
+
+/* MPO_STRM_CTRL Register Bits */
+#define MPO_STRM_EN           (1 << 0)
+#define MPO_STRM_RSYNC_EN     (1 << 1)
+#define MPO_STRM_CLEANUP      (1 << 2)
+#define MPO_STRM_RST          (1 << 3)
+#define MPO_STRM_IRQ          (1 << 4)
+#define MPO_STRM_IMR          (1 << 5)
+
+/* MPO_STRM_CNFG0_L Register Bits */
+#define MPO_VC_MASK           0x03
+#define MPO_DT_OUT_M          0x3F
+#define MPO_DT_OUT_SHIFT      8
+#define MPO_DT_OUT_MASK       (MPO_DT_OUT_M << MPO_DT_OUT_SHIFT)
+#define MPO_DT_PROC_M         0x3F
+#define MPO_DT_PROC_SHIFT     16
+#define MPO_DT_PROC_MASK      (MPO_DT_PROC_M << MPO_DT_PROC_SHIFT)
+
+#define MPO_DT_OUT_DEF        42
+#define MPO_DT_PROC_DEF       46
+
+/* MPO_STRM_CNFG0_H Register Bits */
+#define MPO_IMG_WIDTH_MASK    0xFFFF
+#define MPO_IMG_HEIGHT_M      0xFFFF
+#define MPO_IMG_HEIGHT_SHIFT  16
+#define MPO_IMG_HEIGHT_MASK   (MPO_IMG_HEIGHT_M << MPO_IMG_HEIGHT_SHIFT)
+
+#define MPO_IMG_HEIGHT_DEF    480
+#define MPO_IMG_WIDTH_DEF     640
+
+/* MPO_STRM_CNFG1 Register Bits */
+#define MPO_SEGS_PER_ROW_MASK 0x7F
+
+#define MPO_SEGS_PER_ROW_MAX  MPO_SEGS_PER_ROW_MASK
+#define MPO_SEGS_PER_ROW_DEF  2
 
 /* DMA Register Group Offsets */
 #define DMA_CTRL              0x00
@@ -88,11 +285,19 @@
 #define DMA_PMON_CNT_1        0x130
 #define DMA_PMON_CNT_1_STS_ACC 0x138
 #define DMA_PMON_CNT_1_STS    0x140
-#define DMA_COMMON_BLOCK_LEN  0x148
-#define DMA_COMMON_NUM_REGS   (DMA_COMMON_BLOCK_LEN / IPU_REG_WIDTH)
+#define DMA_PMON_CNT_2_CFG    0x148
+#define DMA_PMON_CNT_2        0x150
+#define DMA_PMON_CNT_2_STS_ACC 0x158
+#define DMA_PMON_CNT_2_STS    0x160
+#define DMA_PMON_CNT_3_CFG    0x168
+#define DMA_PMON_CNT_3        0x170
+#define DMA_PMON_CNT_3_STS_ACC 0x178
+#define DMA_PMON_CNT_3_STS    0x180
+#define DMA_CTRL_BLOCK_LEN    0x188
+#define DMA_CTRL_NUM_REGS     (DMA_CTRL_BLOCK_LEN / IPU_REG_WIDTH)
 
 #define DMA_CHAN_BLOCK_START  0x188
-#define DMA_CHAN_MODE         DMA_CHAN_BLOCK_START
+#define DMA_CHAN_MODE         0x188
 #define DMA_CHAN_IMG_FORMAT   0x190
 #define DMA_CHAN_IMG_SIZE     0x198
 #define DMA_CHAN_IMG_POS_L    0x1A0
@@ -110,19 +315,55 @@
 #define DMA_CHAN_IMR          0x1D8
 #define DMA_CHAN_ISR          0x1E0
 #define DMA_CHAN_ISR_OVF      0x1E8
-/* TODO(ahampson):  Add RO channel registers */
-#define DMA_CHAN_DEPENDENCY   0x270
-#define DMA_BLOCK_LEN         0x278
-#define DMA_NUM_REGS          (DMA_BLOCK_LEN / IPU_REG_WIDTH)
+#define DMA_CHAN_MODE_RO      0x1F0
+#define DMA_CHAN_IMG_FORMAT_RO 0x1F8
+#define DMA_CHAN_IMG_SIZE_L_RO 0x200
+#define DMA_CHAN_IMG_SIZE_H_RO 0x204
+#define DMA_CHAN_IMG_POS_L_RO 0x208
+#define DMA_CHAN_IMG_POS_H_RO 0x20C
+#define DMA_CHAN_IMG_LAYOUT_L_RO 0x210
+#define DMA_CHAN_IMG_LAYOUT_H_RO 0x214
+#define DMA_CHAN_BIF_XFER_RO  0x218
+#define DMA_CHAN_VA_L_RO      0x220
+#define DMA_CHAN_VA_H_RO      0x224
+#define DMA_CHAN_VA_BDRY_L_RO 0x228
+#define DMA_CHAN_VA_BDRY_H_RO 0x22C
+#define DMA_CHAN_NOC_XFER_L_RO 0x230
+#define DMA_CHAN_NOC_XFER_H_RO 0x234
+#define DMA_CHAN_NODE_RO      0x238
+#define DMA_CHAN_DEPENDENCY   0x240
+#define DMA_CHAN_BLOCK_END    0x248
 
-#define DMA_CHAN_BLOCK_LEN    (DMA_BLOCK_LEN - DMA_CHAN_BLOCK_START)
+#define DMA_CHAN_BLOCK_LEN    (DMA_CHAN_BLOCK_END - DMA_CHAN_BLOCK_START)
 #define DMA_CHAN_NUM_REGS     (DMA_CHAN_BLOCK_LEN / IPU_REG_WIDTH)
+
+#define DMA_STS_BLOCK_START   0x248
+#define DMA_STS_CTRL          0x248
+#define DMA_STS_STATE         0x250
+#define DMA_STS_PTR_L         0x258
+#define DMA_STS_PTR_H         0x25C
+#define DMS_STS_ADDR_L        0x260
+#define DMA_STS_ADDR_H        0x264
+#define DMA_SPARE             0x268
+#define DMA_STS_BLOCK_END     0x270
+
+#define DMA_STS_BLOCK_LEN     (DMA_STS_BLOCK_END - DMA_STS_BLOCK_START)
+#define DMA_STS_NUM_REGS      (DMA_STS_BLOCK_LEN / IPU_REG_WIDTH)
+
+#define DMA_BLOCK_LEN         DMA_STS_BLOCK_END
+#define DMA_NUM_REGS          (DMA_BLOCK_LEN / IPU_REG_WIDTH)
 
 /* DMA_CTRL Register Bits */
 #define DMA_RESET             (1 << 0)
 #define DMA_CHAN_SEL_WIDTH    0xFF
 #define DMA_CHAN_SEL_SHIFT    8
 #define DMA_CHAN_SEL_MASK     (DMA_CHAN_SEL_WIDTH << DMA_CHAN_SEL_SHIFT)
+#define DMA_AXI_SWIZZLE_NONE  0
+#define DMA_AXI_SWIZZLE_BIG_ENDIAN 1
+#define DMA_AXI_SWIZZLE_NEIGHBOR_BYTES 2
+#define DMA_AXI_SWIZZLE_M     0x03
+#define DMA_AXI_SWIZZLE_SHIFT 16
+#define DMA_AXI_SWIZZLE_MASK (DMA_AXI_SWIZZLE_M << DMA_AXI_SWIZZLE_SHIFT)
 
 #define DMA_CHAN_SEL_DEF      31
 
@@ -175,21 +416,14 @@
 #define DMA_CHAN_BIT_DEPTH_SHIFT 12
 #define DMA_CHAN_BIT_DEPTH_MASK (DMA_CHAN_BIT_DEPTH_M <<                       \
 		DMA_CHAN_BIT_DEPTH_SHIFT)
-#define DMA_CHAN_SWIZZLE_NO_SWIZZLE 0
-#define DMA_CHAN_SWIZZLE_BIG_ENDIAN 1
-#define DMA_CHAN_SWIZZLE_NEIGHBOR   2
-#define DMA_CHAN_SWIZZLE_M    3
-#define DMA_CHAN_SWIZZLE_SHIFT 16
-#define DMA_CHAN_SWIZZLE_MASK (DMA_CHAN_SWIZZLE_M << DMA_CHAN_SWIZZLE_SHIFT)
-#define DMA_CHAN_RAW_SHIFT    20
-#define DMA_CHAN_RAW_M        0x03
-#define DMA_CHAN_RAW_MASK     (DMA_CHAN_RAW_M << DMA_CHAN_RAW_SHIFT)
-#define DMA_CHAN_ALPHA_MODE_RGBA_DISABLED 0
-#define DMA_CHAN_ALPHA_MODE_RGBA 1
-#define DMA_CHAN_ALPHA_MODE_ARGB 2
-#define DMA_CHAN_RGBA_M       3
-#define DMA_CHAN_RGBA_SHIFT   24
-#define DMA_CHAN_RGBA_MASK    (DMA_CHAN_RGBA_M << DMA_CHAN_RGBA_SHIFT)
+#define DMA_CHAN_MIPI_RAW_FORMAT (1 << 20)
+#define DMA_CHAN_RGBA_FORMAT_DISABLED 0
+#define DMA_CHAN_RGBA_FORMAT_RGBA 1
+#define DMA_CHAN_RGBA_FORMAT_ARGB 2
+#define DMA_CHAN_RGBA_FORMAT_M 0x03
+#define DMA_CHAN_RGBA_FORMAT_SHIFT 24
+#define DMA_CHAN_RGBA_FORMAT_MASK (DMA_CHAN_RGBA_FORMAT_M <<                   \
+		DMA_CHAN_RGBA_FORMAT_SHIFT)
 #define DMA_CHAN_BLOCK_4X4    (1 << 26)
 
 #define DMA_CHAN_MIN_COMPONENTS 1
@@ -215,7 +449,8 @@
 #define DMA_CHAN_START_Y_SHIFT 16
 #define DMA_CHAN_START_Y_MASK  (DMA_CHAN_START_Y_M << DMA_CHAN_START_Y_SHIFT)
 
-#define DMA_CHAN_START_MAX     0xFFFF
+#define DMA_CHAN_START_MAX     32768
+#define DMA_CHAN_START_MIN     -32768
 
 /* DMA_CHAN_IMG_POS_H Register Bits */
 #define DMA_CHAN_LB_START_X_MASK  0xFFFF
@@ -224,7 +459,8 @@
 #define DMA_CHAN_LB_START_Y_MASK  (DMA_CHAN_LB_START_Y_M <<                    \
 		DMA_CHAN_LB_START_Y_SHIFT)
 
-#define DMA_CHAN_LB_START_MAX     0xFFFF
+#define DMA_CHAN_LB_START_MAX     32768
+#define DMA_CHAN_LB_START_MIN     -32768
 
 /* DMA_CHAN_IMG_LAYOUT */
 #define DMA_CHAN_PLANE_STRIDE_WIDTH 35
@@ -249,14 +485,14 @@
 
 /* DMA_CHAN_BIF_XFER Register Bits */
 #define DMA_CHAN_STRIPE_HEIGHT_MASK 0xFFFF
-#define DMA_CHAN_OUTSTANDING_M  0x1F
-#define DMA_CHAN_OUTSTANDING_SHIFT 17
+#define DMA_CHAN_OUTSTANDING_M  0x3F
+#define DMA_CHAN_OUTSTANDING_SHIFT 16
 #define DMA_CHAN_OUTSTANDING_MASK (DMA_CHAN_OUTSTANDING_M <<                   \
 		DMA_CHAN_OUTSTANDING_SHIFT)
 
 #define DMA_CHAN_MAX_STRIPES     256
 
-#define DMA_CHAN_OUTSTANDING_DEF  0x04
+#define DMA_CHAN_OUTSTANDING_DEF  16
 #define DMA_CHAN_STRIPE_HEIGHT_DEF 0x04
 
 /* DMA_CHAN_VA_BDRY */
@@ -298,6 +534,40 @@
 #define DMA_CHAN_INT_EOF      (1 << 0)
 #define DMA_CHAN_INT_MIF_ERR  (1 << 1)
 #define DMA_CHAN_INT_VA_ERR   (1 << 2)
+
+/* DMA_STS_CTRL Register Bits */
+#define DMA_STS_ENABLE        (1 << 0)
+#define DMA_STS_CHAN_SEL_SHIFT 1
+#define DMA_STS_CHAN_SEL_M     0xF
+#define DMA_STS_CHAN_SEL_MASK  (DMA_STS_CHAN_SEL_M << DMA_STS_CHAN_SEL_SHIFT)
+#define DMA_STS_DST_BIF_SEL_SSP (1 << 5)
+#define DMA_STS_ADDR_DIR      (1 << 6)
+
+/* DMA_STS_STATE Register Bits */
+#define DMA_STS_SRC_MASK       0xF
+#define DMA_STS_DST_SHIFT      4
+#define DMA_STS_DST_M          0xF
+#define DMA_STS_DST_MASK       (DMA_STS_DST_M << DMA_STS_DST_SHIFT)
+#define DMA_STS_NOC_CREDITS_SHIFT 8
+#define DMA_STS_NOC_CREDITS_M  0x0F
+#define DMA_STS_NOC_CREDITS_MASK (DMA_STS_NOC_CREDITS_M <<                     \
+		DMA_STS_NOC_CREDITS_SHIFT
+#define DMA_STS_SRC_MODE       (1 << 12)
+#define DMA_STS_DST_MODE       (1 << 13)
+#define DMA_STS_NOC_CREDITS_MODE (1 << 14)
+
+/* DMA_STS_PTR_L */
+#define DMA_STS_X_MASK         0xFFFF
+#define DMA_STS_Y_M            0xFFFF
+#define DMA_STS_Y_SHIFT        16
+#define DMA_STS_Y_MASK         (DMA_STS_Y_M << DMA_STS_Y_SHIFT)
+
+/* DMS_STS_PTR_H */
+#define DMA_STS_WIDTH_MASK     0x1FF
+#define DMA_STS_HEIGHT_SHIFT   12
+#define DMA_STS_HEIGHT_M       0x1F
+#define DMA_STS_HEIGHT_MASK    (DMA_STS_HEIGHT_M << DMA_STS_HEIGHT_SHIFT)
+#define DMA_STS_PTR_DIR        (1 << 31)
 
 /* LBP Register Group Offsets */
 
@@ -357,8 +627,8 @@
 /* LBP_CTRL_L Register Bits */
 #define LBP_LB_RESET_MASK     0xFFFF0000
 #define LBP_LB_RESET_SHIFT    16
-#define LBP_CTRL_RESET        (1 << 4)
-#define LBP_LB_ENA_MASK       0x0000FFFF
+#define LBP_LBP_RESET         (1 << 4)
+#define LBP_LB_ENA_MASK       0x0000000F
 
 #define LBP_LB_ENA_DEF        8
 
@@ -366,37 +636,39 @@
 #define LBP_LB_INIT_MASK      0x000000FF
 
 /* LBP_CAP0 Register Bits */
-#define LBP_MAX_LB            0xF
-#define LBP_MAX_LB_MASK       LBP_MAX_LB
 #define LBP_MAX_RPTR          0xF
-#define LBP_MAX_RPTR_SHIFT    4
+#define LBP_MAX_RPTR_SHIFT    28
 #define LBP_MAX_RPTR_MASK     (LBP_MAX_RPTR << LBP_MAX_RPTR_SHIFT)
-#define LBP_MAX_CHAN          0xFF
-#define LBP_MAX_CHAN_SHIFT    8
-#define LBP_MAX_CHAN_MASK     (LBP_MAX_CHAN << LBP_MAX_CHAN_SHIFT)
-#define LBP_MAX_FB_ROWS       0xFFFF
+#define LBP_MAX_FB_ROWS       0x0FFF
 #define LBP_MAX_FB_ROWS_SHIFT 16
 #define LBP_MAX_FB_ROWS_MASK  (LBP_MAX_FB_ROWS << LBP_MAX_FB_ROWS_SHIFT)
+#define LBP_MAX_CHAN          0x1FF
+#define LBP_MAX_CHAN_SHIFT    4
+#define LBP_MAX_CHAN_MASK     (LBP_MAX_CHAN << LBP_MAX_CHAN_SHIFT)
+#define LBP_MAX_LB            0xF
+#define LBP_MAX_LB_MASK       LBP_MAX_LB
 
 /* LBP_RAM_CTRL Register Bits */
 #define LBP_RAM_ADDR          0xFFFF
 #define LBP_RAM_ADDR_SHIFT    16
 #define LBP_RAM_ADDR_MASK     (LBP_RAM_ADDR << LBP_RAM_ADDR_SHIFT)
 
-#define LBP_RAM_PRI           (1 << 2)
 #define LBP_RAM_WRITE         (1 << 1)
 #define LBP_RAM_RUN           (1 << 0)
 
 #define LBP_DATA_REG_COUNT    8
 
 /* LB_CTRL0 Register Bits */
-#define LB_FB_ROWS_MASK       0xFFFF0000
+#define LB_REUSE_ROWS_M       0xF
+#define LB_REUSE_ROWS_SHIFT   28
+#define LB_REUSE_ROWS_MASK    (LB_REUSE_ROWS_M << LB_REUSE_ROWS_SHIFT)
+#define LB_FB_ROWS_M          0xFFF
 #define LB_FB_ROWS_SHIFT      16
-#define LB_REUSE_ROWS_MASK    0x0000F000
-#define LB_REUSE_ROWS_SHIFT   12
-#define LB_NUM_RPTR_MASK      0x00000F00
-#define LB_NUM_RPTR_SHIFT     8
-#define LB_NUM_CHAN_MASK      0x000000FF
+#define LB_FB_ROWS_MASK       (LB_FB_ROWS_M << LB_FB_ROWS_SHIFT)
+#define LB_NUM_CHAN_M         0x1FF
+#define LB_NUM_CHAN_SHIFT     4
+#define LB_NUM_CHAN_MASK      (LB_NUM_CHAN_M << LB_NUM_CHAN_SHIFT)
+#define LB_NUM_RPTR_MASK      0xF
 
 #define LB_FB_ROWS_DEF        40
 #define LB_NUM_RPTR_DEF       1
@@ -438,7 +710,7 @@
 #define LB_SB_BASE_ADDR_SHIFT 16
 #define LB_FB_BASE_ADDR_MASK  0x0000FFFF
 #define LB_ADDR_ALIGN_MASK    0x3F
-#define LB_ADDR_ALIGN_SHIFT   6
+#define LB_ADDR_ALIGN_SHIFT   5
 
 /* LB_STAT Register Bits */
 #define LB_STAT_FULL          (1 << 0)
@@ -452,38 +724,13 @@
 #define LB_L_WIDTH_SHIFT      16
 #define LB_L_WIDTH_MASK       (LB_L_WIDTH_M << LB_L_WIDTH_SHIFT)
 
-/* IO Register Group Offsets */
-#ifdef CONFIG_PAINTBOX_FPGA_SUPPORT
-/* Note: Registers 0x00 - 0x3C are only used by the FPGA for DMA and are not
- * supported on the Simulator.
- */
-#define INPUT_FRAME_WIDTH     0x00
-#define INPUT_FRAME_HEIGHT    0x08
-/* 0x10 Reserved */
-#define DST_LBP               0x18
-#define DST_LB_ID             0x20
-#define DST_CHAN_ID           0x28
-#define NUM_INPUT_CHANNELS    0x30
-/* 0x38 Reserved */
-#define OUTPUT_FRAME_WIDTH    0x40
-#define OUTPUT_FRAME_HEIGHT   0x48
-/* 0x50 Reserved */
-#define SRC_LBP               0x58
-#define SRC_LB_ID             0x60
-#define SRC_RPTR_ID           0x68
-#define NUM_OUTPUT_CHANNELS   0x70
-/* 0x78 Reserved */
-#define IO_FPGA_BLOCK_LEN     0x80
-#define IO_FPGA_NUM_REGS      (IO_FPGA_BLOCK_LEN / IPU_REG_WIDTH)
-
-#endif
-
 /* STP Register Group Offsets */
 #define STP_SEL               0x00
 #define STP_CTRL              0x08
 #define STP_STAT_L            0x10
 #define STP_STAT_H            0x14
-#define STP_CAP               0x18
+#define STP_CAP_L             0x18
+#define STP_CAP_H             0x1C
 #define STP_RAM_CTRL          0x20
 #define STP_RAM_DATA0_L       0x28
 #define STP_RAM_DATA0_H       0x2C
@@ -498,6 +745,8 @@
 #define STP_PMON_CNT_1_STS    0x78
 #define STP_BLOCK_LEN         0x80
 #define STP_NUM_REGS          (STP_BLOCK_LEN / IPU_REG_WIDTH)
+
+#define STP_WORD_WIDTH_BYTES  16
 
 /* STP_SEL Register Bits */
 #define STP_SEL_MASK          0x000000FF
@@ -523,8 +772,20 @@
 /* STP_STAT_H Register Bits */
 #define STP_STALLED           (1 << 0)
 
-/* STP_CAP Register Bits */
-#define STP_INST_MEM_MASK     0XFFFF
+/* STP_CAP_L Register Bits */
+#define STP_SCALAR_MEM_M      0xFFFF
+#define STP_SCALAR_MEM_SHIFT  16
+#define STP_SCALAR_MEM_MASK   (STP_SCALAR_MEM_M << STP_SCALAR_MEM_SHIFT)
+#define STP_INST_MEM_MASK     0xFFFF
+
+/* STP_CAP_H Register Bits */
+#define STP_HALO_MEM_M        0xFF
+#define STP_HALO_MEM_SHIFT    24
+#define STP_HALO_MEM_MASK     (STP_HALO_MEM_M << STP_HALO_MEM_SHIFT)
+#define STP_VECTOR_MEM_M      0xFF
+#define STP_VECTOR_MEM_SHIFT  16
+#define STP_VECTOR_MEM_MASK   (STP_VECTOR_MEM_M << STP_VECTOR_MEM_SHIFT)
+#define STP_CONST_MEM_MASK    0xFFFF
 
 /* STP_RAM_CTRL Register Bits */
 #define STP_RAM_ADDR          0xFFFF
@@ -554,7 +815,6 @@
 #define STP_RAM_TARG_ALU_IO_RAM_3 14
 #define STP_RAM_TARG_ALU_IO_RAM_4 15
 
-#define STP_RAM_PRI           (1 << 2)
 #define STP_RAM_WRITE         (1 << 1)
 #define STP_RAM_RUN           (1 << 0)
 

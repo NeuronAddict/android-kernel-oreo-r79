@@ -19,29 +19,12 @@
 
 /* Simulator Group Register Offsets */
 #define SIM_ID                0x00
-#define SIM_CAP0              0x04
-#define SIM_CTRL              0x08
-#define SIM_STAT              0x0C
-#define SIM_TIMEOUT_L         0x10
-#define SIM_TIMEOUT_H         0x14
-#define SIM_BLOCK_LEN         0x18
+#define SIM_CTRL              0x04
+#define SIM_STAT              0x08
+#define SIM_TIMEOUT_L         0x0C
+#define SIM_TIMEOUT_H         0x10
+#define SIM_BLOCK_LEN         0x14
 #define SIM_NUM_REGS          (SIM_BLOCK_LEN / sizeof(uint32_t))
-
-/* SIM ID Register Bits */
-#define SIM_ID_HW_TYPE_MASK  (1 << 31)
-#define SIM_ID_HW_TYPE_SIM   (1 << 31)
-#define SIM_ID_HW_TYPE_FPGA  (0 << 31)
-
-/* SIM CAP0 Register Bits */
-#define SIM_CAP0_STP         0xFF
-#define SIM_CAP0_STP_SHIFT   0
-#define SIM_CAP0_STP_MASK    SIM_CAP0_STP
-#define SIM_CAP0_INT         0xFF
-#define SIM_CAP0_INT_SHIFT   8
-#define SIM_CAP0_INT_MASK    (SIM_CAP0_INT << SIM_CAP0_INT_SHIFT)
-#define SIM_CAP0_LBP         0xFF
-#define SIM_CAP0_LBP_SHIFT   16
-#define SIM_CAP0_LBP_MASK    (SIM_CAP0_LBP << SIM_CAP0_LBP_SHIFT)
 
 /* SIM_CTRL Register Bits */
 #define SIM_RUN               (1 << 0)
