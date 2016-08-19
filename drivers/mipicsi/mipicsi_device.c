@@ -70,31 +70,32 @@ void mipicsi_dev_dphy_write(enum mipicsi_top_dev dev,
 	 */
 	void * baddr = dev_addr_map[dev];
 
-	if (baddr) {
-		pr_info("%s: dev=0x%x @ %p, command 0x%02X data=0x%02X\n",
-			__func__, dev, baddr, command, data);
-
-		TX_OUT(PHY_RSTZ, 0);
-		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLR, 0);
-		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 1);
-		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTDIN, command);
-		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  1);
-		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 0);
-
-		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  0);
-		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTDIN, data);
-
-		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 1);
-		/*
-		  I thought we needed one more TESTCLK to low
-		  but tested scripts don't have it.
-		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 0);
-		*/
-		//pr_info("%s: X\n", __func__);
-	}
-	else {
+	if (!baddr) {
 		pr_err("%s: no address for %d\n", __func__, dev);
+		return;
 	}
+
+	pr_info("%s: dev=0x%x @ %p, command 0x%02X data=0x%02X\n",
+		__func__, dev, baddr, command, data);
+
+	TX_OUT(PHY_RSTZ, 0);
+	TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLR, 0);
+	TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 1);
+	TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTDIN, command);
+	TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  1);
+	TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 0);
+
+	TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  0);
+	TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTDIN, data);
+
+	TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 1);
+	/*
+	  I thought we needed one more TESTCLK to low
+	  but tested scripts don't have it.
+	  TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 0);
+	*/
+	//pr_info("%s: X\n", __func__);
+
 	udelay(1);
 }
 
@@ -129,30 +130,28 @@ int mipicsi_dev_dphy_write_set(enum mipicsi_top_dev dev, uint32_t offset,
 void mipicsi_device_reset(enum mipicsi_top_dev dev)
 {
 	void * baddr = dev_addr_map[dev];
-	if (baddr) {
-		pr_info("%s %d\n", __func__, dev);
-		TX_OUT(CSI2_RESETN, 0);
-		udelay(1000);
-		TX_OUT(CSI2_RESETN, 1);
-	}
-	else {
+	if (!baddr) {
 		pr_err("%s: no address for %d\n", __func__, dev);
+		return;
 	}
+	pr_info("%s %d\n", __func__, dev);
+	TX_OUT(CSI2_RESETN, 0);
+	udelay(1000);
+	TX_OUT(CSI2_RESETN, 1);
 }
 
 
 void mipicsi_device_dphy_reset(enum mipicsi_top_dev dev)
 {
 	void * baddr = dev_addr_map[dev];
-	if (baddr) {
-		pr_info("%s %d\n", __func__, dev);
-		TX_OUTf(PHY_RSTZ, PHY_RSTZ, 1);
-		udelay(1000);
-		TX_OUTf(PHY_RSTZ, PHY_RSTZ, 0);
-	}
-	else {
+	if (!baddr) {
 		pr_err("%s: no address for %d\n", __func__, dev);
-        }
+		return;
+	}
+	pr_info("%s %d\n", __func__, dev);
+	TX_OUTf(PHY_RSTZ, PHY_RSTZ, 1);
+	udelay(1000);
+	TX_OUTf(PHY_RSTZ, PHY_RSTZ, 0);
 }
 
 int32_t mipicsi_device_set_pll(struct mipicsi_top_cfg *config)
@@ -204,30 +203,28 @@ int mipicsi_device_vpg(struct mipicsi_top_vpg *vpg)
 {
 	enum mipicsi_top_dev dev = vpg->dev;
 	void * baddr = dev_addr_map[dev];
-	if (baddr) {
-		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_HS_TX_PWR_CTRL_CLK, 0xB);
-
-		TX_OUT(VPG_MODE_CFG, vpg->mode_cfg);
-		TX_OUT(VPG_PKT_CFG, vpg->pkt_cfg);
-		TX_OUT(VPG_PKT_SIZE, vpg->pkt_size);
-		TX_OUT(VPG_HSA_TIME, vpg->hsa_time);
-		TX_OUT(VPG_HBP_TIME, vpg->hbp_time);
-		TX_OUT(VPG_HLINE_TIME, vpg->hline_time);
-		TX_OUT(VPG_VSA_LINES, vpg->vsa_lines);
-		TX_OUT(VPG_VBP_LINES, vpg->vbp_lines);
-		TX_OUT(VPG_VFP_LINES, vpg->vfp_lines);
-		TX_OUT(VPG_ACT_LINES, vpg->act_lines);
-		TX_OUT(VPG_MAX_FRAME_NUM, vpg->max_frame);
-		TX_OUT(VPG_START_LINE_NUM, vpg->start_line);
-		TX_OUT(VPG_STEP_LINE_NUM, vpg->step_line);
-
-		TX_OUTf(VPG_CTRL, VPG_EN, 1);
-		return 0;
-	}
-	else {
+	if (!baddr) {
 		pr_err("%s: no address for %d\n", __func__, dev);
 		return -ENXIO;
-        }
+	}
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_HS_TX_PWR_CTRL_CLK, 0xB);
+
+	TX_OUT(VPG_MODE_CFG, vpg->mode_cfg);
+	TX_OUT(VPG_PKT_CFG, vpg->pkt_cfg);
+	TX_OUT(VPG_PKT_SIZE, vpg->pkt_size);
+	TX_OUT(VPG_HSA_TIME, vpg->hsa_time);
+	TX_OUT(VPG_HBP_TIME, vpg->hbp_time);
+	TX_OUT(VPG_HLINE_TIME, vpg->hline_time);
+	TX_OUT(VPG_VSA_LINES, vpg->vsa_lines);
+	TX_OUT(VPG_VBP_LINES, vpg->vbp_lines);
+	TX_OUT(VPG_VFP_LINES, vpg->vfp_lines);
+	TX_OUT(VPG_ACT_LINES, vpg->act_lines);
+	TX_OUT(VPG_MAX_FRAME_NUM, vpg->max_frame);
+	TX_OUT(VPG_START_LINE_NUM, vpg->start_line);
+	TX_OUT(VPG_STEP_LINE_NUM, vpg->step_line);
+
+	TX_OUTf(VPG_CTRL, VPG_EN, 1);
+	return 0;
 }
 
 
@@ -245,100 +242,99 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 		TX_MASK(PHY_STATUS, TXSTOPSTATE_L1) | 
 		TX_MASK(PHY_STATUS, TXSTOPSTATE_L2) |
 		TX_MASK(PHY_STATUS, TXSTOPSTATE_L3);
-	if (baddr) {
-
-		if ((dev != MIPI_TX0) && (dev != MIPI_TX1)) {
-		  pr_err("%s unexpected dev %d\n", __func__, dev);
-			return -EINVAL;
-		}
-		pr_info("%s: dev: %d\n", __func__, dev);
-		TX_OUTf(CSI2_RESETN,    CSI2_RESETN_RW, 1);
-		TX_OUT(PHY_RSTZ,        0);
-		TX_OUTf(PHY_RSTZ,       PHY_ENABLECLK,  1);
-		/* set TESTCLR to HIGH */
-		TX_OUT(PHY0_TST_CTRL0,  1);
-
-		/* Apply the appropriate frequency to the REFCLK signal; for correct
-		 * values, refer to Table 6-1 on page 91
-		 */
-		/* Hardware controlled */
-		
-		/* Apply the appropriate frequency to the CFG_CLK signal; for correct
-		 * values, refer to Table 12-5
-		 */
-		/* Hardware controlled */
-		
-		/* Set MASTERSLAVEZ = 1 for Master mode selection (1'b0 for Slave mode
-		 * selection).
-		 */
-		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_MASTER_SLAVEZ, 0x0E);
-
-		/* need PHY_STOP_WAIT_TIME in PHY_IF_CFG ?
-		   original code overwrote the entire register with 0x03
-		*/
-		TX_OUTf(PHY_IF_CFG, LANE_EN_NUM, 0x03);
-
-		/* Set BASEDIR_N to the desired values */
-		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L0, DC_TX_BASEDIR_VAL);
-		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L1, DC_TX_BASEDIR_VAL);
-		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L2, DC_TX_BASEDIR_VAL);
-		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L3, DC_TX_BASEDIR_VAL);
-
-		/* Wait for 15 ns */
-		udelay(1);
-		/* Configure the TESTCLR to LO */
-		//TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLR, 0);
-		TX_OUT(PHY0_TST_CTRL0, 0);
-
-		/* Wait for 35 ns */
-		udelay(1);
-		
-		/* Configure PLL */
-		mipicsi_device_set_pll(config);
-
-		/* Wait 5 ns */
-		udelay(1);
-		TX_OUTf(LPCLK_CTRL, PHY_TXREQCLKHS_CON, 1);
-		/* Configure Test Code 0x22
-		 * Bitrate configuration
-		 * Band Gap reference voltage
-		 * BIASEXTR internal resistor control
-		 * LPTX bias current control
-		 */
-		val = 0x04;
-		if (config->mbps > 1000)
-			val |= (1<<10);
-
-		mipicsi_dev_dphy_write_set(dev, R_CSI2_DCPHY_AFE_BYPASS_BANDGAP,
-					   ((val >> 0) & 0x3F), 0, 2);
-		mipicsi_dev_dphy_write_set(dev, R_CSI2_DCPHY_AFE_BYPASS_BANDGAP,
-					   ((val >> 6) & 0x3F), 1, 2);
-
-		TX_OUT(PHY_RSTZ, 0x07);
-		udelay(1);
-		/* Wait until the STOPSTATEDATA_N and STOPSTATECLK outputs are asserted.
-		 * At this point, the PLL has already locked (for the Master) and the
-		 * initialization of the analog drivers has completed. From this point,
-		 * the REQUEST inputs can be set according to the desired transmission
-		 * -- poll for 200 us
-		 */
-		do {
-			data = TX_IN(PHY_STATUS);
-			if ((data & stop_mask) == stop_mask) {
-				pr_info("%s: X\n", __func__);
-				return 0;
-			}
-
-			udelay(10);
-			counter++;
-		} while (counter < 20);
-		pr_info("%s counter: %d 0x%08X\n",
-                        __func__, counter, data);
-	}
-	else {
+	if (!baddr) {
 		pr_err("%s: no address for %d\n", __func__, dev);
 		return -ENXIO;
 	}
+
+	if ((dev != MIPI_TX0) && (dev != MIPI_TX1)) {
+		pr_err("%s unexpected dev %d\n", __func__, dev);
+		return -EINVAL;
+	}
+	pr_info("%s: dev: %d\n", __func__, dev);
+	TX_OUTf(CSI2_RESETN,    CSI2_RESETN_RW, 1);
+	TX_OUT(PHY_RSTZ,        0);
+	TX_OUTf(PHY_RSTZ,       PHY_ENABLECLK,  1);
+	/* set TESTCLR to HIGH */
+	TX_OUT(PHY0_TST_CTRL0,  1);
+
+	/* Apply the appropriate frequency to the REFCLK signal; for correct
+	 * values, refer to Table 6-1 on page 91
+	 */
+	/* Hardware controlled */
+
+	/* Apply the appropriate frequency to the CFG_CLK signal; for correct
+	 * values, refer to Table 12-5
+	 */
+	/* Hardware controlled */
+
+	/* Set MASTERSLAVEZ = 1 for Master mode selection (1'b0 for Slave mode
+	 * selection).
+	 */
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_MASTER_SLAVEZ, 0x0E);
+
+	/* need PHY_STOP_WAIT_TIME in PHY_IF_CFG ?
+	   original code overwrote the entire register with 0x03
+	*/
+	TX_OUTf(PHY_IF_CFG, LANE_EN_NUM, 0x03);
+
+	/* Set BASEDIR_N to the desired values */
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L0, DC_TX_BASEDIR_VAL);
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L1, DC_TX_BASEDIR_VAL);
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L2, DC_TX_BASEDIR_VAL);
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L3, DC_TX_BASEDIR_VAL);
+
+	/* Wait for 15 ns */
+	udelay(1);
+	/* Configure the TESTCLR to LO */
+	//TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLR, 0);
+	TX_OUT(PHY0_TST_CTRL0, 0);
+
+	/* Wait for 35 ns */
+	udelay(1);
+
+	/* Configure PLL */
+	mipicsi_device_set_pll(config);
+
+	/* Wait 5 ns */
+	udelay(1);
+	TX_OUTf(LPCLK_CTRL, PHY_TXREQCLKHS_CON, 0);
+	/* Configure Test Code 0x22
+	 * Bitrate configuration
+	 * Band Gap reference voltage
+	 * BIASEXTR internal resistor control
+	 * LPTX bias current control
+	 */
+	val = 0x04;
+	if (config->mbps > 1000)
+		val |= (1<<10);
+
+	mipicsi_dev_dphy_write_set(dev, R_CSI2_DCPHY_AFE_BYPASS_BANDGAP,
+				   ((val >> 0) & 0x3F), 0, 2);
+	mipicsi_dev_dphy_write_set(dev, R_CSI2_DCPHY_AFE_BYPASS_BANDGAP,
+				   ((val >> 6) & 0x3F), 1, 2);
+
+	TX_OUT(PHY_RSTZ, 0x07);
+	udelay(1);
+	/* Wait until the STOPSTATEDATA_N and STOPSTATECLK outputs are asserted.
+	 * At this point, the PLL has already locked (for the Master) and the
+	 * initialization of the analog drivers has completed. From this point,
+	 * the REQUEST inputs can be set according to the desired transmission
+	 * -- poll for 200 us
+	 */
+	do {
+		data = TX_IN(PHY_STATUS);
+		if ((data & stop_mask) == stop_mask) {
+			pr_info("%s: X\n", __func__);
+			return 0;
+		}
+
+		udelay(10);
+		counter++;
+	} while (counter < 20);
+	pr_info("%s counter: %d 0x%08X\n",
+		__func__, counter, data);
+
 	return -EINVAL;
 #endif
 	/* TO DO - initialize controller parameters only here for Gen 3 */
@@ -348,28 +344,24 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 int mipicsi_device_hw_init(enum mipicsi_top_dev dev)
 {
 	void * baddr = dev_addr_map[dev];
-	if (baddr) {
-		pr_info("%s %d version: 0x%08X\n",
-			__func__, dev, TX_IN(VERSION));
-		TX_OUTf(PHY_RSTZ, PHY_SHUTDOWNZ, 1);
-		mipicsi_device_dphy_reset(dev);
-
-		mipicsi_device_reset(dev);
-
-		TX_OUT(INT_MASK_N_VPG, 0xFFFFFFFF);
-		TX_OUT(INT_MASK_N_IDI, 0xFFFFFFFF);
-
-		/* another fictitious register?  
-		   mipicsi_write(dev, R_CSI2_DEV_INT_MASK_MEM, 0xFFFFFFFF);
-		*/
-
-		TX_OUTf(PHY_RSTZ, PHY_SHUTDOWNZ, 0);
-		return 0;
-	}
-	else {
+	if (!baddr) {
 		pr_err("%s: no address for %d\n", __func__, dev);
 		return -ENXIO;
 	}
+
+	pr_info("%s %d version: 0x%08X\n",
+		__func__, dev, TX_IN(VERSION));
+	TX_OUTf(PHY_RSTZ, PHY_SHUTDOWNZ, 1);
+	mipicsi_device_dphy_reset(dev);
+
+	mipicsi_device_reset(dev);
+
+	TX_OUT(INT_MASK_N_VPG, 0xFFFFFFFF);
+	TX_OUT(INT_MASK_N_IDI, 0xFFFFFFFF);
+
+	TX_OUTf(PHY_RSTZ, PHY_SHUTDOWNZ, 0);
+
+	return 0;
 }
 
 
