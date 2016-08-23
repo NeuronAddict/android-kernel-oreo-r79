@@ -285,6 +285,20 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 	return 0;
 }
 
+int mipicsi_host_stop(enum mipicsi_top_dev dev)
+{
+	void * baddr = dev_addr_map[dev];
+	if (!baddr) {
+		return -ENXIO;
+	}
+	RX_OUTf(PHY_SHUTDOWNZ, PHY_SHUTDOWNZ, 0);
+	RX_OUTf(DPHY_RSTZ, DPHY_RSTZ, 0);
+	RX_OUT(PHY_TEST_CTRL0, 1);
+
+	return 0;
+}
+
+
 int mipicsi_host_hw_init(enum mipicsi_top_dev dev)
 {
 	void * baddr = dev_addr_map[dev];

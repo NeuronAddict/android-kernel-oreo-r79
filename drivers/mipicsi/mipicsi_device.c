@@ -207,7 +207,6 @@ int mipicsi_device_vpg(struct mipicsi_top_vpg *vpg)
 		pr_err("%s: no address for %d\n", __func__, dev);
 		return -ENXIO;
 	}
-	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_HS_TX_PWR_CTRL_CLK, 0xB);
 
 	TX_OUT(VPG_MODE_CFG, vpg->mode_cfg);
 	TX_OUT(VPG_PKT_CFG, vpg->pkt_cfg);
@@ -335,11 +334,22 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 	pr_info("%s counter: %d 0x%08X\n",
 		__func__, counter, data);
 
-	return -EINVAL;
+	return 0;
 #endif
 	/* TO DO - initialize controller parameters only here for Gen 3 */
 }
 
+int mipicsi_device_stop(enum mipicsi_top_dev dev)
+{
+	void * baddr = dev_addr_map[dev];
+	if (!baddr) {
+		return -ENXIO;
+	}
+	TX_OUT(PHY_RSTZ, 0);
+	TX_OUT(PHY0_TST_CTRL0, 1);
+
+	return 0;
+}
 
 int mipicsi_device_hw_init(enum mipicsi_top_dev dev)
 {

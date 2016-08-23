@@ -125,6 +125,7 @@ struct mipicsi_top_mux_data {
 };
 
 struct mipicsi_top_reg {
+	enum mipicsi_top_dev dev;
 	uint32_t    offset;
 	uint32_t    value;
 };

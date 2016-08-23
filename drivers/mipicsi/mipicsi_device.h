@@ -21,6 +21,7 @@ struct mipicsi_device_dev {
 void mipicsi_device_reset(enum mipicsi_top_dev dev);
 void mipicsi_device_dphy_reset(enum mipicsi_top_dev dev);
 int mipicsi_device_start(struct mipicsi_top_cfg *config);
+int mipicsi_device_stop(enum mipicsi_top_dev dev);
 int mipicsi_device_hw_init(enum mipicsi_top_dev dev);
 int mipicsi_device_vpg(struct mipicsi_top_vpg *vpg);
 

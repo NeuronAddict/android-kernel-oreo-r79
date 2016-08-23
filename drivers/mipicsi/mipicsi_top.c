@@ -49,6 +49,7 @@
 #include "mipicsi_top.h"
 #include "mipicsi_host.h"
 #include "mipicsi_device.h"
+#include "mipicsi_sysfs.h"
 #include "mipicsi_util.h"
 #include "mipi_dev.h"
 
@@ -56,7 +57,6 @@
 #include <soc/mnh/mnh-hwio-mipi-top.h>
 
 void * dev_addr_map[MIPI_MAX] = { NULL };
-uint32_t mipicsi_read_data;
 
 void mipicsi_util_save_virt_addr(enum mipicsi_top_dev dev, void *base_addr)
 {
@@ -73,7 +73,6 @@ static struct device *mipicsi_top_device;
 
 #define TOP_MASK(reg, fld)      HWIO_MIPI_TOP_##reg##_##fld##_FLDMASK
 
-#define MAX_STR_COPY	32
 
 #define DEVICE_NAME "mipicsitop"
 
@@ -141,33 +140,32 @@ void top_dphy_reset(enum mipicsi_top_dev dev)
 }
 
 void top_dphy_write(enum mipicsi_top_dev dev,
-			   uint8_t offset, uint8_t data)
+		    uint8_t offset, uint8_t data)
 {
 	/* TO DO - Write for TOP Registers */
 }
 
-void mipicsi_top_reg_write(enum mipicsi_top_dev dev,
-			   uint8_t offset, uint8_t data)
+int mipicsi_top_write(struct mipicsi_top_reg *reg)
 {
-	pr_debug("writing dev %d reg 0x%x val 0x%x \n", dev, offset, data);
-	writel(data, (uint64_t)dev_addr_map[dev] + offset);
+	pr_debug("writing dev %d reg 0x%x val 0x%x \n", reg->dev, reg->offset,
+		 reg->value);
+	writel(reg->value, (uint64_t)dev_addr_map[reg->dev] + reg->offset);
+
+	return 0;
 }
 
-uint32_t mipicsi_top_reg_read(enum mipicsi_top_dev dev,
-			   uint8_t offset)
+int mipicsi_top_read(struct mipicsi_top_reg *reg)
 {
-	uint32_t ret_val = 0;
+	pr_debug("reading dev %d reg 0x%x \n", reg->dev, reg->offset);
 	
-	pr_debug("reading dev %d reg 0x%x \n", dev, offset);
+	reg->value = readl((uint64_t)dev_addr_map[reg->dev] + reg->offset);
 	
-	ret_val = readl((uint64_t)dev_addr_map[dev] + offset);
-	
-	pr_debug("ret_val 0x%x \n", ret_val);
+	pr_debug("ret_val 0x%x \n", reg->value);
 
-	return ret_val;
+	return 0;
 }
 
-int32_t top_set_pll(struct mipicsi_top_cfg *config)
+int top_set_pll(struct mipicsi_top_cfg *config)
 {
 
 	/* TO DO - Execute Gen 3 PLL write sequence on TOP registers */
@@ -188,7 +186,7 @@ int32_t top_set_pll(struct mipicsi_top_cfg *config)
 	return 0;
 }
 
-int32_t top_start_rx(struct mipicsi_top_cfg *config)
+int top_start_rx(struct mipicsi_top_cfg *config)
 {
 	uint8_t i, vc, vc_en;
 	void * baddr = dev_addr_map[MIPI_TOP];
@@ -227,7 +225,7 @@ int32_t top_start_rx(struct mipicsi_top_cfg *config)
 	return 0;
 }
 
-int32_t top_start_tx(struct mipicsi_top_cfg *config)
+int top_start_tx(struct mipicsi_top_cfg *config)
 {
 	uint8_t i, vc, vc_en;
 	void * baddr = dev_addr_map[MIPI_TOP];
@@ -275,7 +273,7 @@ int32_t top_start_tx(struct mipicsi_top_cfg *config)
 	return 0;
 }
 
-int32_t mipicsi_top_start(struct mipicsi_top_cfg *config)
+int mipicsi_top_start(struct mipicsi_top_cfg *config)
 {
 	int ret = 0;
 
@@ -354,7 +352,7 @@ static void find_rx_matching_tx_and_disable(uint32_t rx_byp_tx_en_mask)
 	}
 }
 
-int32_t mipicsi_top_stop(enum mipicsi_top_dev dev)
+int mipicsi_top_stop(enum mipicsi_top_dev dev)
 {
 	void * baddr = dev_addr_map[MIPI_TOP];
 	pr_info("%s: %d E\n", __func__, dev);
@@ -369,31 +367,31 @@ int32_t mipicsi_top_stop(enum mipicsi_top_dev dev)
 	switch (dev) {
 
 	case MIPI_RX0:
-		TOP_OUTf(RX0_DPHY_CONTROL, SHUTDOWNZ_N, 0);
+		mipicsi_host_stop(dev);
 		TOP_OUT(RX0_MODE, 0);
 		find_tx_matching_rx_byp_and_pwr_off(TX_BYPASS_RX0);
 		break;
 
 	case MIPI_RX1:
-		TOP_OUTf(RX1_DPHY_CONTROL, SHUTDOWNZ_N, 0);
+		mipicsi_host_stop(dev);
 		TOP_OUT(RX1_MODE, 0);
 		find_tx_matching_rx_byp_and_pwr_off(TX_BYPASS_RX1);
 		break;
 
 	case MIPI_RX2:
-		TOP_OUTf(RX2_DPHY_CONTROL, SHUTDOWNZ_N, 0);
+		mipicsi_host_stop(dev);
 		TOP_OUT(RX2_MODE, 0);
 		find_tx_matching_rx_byp_and_pwr_off(TX_BYPASS_RX2);
 		break;
 
 	case MIPI_TX0:
-		TOP_OUTf(TX0_DPHY_CONTROL, SHUTDOWNZ_N, 0);
+		mipicsi_device_stop(dev);
 		TOP_OUT(TX0_MODE, 0);
 		find_rx_matching_tx_and_disable(TOP_MASK(RX0_MODE, RX0_BYP_TX0_EN));
 		break;
 
 	case MIPI_TX1:
-		TOP_OUTf(TX1_DPHY_CONTROL, SHUTDOWNZ_N, 0);
+		mipicsi_device_stop(dev);
 		TOP_OUT(TX1_MODE, 0);
 		find_rx_matching_tx_and_disable(TOP_MASK(RX0_MODE, RX0_BYP_TX1_EN));
 		break;
@@ -677,194 +675,11 @@ int mipicsi_top_hw_init(void)
 	return 0;
 }
 
-static ssize_t show_sysfs_mipicsi_top_init(struct device *dev,
-				struct device_attribute *attr,
-				char *buf)
-{
-
-	/* MIPICSI HW init */
-	mipicsi_top_hw_init();
-	return snprintf(buf, MAX_STR_COPY, "MIPI: HW init\n");
-}
-
-static ssize_t sysfs_mipicsi_top_init(struct device *dev,
-				struct device_attribute *attr,
-				const char *buf,
-				size_t count)
-{
-	return count;
-}
-
-static DEVICE_ATTR(mipicsi_top_init, S_IRUGO | S_IWUSR | S_IWGRP,
-			show_sysfs_mipicsi_top_init, sysfs_mipicsi_top_init);
-			
-
-/* Create sysfs for mipicsi read register */
-static ssize_t show_sysfs_mipicsi_reg_read(struct device *dev,
-				struct device_attribute *attr,
-				char *buf)
-{
-        ssize_t strlen = 0;
-	strlen = snprintf(buf, MAX_STR_COPY, "%lx\n",
-				(unsigned long) mipicsi_read_data);
-	mipicsi_read_data = 0;
-
-	return strlen;
-}
-
-static ssize_t sysfs_mipicsi_reg_read(struct device *dev,
-				struct device_attribute *attr,
-				const char *buf,
-				size_t count)
-{
-        uint32_t val;
-        enum mipicsi_top_dev mipi_dev;
-        uint8_t offset = 0;
-        uint8_t *token;
-        const char *delim = ";";
-
-        token = strsep(&buf, delim);
-        if (token) {
-                if (kstrtoul(token, 0, &val))
-                	return -EINVAL;
-        	if ((val < MIPI_RX0) || (val > MIPI_MAX))
-                	return -EINVAL;
-        	mipi_dev = val;
-        } else {
-                return -EINVAL;
-        }
-
-        token = strsep(&buf, delim);
-
-        if (token) {
-                if (kstrtoul(token, 0, &val))
-                return -EINVAL;
-        if ((val < 0) || (val > 0xFF))
-                return -EINVAL;
-        offset = val;
-        } else {
-                return -EINVAL;
-        }
-	mipicsi_read_data = mipicsi_top_reg_read(mipi_dev, offset);
-	
-	return count;
-}
-
-static DEVICE_ATTR(mipicsi_reg_read, S_IRUGO | S_IWUSR | S_IWGRP,
-			show_sysfs_mipicsi_reg_read, sysfs_mipicsi_reg_read);			
-
-/* Create sysfs for mipicsi write register */
-static ssize_t show_sysfs_mipicsi_reg_write(struct device *dev,
-				struct device_attribute *attr,
-				char *buf)
-{
-
-	return snprintf(buf, MAX_STR_COPY, "MIPICSI: cat mipicsi_reg_write not supported \n");
-}
-
-static ssize_t sysfs_mipicsi_reg_write(struct device *dev,
-				struct device_attribute *attr,
-				const char *buf,
-				size_t count)
-{
-        uint32_t val;
-        enum mipicsi_top_dev mipi_dev;
-        uint8_t offset = 0;
-        uint8_t reg_data = 0;
-        uint8_t *token;
-        const char *delim = ";";
-
-
-        token = strsep(&buf, delim);
-        if (token) {
-                if (kstrtoul(token, 0, &val))
-                return -EINVAL;
-        if ((val < MIPI_RX0) || (val > MIPI_MAX))
-                return -EINVAL;
-        mipi_dev = val;
-        } else {
-                return -EINVAL;
-        }
-
-        token = strsep(&buf, delim);
-
-        if (token) {
-                if (kstrtoul(token, 0, &val))
-                return -EINVAL;
-        if ((val < 0) || (val > 0xFF))
-                return -EINVAL;
-        offset = val;
-        } else {
-                return -EINVAL;
-        }
-
-        token = strsep(&buf, delim);
-
-        if (token) {
-                if (kstrtoul(token, 0, &val))
-                return -EINVAL;
-        if ((val < 0) || (val > 0xFF))
-                return -EINVAL;
-        reg_data = val;
-        } else {
-                return -EINVAL;
-        }
-
-        mipicsi_top_reg_write(mipi_dev, offset, reg_data);
-
-	return count;
-}
-
-static DEVICE_ATTR(mipicsi_reg_write, S_IRUGO | S_IWUSR | S_IWGRP,
-			show_sysfs_mipicsi_reg_write, sysfs_mipicsi_reg_write);					
-static int init_sysfs(void)
-{
-	int ret;
-
-	pr_info("MIPI TOP: init_sysfs\n");
-	ret = device_create_file(mipicsi_top_device,
-			&dev_attr_mipicsi_top_init);
-	if (ret) {
-		dev_err(mipicsi_top_device, "Failed to create sysfs: top init\n");
-		return -EINVAL;
-	}
-
-	pr_info("MIPI TOP: init_sysfs\n");
-	ret = device_create_file(mipicsi_top_device,
-			&dev_attr_mipicsi_reg_read);
-	if (ret) {
-		dev_err(mipicsi_top_device, "Failed to create sysfs: mipicsi_reg_read\n");
-		return -EINVAL;
-	}
-
-	pr_info("MIPI TOP: init_sysfs\n");
-	ret = device_create_file(mipicsi_top_device,
-			&dev_attr_mipicsi_reg_write);
-	if (ret) {
-		dev_err(mipicsi_top_device, "Failed to create sysfs: mipicsi_reg_write\n");
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
-static void clean_sysfs(void)
-{
-	device_remove_file(mipicsi_top_device,
-			&dev_attr_mipicsi_top_init);
-
-	device_remove_file(mipicsi_top_device,
-			&dev_attr_mipicsi_reg_read);
-
-	device_remove_file(mipicsi_top_device,
-			&dev_attr_mipicsi_reg_write);
-}
-
 struct mipi_top_operations mipi_top_ioctl = {
         .set_rx_mux = mipicsi_top_set_mux,
         .get_rx_mux = mipicsi_top_get_mux,
-	.writereg = mipicsi_top_reg_write,
-	.readreg = mipicsi_top_reg_read,
+       .writereg = mipicsi_top_write,
+       .readreg = mipicsi_top_read,
 };
 
 int mipicsi_top_init_chardev(struct mipicsi_top_device *mipidev)
@@ -937,7 +752,7 @@ int mipicsi_top_probe(struct platform_device *pdev)
 	/* Update the device node */
 	dev->dev = &pdev->dev;
 
-	/* Initialize sysfs dev */
+	/* Initialize dev */
         mipicsi_top_device = dev->dev;
 
 #ifdef JUNO_BRINGUP
@@ -1009,7 +824,7 @@ int mipicsi_top_probe(struct platform_device *pdev)
 	/* HW init */
 	ret = mipicsi_top_hw_init();
 
-	init_sysfs();
+	mipicsi_sysfs_init(mipicsi_top_device);
 
 #if 0
 	if (ret) {
@@ -1043,7 +858,7 @@ static int mipicsi_top_remove(struct platform_device *pdev)
 	struct list_head *list;
 
 	dev_dbg(&pdev->dev, "Removing MIPI CSI-2 module\n");
-	clean_sysfs();
+	mipicsi_sysfs_clean(mipicsi_top_device);
 	while (!list_empty(&devlist_global)) {
 		list = devlist_global.next;
 		list_del(list);
