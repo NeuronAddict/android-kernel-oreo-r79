@@ -53,6 +53,7 @@ config ARCH_MNH
        select ARM_GIC
        select ARM_GIC_V3
        select MNH_PCIE_EP
+       select MNH_PERF_MON
        select MIPICSI_TOP
 
 config ARCH_QCOM

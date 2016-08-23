@@ -1,5 +1,5 @@
 config MIPICSI_TOP
 	tristate "Intel MIPI CSI TOP Driver"
-	default y
+	default n
 	help
 	  Intel MIPI Top Controller for Designware Rx/Tx

@@ -3,6 +3,6 @@
 #
 
 config MNH_PERF_MON
-	def_bool y
+	def_bool n
 	help
 	  Enables the Performance Monitor driver

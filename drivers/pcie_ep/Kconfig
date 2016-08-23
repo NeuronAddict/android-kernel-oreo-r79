@@ -3,6 +3,6 @@
 #
 
 config MNH_PCIE_EP
-	def_bool y
+	def_bool n
 	help
 	  Enables the PCIe Endpoint driver
