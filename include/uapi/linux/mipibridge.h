@@ -19,47 +19,6 @@
 
 #define MIPICSI_TOP_MAX_LINKS 5
 
-/* for mipi host/dev start */
-struct init_config {
-	int test;
-};
-
-/* for mipi top pll configuring */
-struct pll_config {
-	int test;
-};
-
-enum host_mux_sel {
-	host_rx0,
-	host_rx1,
-	host_rx2,
-};
-
-struct rx_mux_config {
-	enum host_mux_sel sel;
-	int mux_ipu : 1;
-	int mux_tx0 : 1;
-	int mux_tx1 : 1;
-};
-
-enum device_mux_sel {
-	device_tx0,
-	device_tx1,
-};
-
-enum device_mux_connect {
-	mux_off,
-	connect_ipu,
-	connect_rx0,
-	connect_rx1,
-	connect_rx2
-};
-
-struct tx_mux_config {
-	enum device_mux_sel sel;
-	enum device_mux_connect state;
-};
-
 /* Interrupts */
 /* Host int */
 struct mipi_host_irq_st {
@@ -181,6 +140,7 @@ struct mipicsi_top_cfg {
 struct mipicsi_top_mux {
 	enum mipicsi_top_dev source;
 	enum mipicsi_top_dev sink;
+	bool active;
 };
 
 struct mipicsi_top_mux_data {
@@ -218,34 +178,6 @@ struct mipicsi_top_vpg {
 #define MIPI_HOST_MAX              8
 #define MIPI_DEV_MAX               8
 #define MIPI_TOP_MAX               8
-#define MIPI_HOST_START       \
-	_IOWR(MIPIBRIDGE_IOC_HOST_MAGIC,  1, struct init_config)
-#define MIPI_HOST_STOP        \
-	_IOWR(MIPIBRIDGE_IOC_HOST_MAGIC,  2, int)
-#define MIPI_HOST_S_REG       \
-	_IOW(MIPIBRIDGE_IOC_HOST_MAGIC,   3, struct register_io)
-#define MIPI_HOST_G_REG       \
-	_IOWR(MIPIBRIDGE_IOC_HOST_MAGIC,  4, struct register_io)
-#define MIPI_HOST_G_INT_ST    \
-	_IOR(MIPIBRIDGE_IOC_HOST_MAGIC,  5, struct mipi_host_irq_st)
-#define MIPI_HOST_S_INT_MASK  \
-	_IOW(MIPIBRIDGE_IOC_HOST_MAGIC,  6, struct mipi_host_irq_mask)
-#define MIPI_HOST_S_INT_FORCE \
-	_IOW(MIPIBRIDGE_IOC_HOST_MAGIC,  7, struct mipi_host_irq_mask)
-#define MIPI_DEV_START        \
-	_IOWR(MIPIBRIDGE_IOC_DEV_MAGIC,  1, struct init_config)
-#define MIPI_DEV_STOP         \
-	_IOWR(MIPIBRIDGE_IOC_DEV_MAGIC,  2, int)
-#define MIPI_DEV_S_REG        \
-	_IOW(MIPIBRIDGE_IOC_DEV_MAGIC,   3, struct register_io)
-#define MIPI_DEV_G_REG        \
-	_IOWR(MIPIBRIDGE_IOC_DEV_MAGIC,  4, struct register_io)
-#define MIPI_DEV_G_INT_ST     \
-	_IOR(MIPIBRIDGE_IOC_DEV_MAGIC,  5, struct mipi_device_irq_st)
-#define MIPI_DEV_S_INT_MASK   \
-	_IOW(MIPIBRIDGE_IOC_DEV_MAGIC,  6, struct mipi_device_irq_mask)
-#define MIPI_DEV_S_INT_FORCE  \
-	_IOW(MIPIBRIDGE_IOC_DEV_MAGIC,  7, struct mipi_device_irq_mask)
 
 
 #define MIPI_TOP_START     \
@@ -255,12 +187,16 @@ struct mipicsi_top_vpg {
 #define MIPI_TOP_S_MUX     \
 	_IOWR(MIPIBRIDGE_IOC_TOP_MAGIC,  3, struct mipicsi_top_mux)
 #define MIPI_TOP_G_MUX     \
-	_IOWR(MIPIBRIDGE_IOC_TOP_MAGIC,  4, struct mipicsi_top_mux)
+	_IOWR(MIPIBRIDGE_IOC_TOP_MAGIC,  4, struct mipicsi_top_mux_data)
+#define MIPI_TOP_G_MUX_STATUS     \
+	_IOWR(MIPIBRIDGE_IOC_TOP_MAGIC,  5, struct mipicsi_top_mux)
 #define MIPI_TOP_S_REG        \
-	_IOW(MIPIBRIDGE_IOC_TOP_MAGIC,  5, struct register_io)
+	_IOW(MIPIBRIDGE_IOC_TOP_MAGIC,  6, struct register_io)
 #define MIPI_TOP_G_REG        \
-	_IOWR(MIPIBRIDGE_IOC_TOP_MAGIC,  6, struct register_io)
+	_IOWR(MIPIBRIDGE_IOC_TOP_MAGIC,  7, struct register_io)
+#define MIPI_TOP_VPG        \
+	_IOWR(MIPIBRIDGE_IOC_TOP_MAGIC,  8, struct mipicsi_top_vpg)
 #define MIPI_DEV_G_NOTIF     \
-	_IOR(MIPIBRIDGE_IOC_TOP_MAGIC,  7, struct mipi_top_notification)
+	_IOR(MIPIBRIDGE_IOC_TOP_MAGIC,  9, struct mipi_top_notification)
 
 #endif

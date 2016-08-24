@@ -117,6 +117,7 @@ struct mipicsi_top_cfg {
 struct mipicsi_top_mux {
 	enum mipicsi_top_dev source;
 	enum mipicsi_top_dev sink;
+	bool active;
 };
 
 struct mipicsi_top_mux_data {

@@ -80,17 +80,15 @@ int mipi_chardev_close(struct inode *inode, struct file *filp)
 int mipi_chardev_read_reg_ioctl( unsigned long arg, struct mipi_chardev* chardev )
 {
 	int err = 0;
-	struct register_io regio;
-	unsigned int reg_data = 0;
+	struct mipicsi_top_reg regio;
 
 	/* copy from user */
 	err = copy_from_user(&regio, (void __user *)arg, sizeof(regio));
-	pr_debug("mipi_chardev_ioctl: writing dev %d reg 0x%x val 0x%x", regio.dev, regio.reg, regio.data);
+	pr_debug("mipi_chardev_ioctl: writing dev %d reg 0x%x val 0x%x",
+		 regio.dev, regio.offset, regio.value);
 	if (err == 0)
 	{
-		regio.data = chardev->topOps.readreg(
-						regio.dev,
-						regio.reg);
+		chardev->topOps.readreg(&regio);
 								
 		err = copy_to_user((void __user *)arg, &regio, sizeof(regio));
 					
@@ -106,18 +104,129 @@ int mipi_chardev_read_reg_ioctl( unsigned long arg, struct mipi_chardev* chardev
 int mipi_chardev_write_reg_ioctl( unsigned long arg, struct mipi_chardev* chardev )
 {
 	int err = 0;
-	struct register_io regio;
+	struct mipicsi_top_reg regio;
 	/* copy from user */
 	err = copy_from_user(&regio, (void __user *)arg, sizeof(regio));
 	
-	pr_debug("mipi_chardev_ioctl: writing dev %d reg 0x%x val 0x%x", regio.dev, regio.reg, regio.data);
+	pr_debug("mipi_chardev_ioctl: writing dev %d reg 0x%x val 0x%x",
+		 regio.dev, regio.offset, regio.value);
 		
 	if (err == 0)
-		chardev->topOps.writereg(
-				regio.dev,
-				regio.reg,
-				regio.data
-				);
+		chardev->topOps.writereg(&regio);
+	else
+		pr_err("Could not copy data from user. err=%d", err);
+
+	return err;
+}
+
+int mipi_chardev_start_ioctl( unsigned long arg, struct mipi_chardev* chardev )
+{
+	int err = 0;
+	struct mipicsi_top_cfg config;
+	/* copy from user */
+	err = copy_from_user(&config, (void __user *)arg, sizeof(config));
+
+	pr_debug("mipi_chardev_ioctl: starting dev %d", config.dev);
+
+	if (err == 0)
+		chardev->topOps.start(&config);
+	else
+		pr_err("Could not copy data from user. err=%d", err);
+
+	return err;
+}
+
+int mipi_chardev_stop_ioctl( unsigned long arg, struct mipi_chardev* chardev )
+{
+	int err = 0;
+	enum mipicsi_top_dev dev;
+	/* copy from user */
+	err = copy_from_user(&dev, (void __user *)arg, sizeof(dev));
+
+	pr_debug("mipi_chardev_ioctl: stopping dev %d", dev);
+
+	if (err == 0)
+		chardev->topOps.stop(dev);
+	else
+		pr_err("Could not copy data from user. err=%d", err);
+
+	return err;
+}
+
+int mipi_chardev_set_mux_ioctl( unsigned long arg, struct mipi_chardev* chardev )
+{
+	int err = 0;
+	struct mipicsi_top_mux mux;
+	/* copy from user */
+	err = copy_from_user(&mux, (void __user *)arg, sizeof(mux));
+
+	pr_debug("mipi_chardev_ioctl: setting mux %d to %d", mux.source, mux.sink);
+
+	if (err == 0)
+		chardev->topOps.set_mux(&mux);
+	else
+		pr_err("Could not copy data from user. err=%d", err);
+
+	return err;
+}
+
+int mipi_chardev_get_mux_ioctl( unsigned long arg, struct mipi_chardev* chardev )
+{
+	int err = 0;
+	struct mipicsi_top_mux_data mux_data;
+
+	/* copy from user */
+	err = copy_from_user(&mux_data, (void __user *)arg, sizeof(mux_data));
+	pr_debug("mipi_chardev_ioctl: getting mux settings");
+	if (err == 0)
+	{
+		chardev->topOps.get_mux(&mux_data);
+
+		err = copy_to_user((void __user *)arg, &mux_data,
+				   sizeof(mux_data));
+
+		if( err != 0 )
+			pr_err("Could not copy data to user. err=%d", err);
+	}
+	else
+		pr_err("Could not copy data from user. err=%d", err);
+
+	return err;
+}
+
+int mipi_chardev_get_mux_status_ioctl( unsigned long arg, 
+				       struct mipi_chardev* chardev )
+{
+	int err = 0;
+	struct mipicsi_top_mux mux;
+
+	/* copy from user */
+	err = copy_from_user(&mux, (void __user *)arg, sizeof(mux));
+	pr_debug("mipi_chardev_ioctl: getting mux settings");
+	if (err == 0)
+	{
+		chardev->topOps.get_mux_status(&mux);
+
+		err = copy_to_user((void __user *)arg, &mux,
+				   sizeof(mux));
+	}
+	else
+		pr_err("Could not copy data from user. err=%d", err);
+
+	return err;
+}
+
+int mipi_chardev_vpg_ioctl( unsigned long arg, struct mipi_chardev* chardev )
+{
+	int err = 0;
+	struct mipicsi_top_vpg vpg;
+	/* copy from user */
+	err = copy_from_user(&vpg, (void __user *)arg, sizeof(vpg));
+
+	pr_debug("mipi_chardev_ioctl: starting vpg %d", vpg.dev);
+
+	if (err == 0)
+		chardev->topOps.vpg(&vpg);
 	else
 		pr_err("Could not copy data from user. err=%d", err);
 
@@ -164,11 +273,36 @@ long mipi_chardev_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		pr_debug("mipi_chardev_ioctl top call\n");
 		chardev = mipi_char_devices[0];
 		switch (cmd) {
+			case MIPI_TOP_START:
+				err = mipi_chardev_start_ioctl(arg, chardev);
+				break;
+
+			case MIPI_TOP_STOP:
+				err = mipi_chardev_stop_ioctl(arg, chardev);
+				break;
+
+			case MIPI_TOP_S_MUX:
+				err = mipi_chardev_set_mux_ioctl(arg, chardev);
+				break;
+
+			case MIPI_TOP_G_MUX:
+				err = mipi_chardev_get_mux_ioctl(arg, chardev);
+				break;
+
+			case MIPI_TOP_G_MUX_STATUS:
+				err = mipi_chardev_get_mux_status_ioctl(arg, chardev);
+				break;
+
+			case MIPI_TOP_VPG:
+				err = mipi_chardev_vpg_ioctl(arg, chardev);
+				break;
+
 			case MIPI_TOP_S_REG:
 				err = mipi_chardev_write_reg_ioctl(arg, chardev);
 				break;
 			case MIPI_TOP_G_REG:
 				err = mipi_chardev_read_reg_ioctl(arg, chardev);
+
 				break;
 			default:
 				pr_warn("Unrecognized mipi ioctl");

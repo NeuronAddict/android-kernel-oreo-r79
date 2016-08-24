@@ -188,7 +188,7 @@ int top_set_pll(struct mipicsi_top_cfg *config)
 
 int top_start_rx(struct mipicsi_top_cfg *config)
 {
-	uint8_t i, vc, vc_en;
+	uint8_t i, vc, vc_en = 0;
 	void * baddr = dev_addr_map[MIPI_TOP];
 	if (!baddr) {
 		pr_err("%s missing address for top\n", __func__);
@@ -215,6 +215,7 @@ int top_start_rx(struct mipicsi_top_cfg *config)
 		if ((vc > 0) && (vc <= VC_MAX))
 			vc_en |= 1<<(vc-1);
 	}
+
 	if (config->dev == MIPI_RX0)
 		TOP_OUTf(RX0_MODE, RX0_VC_EN, vc_en);
 	else if (config->dev == MIPI_RX1)
@@ -227,7 +228,7 @@ int top_start_rx(struct mipicsi_top_cfg *config)
 
 int top_start_tx(struct mipicsi_top_cfg *config)
 {
-	uint8_t i, vc, vc_en;
+	uint8_t i, vc, vc_en = 0;
 	void * baddr = dev_addr_map[MIPI_TOP];
 	if (!baddr) {
 		pr_err("%s missing address for top\n", __func__);
@@ -260,6 +261,7 @@ int top_start_tx(struct mipicsi_top_cfg *config)
 		if ((vc > 0) && (vc <= VC_MAX))
 			vc_en |= 1<<(vc-1);
 	}
+
 	if (config->dev == MIPI_TX0) {
 		TOP_OUTf(TX0_IPU_VC_EN, TX0_IPU_VC_EN, vc_en);
 		/* Enable TOP level interrupt */
@@ -627,13 +629,16 @@ int mipicsi_top_get_mux_status(struct mipicsi_top_mux *mux)
 		else
 			return -EINVAL;
 	} else {
+		mux->active = false;
 		return -EINVAL;
 	}
 
 	if (temp)
-		return true;
+		mux->active = true;
 	else
-		return false;
+		mux->active = false;
+
+	return 0;
 }
 
 int mipicsi_top_debug_vpg(struct mipicsi_top_vpg *vpg)
@@ -676,11 +681,14 @@ int mipicsi_top_hw_init(void)
 }
 
 struct mipi_top_operations mipi_top_ioctl = {
-        .set_rx_mux = mipicsi_top_set_mux,
-        .get_rx_mux = mipicsi_top_get_mux,
-       .writereg = mipicsi_top_write,
-       .readreg = mipicsi_top_read,
-};
+	.start = mipicsi_top_start,
+	.stop = mipicsi_top_stop,
+	.set_mux = mipicsi_top_set_mux,
+	.get_mux = mipicsi_top_get_mux,
+	.get_mux_status = mipicsi_top_get_mux_status,
+	.writereg = mipicsi_top_write,
+	.readreg = mipicsi_top_read,
+	.vpg = mipicsi_top_debug_vpg};
 
 int mipicsi_top_init_chardev(struct mipicsi_top_device *mipidev)
 {

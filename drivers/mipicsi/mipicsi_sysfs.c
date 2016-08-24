@@ -127,7 +127,6 @@ static ssize_t stop_dev_store(struct device *dev,
 			      const char *buf,
 			      size_t count)
 {
-        uint64_t val;
 	enum mipicsi_top_dev device;
 
 	if (find_device (buf, &device) >= 0) {
@@ -193,7 +192,6 @@ static ssize_t get_mux_status_store(struct device *dev,
         uint8_t *token;
         const char *delim = ";";
 	struct mipicsi_top_mux mux;
-	int status;
 	
         token = strsep((char **)&buf, delim);
         if ( (token) && (find_device (token, &device) >= 0) ) { 
@@ -201,12 +199,12 @@ static ssize_t get_mux_status_store(struct device *dev,
 		token = strsep((char **)&buf, delim);
 		if ( (token) && (find_device (token, &device) >= 0) ) {
 			mux.sink = device;
-			status = mipicsi_top_get_mux_status(&mux);
+			mipicsi_top_get_mux_status(&mux);
 
-			if (status == true)
+			if (mux.active == true)
 				snprintf(string_data, MAX_STR_COPY,
 					 "%s\n", "Mux path active");
-			else if (status == false)
+			else if (mux.active == false)
 				snprintf(string_data, MAX_STR_COPY,
 					 "%s\n", "Mux path inactive");
 			return count;

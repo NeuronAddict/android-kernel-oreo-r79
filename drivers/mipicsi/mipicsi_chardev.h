@@ -23,27 +23,16 @@
 /*
  * Character device handling
  */
-struct mipi_host_operations {
-	int (*poweron)(struct init_config *);
-	int (*poweroff)(unsigned int);
-	int (*writereg)(unsigned int, unsigned int);
-	u32 (*readreg)(unsigned int);
-};
-
-struct mipi_device_operations {
-	int (*poweron)(struct init_config *);
-	int (*poweroff)(unsigned int);
-	int (*writereg)(unsigned int, unsigned int);
-	u32 (*readreg)(unsigned int);
-};
 
 struct mipi_top_operations {
-	int (*set_rx_mux)(struct mipicsi_top_mux*);
-	int (*get_rx_mux)(struct mipicsi_top_mux*);
-	int (*set_tx_mux)(struct mipicsi_top_mux*);
-	int (*get_tx_mux)(struct mipicsi_top_mux*);
-	int (*writereg)(unsigned int, unsigned int, unsigned int);
-	u32 (*readreg)(unsigned int, unsigned int);
+	int (*start)(struct mipicsi_top_cfg*);
+	int (*stop)(enum mipicsi_top_dev);
+	int (*set_mux)(struct mipicsi_top_mux*);
+	void (*get_mux)(struct mipicsi_top_mux_data*);
+	int (*get_mux_status)(struct mipicsi_top_mux*);
+	int (*writereg)(struct mipicsi_top_reg*);
+	int (*readreg)(struct mipicsi_top_reg*);
+	int (*vpg)(struct mipicsi_top_vpg*);
 };
 
 struct mipi_chardev {
@@ -54,8 +43,6 @@ struct mipi_chardev {
 	struct class *chardevClass;
 	struct device *chardev;
 	struct mipicsi_top_device *mipidev;
-	struct mipi_host_operations hostOps;
-	struct mipi_device_operations devOps;
 	struct mipi_top_operations topOps;
 };
 
