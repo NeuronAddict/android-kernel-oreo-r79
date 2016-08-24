@@ -65,20 +65,41 @@ static void set_axi_clk(void)
 	switch (fsp) {
 	case 0x0:
 		/* read from LPDDR4_FSP0_SETTINGS */
+		fbdiv = SCU_INf(LPDDR4_FSP0_SETTING, FSP0_FBDIV);
+		sys200 = SCU_INf(LPDDR4_FSP0_SETTING, FSP0_SYS200_MODE);
+		axi_clk_div = SCU_INf(LPDDR4_FSP0_SETTING,
+					FSP0_AXI_FABRIC_CLK_DIV);
 		break;
 	case 0x1:
 		/* read from LPDDR4_FSP1_SETTINGS */
+		fbdiv = SCU_INf(LPDDR4_FSP1_SETTING, FSP1_FBDIV);
+		sys200 = SCU_INf(LPDDR4_FSP1_SETTING, FSP1_SYS200_MODE);
+		axi_clk_div = SCU_INf(LPDDR4_FSP1_SETTING,
+					FSP1_AXI_FABRIC_CLK_DIV);
 		break;
 	case 0x2:
 		/* read from LPDDR4_FSP2_SETTINGS */
+		fbdiv = SCU_INf(LPDDR4_FSP2_SETTING, FSP2_FBDIV);
+		sys200 = SCU_INf(LPDDR4_FSP2_SETTING, FSP2_SYS200_MODE);
+		axi_clk_div = SCU_INf(LPDDR4_FSP2_SETTING,
+					FSP2_AXI_FABRIC_CLK_DIV);
 		break;
 	case 0x3:
 		/* read from LPDDR4_FSP3_SETTINGS */
+		fbdiv = SCU_INf(LPDDR4_FSP3_SETTING, FSP3_FBDIV);
+		sys200 = SCU_INf(LPDDR4_FSP3_SETTING, FSP3_SYS200_MODE);
+		axi_clk_div = SCU_INf(LPDDR4_FSP3_SETTING,
+					FSP3_AXI_FABRIC_CLK_DIV);
 		break;
-	case 0x5:
+	case 0x7:
 		fbdiv = SCU_INf(LPDDR4_REFCLK_PLL_INTGR_DIV, FBDIV);
 		sys200 = SCU_INf(CCU_CLK_CTL, LP4_AXI_SYS200_MODE);
 		axi_clk_div = SCU_INf(CCU_CLK_DIV, AXI_FABRIC_CLK_DIV);
+		break;
+	default:
+		sys200 = 1;
+		axi_clk_div = 1;
+		fbdiv = 1;
 		break;
 	}
 	ref_clk = ((SCU_INf(HW_STRAP, HW_STRAP) & REF_FREQ_MASK)
@@ -98,81 +119,106 @@ static uint32_t config_prmu(void)
 	while (i < PRMU_COUNT) {
 
 		if (perf_mon_dev->mode[i] == 'r') {
-			PRMU_OUTf(i+1, RC, RD_REQ_RDY_EN, 1);
-			PRMU_OUTf(i+1, RC, RD_REQ_RESP_EN, 1);
-			PRMU_OUTf(i+1, RC, RD_REQ_CNT_EN, 1);
-			PRMU_OUTf(i+1, RC, RD_RESP_CNT_EN, 1);
-			PRMU_OUTf(i+1, RC, RD_REQ_LEN_CNT_EN, 1);
-			PRMU_OUTf(i+1, WC, WR_REQ_RDY_EN, 0);
-			PRMU_OUTf(i+1, WC, WR_REQ_RESP_EN, 0);
-			PRMU_OUTf(i+1, WC, WR_REQ_CNT_EN, 0);
-			PRMU_OUTf(i+1, WC, WR_RESP_CNT_EN, 0);
-			PRMU_OUTf(i+1, WC, WR_REQ_LEN_CNT_EN, 0);
-			PRMU_OUTf(i+1, RC, RD_REQ_RDY_CLR, 1);
-			PRMU_OUTf(i+1, RC, RD_REQ_RESP_CLR, 1);
-			PRMU_OUTf(i+1, RC, RD_REQ_CNT_CLR, 1);
-			PRMU_OUTf(i+1, RC, RD_RESP_CNT_CLR, 1);
-			PRMU_OUTf(i+1, RC, RD_REQ_LEN_CNT_CLR, 1);
-			PRMU_OUTf(i+1, RC, RD_REQ_RDY_CLR, 0);
-			PRMU_OUTf(i+1, RC, RD_REQ_RESP_CLR, 0);
-			PRMU_OUTf(i+1, RC, RD_REQ_CNT_CLR, 0);
-			PRMU_OUTf(i+1, RC, RD_RESP_CNT_CLR, 0);
-			PRMU_OUTf(i+1, RC, RD_REQ_LEN_CNT_CLR, 0);
-			PRMU_OUTf(i+1, WC, WR_REQ_LEN_CNT_EN, 1);
-			PRMU_OUTf(i+1, WC, WR_REQ_RDY_CLR, 1);
-			PRMU_OUTf(i+1, WC, WR_REQ_RESP_CLR, 1);
-			PRMU_OUTf(i+1, WC, WR_REQ_CNT_CLR, 1);
-			PRMU_OUTf(i+1, WC, WR_RESP_CNT_CLR, 1);
-			PRMU_OUTf(i+1, WC, WR_REQ_LEN_CNT_CLR, 0);
-			PRMU_OUTf(i+1, WC, WR_REQ_RDY_CLR, 0);
-			PRMU_OUTf(i+1, WC, WR_REQ_RESP_CLR, 0);
-			PRMU_OUTf(i+1, WC, WR_REQ_CNT_CLR, 0);
-			PRMU_OUTf(i+1, WC, WR_RESP_CNT_CLR, 0);
-			PRMU_OUTf(i+1, WC, WR_REQ_LEN_CNT_CLR, 0);
-			PRMU_OUTf(i+1, IE, RD_REQ_LEN_OVFL_EN, 1);
-			PRMU_OUTf(i+1, IE, RD_REQ_CNT_OVFL_EN, 1);
-			PRMU_OUTf(i+1, IE, RD_RESP_CNT_OVFL_EN, 1);
-			PRMU_OUTf(i+1, IE, WR_REQ_LEN_OVFL_EN, 0);
-			PRMU_OUTf(i+1, IE, WR_REQ_CNT_OVFL_EN, 0);
-			PRMU_OUTf(i+1, IE, WR_RESP_CNT_OVFL_EN, 0);
+			PRMU_OUTf(i+1, READ_CTRL, RD_REQ2RDY_EN, 1);
+			PRMU_OUTf(i+1, READ_CTRL, RD_REQ2RESP_EN, 1);
+			PRMU_OUTf(i+1, READ_CTRL, RD_REQ_CNT_EN, 1);
+			PRMU_OUTf(i+1, READ_CTRL, RD_RESP_CNT_EN, 1);
+			PRMU_OUTf(i+1, READ_CTRL,
+					RD_REQ_TOTAL_BYTE_CNT_EN, 1);
+
+			PRMU_OUTf(i+1, WRITE_CTRL, WR_REQ2RDY_EN, 0);
+			PRMU_OUTf(i+1, WRITE_CTRL, WR_REQ2RESP_EN, 0);
+			PRMU_OUTf(i+1, WRITE_CTRL, WR_REQ_CNT_EN, 0);
+			PRMU_OUTf(i+1, WRITE_CTRL, WR_RESP_CNT_EN, 0);
+			PRMU_OUTf(i+1, WRITE_CTRL,
+					WR_REQ_TOTAL_BYTE_CNT_EN, 0);
+
+			PRMU_OUTf(i+1, READ_CTRL, RD_REQ2RDY_CLR, 1);
+			PRMU_OUTf(i+1, READ_CTRL, RD_REQ2RESP_CLR, 1);
+			PRMU_OUTf(i+1, READ_CTRL, RD_REQ_CNT_CLR, 1);
+			PRMU_OUTf(i+1, READ_CTRL, RD_RESP_CNT_CLR, 1);
+			PRMU_OUTf(i+1, READ_CTRL,
+					RD_REQ_TOTAL_BYTE_CNT_CLR, 1);
+
+			PRMU_OUTf(i+1, READ_CTRL, RD_REQ2RDY_CLR, 0);
+			PRMU_OUTf(i+1, READ_CTRL, RD_REQ2RESP_CLR, 0);
+			PRMU_OUTf(i+1, READ_CTRL, RD_REQ_CNT_CLR, 0);
+			PRMU_OUTf(i+1, READ_CTRL, RD_RESP_CNT_CLR, 0);
+			PRMU_OUTf(i+1, READ_CTRL,
+					RD_REQ_TOTAL_BYTE_CNT_CLR, 0);
+
+			PRMU_OUTf(i+1, WRITE_CTRL, WR_REQ2RDY_CLR, 1);
+			PRMU_OUTf(i+1, WRITE_CTRL, WR_REQ2RESP_CLR, 1);
+			PRMU_OUTf(i+1, WRITE_CTRL, WR_REQ_CNT_CLR, 1);
+			PRMU_OUTf(i+1, WRITE_CTRL, WR_RESP_CNT_CLR, 1);
+			PRMU_OUTf(i+1, WRITE_CTRL,
+					WR_REQ_TOTAL_BYTE_CNT_CLR, 1);
+
+			PRMU_OUTf(i+1, WRITE_CTRL, WR_REQ2RDY_CLR, 0);
+			PRMU_OUTf(i+1, WRITE_CTRL, WR_REQ2RESP_CLR, 0);
+			PRMU_OUTf(i+1, WRITE_CTRL, WR_REQ_CNT_CLR, 0);
+			PRMU_OUTf(i+1, WRITE_CTRL, WR_RESP_CNT_CLR, 0);
+			PRMU_OUTf(i+1, WRITE_CTRL,
+					WR_REQ_TOTAL_BYTE_CNT_CLR, 0);
+
+			PRMU_OUTf(i+1, IRQ_EN, RD_REQ_TOTAL_BYTE_OVFL_IE, 1);
+			PRMU_OUTf(i+1, IRQ_EN, RD_REQ_CNT_OVFL_IE, 1);
+			PRMU_OUTf(i+1, IRQ_EN, RD_RESP_CNT_OVFL_IE, 1);
+
+			PRMU_OUTf(i+1, IRQ_EN, WR_REQ_TOTAL_BYTE_OVFL_IE, 0);
+			PRMU_OUTf(i+1, IRQ_EN, WR_REQ_CNT_OVFL_IE, 0);
+			PRMU_OUTf(i+1, IRQ_EN, WR_RESP_CNT_OVFL_IE, 0);
 
 		} else if (perf_mon_dev->mode[i] == 'w') {
-			PRMU_OUTf(i+1, RC, RD_REQ_RDY_EN, 0);
-			PRMU_OUTf(i+1, RC, RD_REQ_RESP_EN, 0);
-			PRMU_OUTf(i+1, RC, RD_REQ_CNT_EN, 0);
-			PRMU_OUTf(i+1, RC, RD_RESP_CNT_EN, 0);
-			PRMU_OUTf(i+1, RC, RD_REQ_LEN_CNT_EN, 0);
-			PRMU_OUTf(i+1, WC, WR_REQ_RDY_EN, 1);
-			PRMU_OUTf(i+1, WC, WR_REQ_RESP_EN, 1);
-			PRMU_OUTf(i+1, WC, WR_REQ_CNT_EN, 1);
-			PRMU_OUTf(i+1, WC, WR_RESP_CNT_EN, 1);
-			PRMU_OUTf(i+1, WC, WR_REQ_LEN_CNT_EN, 1);
-			PRMU_OUTf(i+1, RC, RD_REQ_RDY_CLR, 1);
-			PRMU_OUTf(i+1, RC, RD_REQ_RESP_CLR, 1);
-			PRMU_OUTf(i+1, RC, RD_REQ_CNT_CLR, 1);
-			PRMU_OUTf(i+1, RC, RD_RESP_CNT_CLR, 1);
-			PRMU_OUTf(i+1, RC, RD_REQ_LEN_CNT_CLR, 1);
-			PRMU_OUTf(i+1, RC, RD_REQ_RDY_CLR, 0);
-			PRMU_OUTf(i+1, RC, RD_REQ_RESP_CLR, 0);
-			PRMU_OUTf(i+1, RC, RD_REQ_CNT_CLR, 0);
-			PRMU_OUTf(i+1, RC, RD_RESP_CNT_CLR, 0);
-			PRMU_OUTf(i+1, RC, RD_REQ_LEN_CNT_CLR, 0);
-			PRMU_OUTf(i+1, WC, WR_REQ_LEN_CNT_EN, 1);
-			PRMU_OUTf(i+1, WC, WR_REQ_RDY_CLR, 1);
-			PRMU_OUTf(i+1, WC, WR_REQ_RESP_CLR, 1);
-			PRMU_OUTf(i+1, WC, WR_REQ_CNT_CLR, 1);
-			PRMU_OUTf(i+1, WC, WR_RESP_CNT_CLR, 1);
-			PRMU_OUTf(i+1, WC, WR_REQ_LEN_CNT_CLR, 0);
-			PRMU_OUTf(i+1, WC, WR_REQ_RDY_CLR, 0);
-			PRMU_OUTf(i+1, WC, WR_REQ_RESP_CLR, 0);
-			PRMU_OUTf(i+1, WC, WR_REQ_CNT_CLR, 0);
-			PRMU_OUTf(i+1, WC, WR_RESP_CNT_CLR, 0);
-			PRMU_OUTf(i+1, IE, RD_REQ_LEN_OVFL_EN, 0);
-			PRMU_OUTf(i+1, IE, RD_REQ_CNT_OVFL_EN, 0);
-			PRMU_OUTf(i+1, IE, RD_RESP_CNT_OVFL_EN, 0);
-			PRMU_OUTf(i+1, IE, WR_REQ_LEN_OVFL_EN, 1);
-			PRMU_OUTf(i+1, IE, WR_REQ_CNT_OVFL_EN, 1);
-			PRMU_OUTf(i+1, IE, WR_RESP_CNT_OVFL_EN, 1);
+			PRMU_OUTf(i+1, READ_CTRL, RD_REQ2RDY_EN, 0);
+			PRMU_OUTf(i+1, READ_CTRL, RD_REQ2RESP_EN, 0);
+			PRMU_OUTf(i+1, READ_CTRL, RD_REQ_CNT_EN, 0);
+			PRMU_OUTf(i+1, READ_CTRL, RD_RESP_CNT_EN, 0);
+			PRMU_OUTf(i+1, READ_CTRL,
+					RD_REQ_TOTAL_BYTE_CNT_EN, 0);
+
+			PRMU_OUTf(i+1, WRITE_CTRL, WR_REQ2RDY_EN, 1);
+			PRMU_OUTf(i+1, WRITE_CTRL, WR_REQ2RESP_EN, 1);
+			PRMU_OUTf(i+1, WRITE_CTRL, WR_REQ_CNT_EN, 1);
+			PRMU_OUTf(i+1, WRITE_CTRL, WR_RESP_CNT_EN, 1);
+			PRMU_OUTf(i+1, WRITE_CTRL,
+					WR_REQ_TOTAL_BYTE_CNT_EN, 1);
+
+			PRMU_OUTf(i+1, READ_CTRL, RD_REQ2RDY_CLR, 1);
+			PRMU_OUTf(i+1, READ_CTRL, RD_REQ2RESP_CLR, 1);
+			PRMU_OUTf(i+1, READ_CTRL, RD_REQ_CNT_CLR, 1);
+			PRMU_OUTf(i+1, READ_CTRL, RD_RESP_CNT_CLR, 1);
+			PRMU_OUTf(i+1, READ_CTRL,
+					RD_REQ_TOTAL_BYTE_CNT_CLR, 1);
+
+			PRMU_OUTf(i+1, READ_CTRL, RD_REQ2RDY_CLR, 0);
+			PRMU_OUTf(i+1, READ_CTRL, RD_REQ2RESP_CLR, 0);
+			PRMU_OUTf(i+1, READ_CTRL, RD_REQ_CNT_CLR, 0);
+			PRMU_OUTf(i+1, READ_CTRL, RD_RESP_CNT_CLR, 0);
+			PRMU_OUTf(i+1, READ_CTRL,
+					RD_REQ_TOTAL_BYTE_CNT_CLR, 0);
+
+			PRMU_OUTf(i+1, WRITE_CTRL, WR_REQ2RDY_CLR, 1);
+			PRMU_OUTf(i+1, WRITE_CTRL, WR_REQ2RESP_CLR, 1);
+			PRMU_OUTf(i+1, WRITE_CTRL, WR_REQ_CNT_CLR, 1);
+			PRMU_OUTf(i+1, WRITE_CTRL, WR_RESP_CNT_CLR, 1);
+			PRMU_OUTf(i+1, WRITE_CTRL,
+					WR_REQ_TOTAL_BYTE_CNT_CLR, 1);
+
+			PRMU_OUTf(i+1, WRITE_CTRL, WR_REQ2RDY_CLR, 0);
+			PRMU_OUTf(i+1, WRITE_CTRL, WR_REQ2RESP_CLR, 0);
+			PRMU_OUTf(i+1, WRITE_CTRL, WR_REQ_CNT_CLR, 0);
+			PRMU_OUTf(i+1, WRITE_CTRL, WR_RESP_CNT_CLR, 0);
+			PRMU_OUTf(i+1, WRITE_CTRL,
+					WR_REQ_TOTAL_BYTE_CNT_CLR, 0);
+
+			PRMU_OUTf(i+1, IRQ_EN, RD_REQ_TOTAL_BYTE_OVFL_IE, 0);
+			PRMU_OUTf(i+1, IRQ_EN, RD_REQ_CNT_OVFL_IE, 0);
+			PRMU_OUTf(i+1, IRQ_EN, RD_RESP_CNT_OVFL_IE, 0);
+
+			PRMU_OUTf(i+1, IRQ_EN, WR_REQ_TOTAL_BYTE_OVFL_IE, 1);
+			PRMU_OUTf(i+1, IRQ_EN, WR_REQ_CNT_OVFL_IE, 1);
+			PRMU_OUTf(i+1, IRQ_EN, WR_RESP_CNT_OVFL_IE, 1);
 		} else
 			return 1;
 		i++;
@@ -192,16 +238,16 @@ static uint32_t perfmon_start_test(uint64_t time)
 		return 3;
 	ticks = perf_mon_dev->axi_speed * time; /* need to correct */
 	/* program registers */
-	PMON_OUTf(GC, GLBL_CLR, 1);
-	PMON_OUTf(GC, GLBL_CLR, 0);
-	PMON_OUTf(GC, GLBL_EN, 1);
-	PMON_OUT(ST_L, LOWER(ticks));
-	PMON_OUT(ST_H, UPPER(ticks));
+	PMON_OUTf(GLOBAL_CTRL, GLBL_CLR, 1);
+	PMON_OUTf(GLOBAL_CTRL, GLBL_CLR, 0);
+	PMON_OUTf(GLOBAL_CTRL, GLBL_EN, 1);
+	PMON_OUT(SNAPSHOT_TIME_LO, LOWER(ticks));
+	PMON_OUT(SNAPSHOT_TIME_HI, UPPER(ticks));
 	if (config_prmu() == 1)
 		return 2;
-	PMON_OUTf(GC, TIMESTAMP_CNT_CLR, 1);
-	PMON_OUTf(GC, TIMESTAMP_CNT_CLR, 0);
-	PMON_OUTf(GC, TIMESTAMP_CNT_EN, 1);
+	PMON_OUTf(GLOBAL_CTRL, TIMESTAMP_CNT_CLR, 1);
+	PMON_OUTf(GLOBAL_CTRL, TIMESTAMP_CNT_CLR, 0);
+	PMON_OUTf(GLOBAL_CTRL, TIMESTAMP_CNT_EN, 1);
 	perf_mon_dev->error = 0;
 	perf_mon_dev->status = 1;
 	return 0;
@@ -223,8 +269,8 @@ static uint32_t perfmon_read_results(struct perf_result *data)
 			data->error = TIMESTAMP_OVFL;
 		else if (perf_mon_dev->error != 0)
 			prmu_error = (perf_mon_dev->error & 0xFF00) >> 16;
-		data->time_stamp = PMON_IN(TS_L) +
-				((uint64_t)PMON_IN(TS_L) << 32);
+		data->time_stamp = PMON_IN(TIMESTAMP_LO) +
+				((uint64_t)PMON_IN(TIMESTAMP_HI) << 32);
 		while (i < PRMU_COUNT) {
 			if (perf_mon_dev->mode[i] == 'r')
 				data->prmu[i].mode = READ_MODE;
@@ -232,69 +278,84 @@ static uint32_t perfmon_read_results(struct perf_result *data)
 				data->prmu[i].mode = WRITE_MODE;
 			if (prmu_error == (i+1))
 				data->prmu[i].error = prmu_error &
-						~PRMU_MASK(IS, RSVD0);
+						~PRMU_MASK(IRQ_STS, RSVD0);
 			else
 				data->prmu[i].error = 0;
 			data->prmu[i].rd_req_rdy_latency =
-				PRMU_INxf(i + 1, 0, LAT_CURMIN, LAT_CUR);
+				PRMU_INf(i + 1,
+					RD_REQ2RDY_LATENCY_CUR_MIN, LAT_CUR);
 			data->prmu[i].rd_req_rdy_latency_min =
-				PRMU_INxf(i + 1, 0, LAT_CURMIN, LAT_MIN);
+				PRMU_INf(i + 1,
+					RD_REQ2RDY_LATENCY_CUR_MIN, LAT_MIN);
 			data->prmu[i].rd_req_rdy_latency_max =
-				PRMU_INxf(i + 1, 0, LAT_MAXAVG, LAT_MAX);
+				PRMU_INf(i + 1,
+					RD_REQ2RDY_LATENCY_MAX_AVG, LAT_MAX);
 			data->prmu[i].rd_req_rdy_latency_avg =
-				PRMU_INxf(i + 1, 0, LAT_MAXAVG, LAT_AVG);
+				PRMU_INf(i + 1,
+					RD_REQ2RDY_LATENCY_MAX_AVG, LAT_AVG);
 			data->prmu[i].rd_req_rdy_min_lat_addr =
-				PRMU_INxf(i + 1, 0, LAT_ADDR, ADDR);
+				PRMU_INf(i + 1,
+					RD_REQ2RDY_MIN_ADDR, ADDR);
 			data->prmu[i].rd_req_rdy_max_lat_addr =
-				PRMU_INxf(i + 1, 1, LAT_ADDR, ADDR);
+				PRMU_INf(i + 1, RD_REQ2RDY_MAX_ADDR, ADDR);
 			data->prmu[i].resp_rdy_latency =
-				PRMU_INxf(i + 1, 4, LAT_CURMIN, LAT_CUR);
+				PRMU_INf(i + 1,
+					REQ2RESP_LATENCY_CUR_MIN, LAT_CUR);
 			data->prmu[i].resp_rdy_latency_min =
-				PRMU_INxf(i + 1, 4, LAT_CURMIN, LAT_MIN);
+				PRMU_INf(i + 1,
+					REQ2RESP_LATENCY_CUR_MIN, LAT_MIN);
 			data->prmu[i].resp_rdy_latency_max =
-				PRMU_INxf(i + 1, 4, LAT_MAXAVG, LAT_MAX);
+				PRMU_INf(i + 1,
+					REQ2RESP_LATENCY_MAX_AVG, LAT_MAX);
 			data->prmu[i].resp_rdy_latency_avg =
-				PRMU_INxf(i + 1, 4, LAT_MAXAVG, LAT_AVG);
+				PRMU_INf(i + 1,
+					REQ2RESP_LATENCY_MAX_AVG, LAT_AVG);
 			data->prmu[i].req_resp_rdy_min_lat_addr =
-				PRMU_INxf(i + 1, 4, LAT_ADDR, ADDR);
+				PRMU_INf(i + 1, REQ2RESP_MIN_ADDR, ADDR);
 			data->prmu[i].req_resp_rdy_max_lat_addr =
-				PRMU_INxf(i + 1, 5, LAT_ADDR, ADDR);
+				PRMU_INf(i + 1, REQ2RESP_MAX_ADDR, ADDR);
 			data->prmu[i].rd_req_cnt =
-				PRMU_INxf(i + 1, 0, CNT_LO, CNT);
+				PRMU_INf(i + 1, RD_REQ_CNT, CNT);
 			data->prmu[i].rd_resp_cnt =
-				PRMU_INxf(i + 1, 1, CNT_LO, CNT);
+				PRMU_INf(i + 1, RD_RESP_CNT, CNT);
 			data->prmu[i].out_rd_resp_cnt =
-				PRMU_INxf(i + 1, 2, CNT_LO, CNT);
+				PRMU_INf(i + 1, RD_REQ_OUTSTANDING, CNT);
 			data->prmu[i].rd_req_len_cnt =
-				PRMU_INxf(i + 1, 3, CNT_LO, CNT)
-				+ ((uint64_t)PRMU_INxf(i + 1,
-				0, CNT_HI, CNT) << 32);
+				PRMU_INf(i + 1, RD_REQ_TOTAL_BYTE_CNT_LO, CNT)
+				+ ((uint64_t)PRMU_INf(i + 1,
+				RD_REQ_TOTAL_BYTE_CNT_HI, CNT) << 32);
 			data->prmu[i].wr_req_rdy_latency =
-				PRMU_INxf(i + 1, 13, LAT_CURMIN, LAT_CUR);
+				PRMU_INf(i + 1,
+					WR_REQ2RDY_LATENCY_CUR_MIN, LAT_CUR);
 			data->prmu[i].wr_req_rdy_latency_min =
-				PRMU_INxf(i + 1, 13, LAT_CURMIN, LAT_MIN);
+				PRMU_INf(i + 1,
+					WR_REQ2RDY_LATENCY_CUR_MIN, LAT_MIN);
 			data->prmu[i].wr_req_rdy_latency_max =
-				PRMU_INxf(i + 1, 13, LAT_MAXAVG, LAT_MAX);
+				PRMU_INf(i + 1,
+					WR_REQ2RDY_LATENCY_MAX_AVG, LAT_MAX);
 			data->prmu[i].wr_req_rdy_latency_avg =
-				PRMU_INxf(i + 1, 13, LAT_MAXAVG, LAT_AVG);
+				PRMU_INf(i + 1,
+					WR_REQ2RDY_LATENCY_MAX_AVG, LAT_AVG);
 			data->prmu[i].wr_req_rdy_min_lat_addr =
-				PRMU_INxf(i + 1, 13, LAT_ADDR, ADDR);
+				PRMU_INf(i + 1, WR_REQ2RDY_MIN_ADDR, ADDR);
 			data->prmu[i].wr_req_rdy_max_lat_addr =
-				PRMU_INxf(i + 1, 14, LAT_ADDR, ADDR);
+				PRMU_INf(i + 1, WR_REQ2RDY_MAX_ADDR, ADDR);
 			data->prmu[i].wr_req_cnt =
-				PRMU_INxf(i + 1, 13, CNT_LO, CNT);
+				PRMU_INf(i + 1, WR_REQ_CNT, CNT);
 			data->prmu[i].wr_resp_cnt =
-				PRMU_INxf(i + 1, 14, CNT_LO, CNT);
+				PRMU_INf(i + 1, WR_RESP_CNT, CNT);
 			data->prmu[i].wr_out_cnt =
-				PRMU_INxf(i + 1, 15, CNT_LO, CNT);
+				PRMU_INf(i + 1, WR_REQ_OUTSTANDING, CNT);
 			data->prmu[i].wr_req_len_cnt =
-				PRMU_INxf(i + 1, 16, CNT_LO, CNT) +
-				((uint64_t)PRMU_INxf(i + 1,
-				13, CNT_HI, CNT) << 32);
+				PRMU_INf(i + 1,
+					WR_REQ_TOTAL_BYTE_CNT_LO, CNT) +
+				((uint64_t)PRMU_INf(i + 1,
+				WR_REQ_TOTAL_BYTE_CNT_HI, CNT) << 32);
 			data->prmu[i].wr_act_req_len_cnt =
-				PRMU_INxf(i + 1, 18, CNT_LO, CNT) +
-				((uint64_t)PRMU_INxf(i + 1,
-				15, CNT_HI, CNT) << 32);
+				PRMU_INf(i + 1,
+					WR_REQ_ACTUAL_BYTE_CNT_LO, CNT) +
+				((uint64_t)PRMU_INf(i + 1,
+				WR_REQ_ACTUAL_BYTE_CNT_HI, CNT) << 32);
 			i++;
 		}
 		return 0;
@@ -306,25 +367,25 @@ static void handle_prmu_irq(uint32_t prmu)
 {
 	uint32_t irq;
 
-	irq = PRMU_IN(prmu, IS);
-	perf_mon_dev->error = (prmu<<16) + (irq & ~PRMU_MASK(IS, RSVD0));
+	irq = PRMU_IN(prmu, IRQ_STS);
+	perf_mon_dev->error = (prmu<<16) + (irq & ~PRMU_MASK(IRQ_STS, RSVD0));
 }
 
 static irqreturn_t perfmon_handle_irq(int irq, void *dev_id)
 {
 	uint32_t prmu_irq;
 	/* check actual interrupt content */
-	if (PMON_INf(IS, SNAPSHOT_TIME_INTR_STS) == 1) {
+	if (PMON_INf(IRQ_STATUS, SNAPSHOT_TIME_INTR_STS) == 1) {
 		if (perf_mon_dev->status == 1)
 			perf_mon_dev->status = 2;
-		PMON_OUTf(IS, SNAPSHOT_TIME_INTR_STS, 1);
+		PMON_OUTf(IRQ_STATUS, SNAPSHOT_TIME_INTR_STS, 1);
 	}
-	if (PMON_INf(IS, TIMESTAMP_OVFL_INTR_STS) == 1) {
+	if (PMON_INf(IRQ_STATUS, TIMESTAMP_OVFL_INTR_STS) == 1) {
 		perf_mon_dev->status = 2;
 		perf_mon_dev->error = TIMESTAMP_OVFL;
 		perfmon_stop_free_test();
 		dev_err(perf_mon_dev->dev, "Timestamp overflow\n");
-		PMON_OUTf(IS, TIMESTAMP_OVFL_INTR_STS, 1);
+		PMON_OUTf(IRQ_STATUS, TIMESTAMP_OVFL_INTR_STS, 1);
 	}
 
 	/* Handle prmu IRQs */
@@ -357,18 +418,18 @@ static uint32_t perfmon_start_free_test(void)
 	if ((perf_mon_dev->status == 1) || (perf_mon_dev->status == 3))
 		return 1;
 	/* program registers */
-	PMON_OUTf(GC, GLBL_CLR, 1);
-	PMON_OUTf(GC, GLBL_CLR, 0);
-	PMON_OUTf(GC, GLBL_EN, 1);
+	PMON_OUTf(GLOBAL_CTRL, GLBL_CLR, 1);
+	PMON_OUTf(GLOBAL_CTRL, GLBL_CLR, 0);
+	PMON_OUTf(GLOBAL_CTRL, GLBL_EN, 1);
 	dev_err(perf_mon_dev->dev, "GC programed\n");
-	PMON_OUT(ST_L, 0x0);
-	PMON_OUT(ST_H, 0x0);
+	PMON_OUT(SNAPSHOT_TIME_LO, 0x0);
+	PMON_OUT(SNAPSHOT_TIME_HI, 0x0);
 	dev_err(perf_mon_dev->dev, "ST programmed\n");
 	if (config_prmu() == 1)
 		return 2;
-	PMON_OUTf(GC, TIMESTAMP_CNT_CLR, 1);
-	PMON_OUTf(GC, TIMESTAMP_CNT_CLR, 0);
-	PMON_OUTf(GC, TIMESTAMP_CNT_EN, 1);
+	PMON_OUTf(GLOBAL_CTRL, TIMESTAMP_CNT_CLR, 1);
+	PMON_OUTf(GLOBAL_CTRL, TIMESTAMP_CNT_CLR, 0);
+	PMON_OUTf(GLOBAL_CTRL, TIMESTAMP_CNT_EN, 1);
 	dev_err(perf_mon_dev->dev, "Test started\n");
 	perf_mon_dev->error = 0;
 	perf_mon_dev->status = 3;
@@ -379,7 +440,7 @@ static uint32_t perfmon_stop_free_test(void)
 {
 	if ((perf_mon_dev->status == 1) || (perf_mon_dev->status == 3)) {
 		/* program registers */
-		PMON_OUTf(GC, GLBL_EN, 0);
+		PMON_OUTf(GLOBAL_CTRL, GLBL_EN, 0);
 		perf_mon_dev->status = 2;
 		return 0;
 	} else
@@ -388,11 +449,11 @@ static uint32_t perfmon_stop_free_test(void)
 
 static void init_perfmon(void)
 {
-	PMON_OUTf(GC, GLBL_CLR, 1);
-	PMON_OUTf(GC, GLBL_EN, 1);
-	PMON_OUTf(GC, TIMESTAMP_CNT_CLR, 1);
-	PMON_OUTf(IE, SNAPSHOT_TIME_INTR_EN, 1);
-	PMON_OUTf(IE, TIMESTAMP_OVFL_INTR_EN, 1);
+	PMON_OUTf(GLOBAL_CTRL, GLBL_CLR, 1);
+	PMON_OUTf(GLOBAL_CTRL, GLBL_EN, 1);
+	PMON_OUTf(GLOBAL_CTRL, TIMESTAMP_CNT_CLR, 1);
+	PMON_OUTf(IRQ_ENABLE, SNAPSHOT_TIME_INTR_EN, 1);
+	PMON_OUTf(IRQ_ENABLE, TIMESTAMP_OVFL_INTR_EN, 1);
 	PMON_OUT(PRMU_INTR, 0x3F);
 
 }

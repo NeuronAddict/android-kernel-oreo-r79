@@ -136,7 +136,7 @@ struct perf_result {
 					(0x100 * (inst))), PRMU, reg)
 #define PRMU_OUTf(inst, reg, fld, val)	HW_OUTf((perf_mon_dev->mem +\
 					(0x100 * (inst))), PRMU, reg, fld, val)
-#define PRMU_MASK(reg, fld)		HWIO_PMON_##reg##_##fld##_FLDMASK
+#define PRMU_MASK(reg, fld)		HWIO_PRMU_##reg##_##fld##_FLDMASK
 
 #define SCU_INf(reg, fld)		HW_INf(perf_mon_dev->scu, SCU, reg,\
 						fld)
