@@ -204,4 +204,6 @@ source "drivers/mipicsi/Kconfig"
 
 source "drivers/perfmon/Kconfig"
 
+source "drivers/timer/Kconfig"
+
 endmenu

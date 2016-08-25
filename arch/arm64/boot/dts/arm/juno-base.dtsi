@@ -467,4 +467,8 @@
 		reg = <0x0 0x6004E000 0x0 0x3FFF>;
 		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
 	};
-
+	
+        mnh-timer {
+		  compatible = "mnh-timer";
+                  reg = <0x0 0x60083000 0x0 0x1000>;  
+	};
