@@ -59,18 +59,6 @@ enum TX_BYP_SEL_VALUES {
 
 /* ENABLE EMULATION SUPPORT */
 #define MNH_EMULATION
-#if 0
-enum mipicsi_top_dev {
-	MIPI_RX0,
-	MIPI_RX1,
-	MIPI_RX2,
-	MIPI_TX0,
-	MIPI_TX1,
-	MIPI_TOP,
-	MIPI_IPU,
-	MIPI_MAX = MIPI_IPU
-};
-#endif
 
 enum csi_data_type {
 	CSI2_INVALID          = -1,

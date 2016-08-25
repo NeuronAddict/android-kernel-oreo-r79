@@ -415,11 +415,7 @@ int mipicsi_device_probe(struct platform_device *pdev)
 	int error = 0;
 	struct mipicsi_device_dev *dev;
 	int irq_number = 0;
-#ifdef JUNO_BRINGUP
-	void *iomem;
-#else
 	struct resource *mem = NULL;
-#endif
 
 	dev_info(&pdev->dev, "Installing MIPI CSI-2 DEVICE module...\n");
 
@@ -433,16 +429,6 @@ int mipicsi_device_probe(struct platform_device *pdev)
 	/* Update the device node */
 	dev->dev = &pdev->dev;
 
-#ifdef JUNO_BRINGUP
-	dev_info(dev->dev, "Creating bogus memregion for PO\n");
-	iomem = devm_kzalloc(dev->dev, (unsigned int)dev->mem_size,
-		GFP_KERNEL);
-	dev_info(dev->dev, "Allocated %p\n", iomem);
-	dev->base_address = iomem;
-	dev_info(dev->dev, "MIPI TOP at %p\n",
-		 dev->base_address);
-	pr_info("MIPI DEVICE: juno bringup %p\n", dev->base_address);
-#else
 	/* Device tree information: Base addresses & mapping */
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	dev->mem_size = resource_size(mem);
@@ -458,7 +444,6 @@ int mipicsi_device_probe(struct platform_device *pdev)
 		error = -ENOMEM;
 		goto free_mem;
 	}
-#endif
 
 	pr_info("MIPI DEV: ioremapped to %p\n", dev->base_address);
 	mipicsi_util_save_virt_addr(MIPI_TX0, dev->base_address);
@@ -491,23 +476,6 @@ int mipicsi_device_probe(struct platform_device *pdev)
 	/* Now that everything is fine, let's add it to device list */
 	list_add_tail(&dev->devlist, &devlist_global);
 
-	/* HW init */
-#if 0
-	/* TO DO - currently initialized from TOP */
-	ret = mipicsi_device_hw_init();
-	if (ret) {
-		dev_err(&pdev->dev, "Could not init the SNPS MIPI %d\n", ret);
-		goto unreg_dev;
-	}
-
-	/* Device tree information  -- */
-	/* TO DO  Read version of DEVICE to determine emulation vs silicon */
-	if (of_property_read_u32(node, "version",
-				 &dev->hw.version)) {
-		dev_err(&pdev->dev, "Couldn't read version\n");
-		goto unreg_dev;
-	}
-#endif
 	return ret;
  free_mem:
 	iounmap(dev->base_address);
