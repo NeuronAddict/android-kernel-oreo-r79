@@ -216,13 +216,15 @@ int top_start_rx(struct mipicsi_top_cfg *config)
 			vc_en |= 1<<(vc-1);
 	}
 
+#if 0
+	/* TO DO: Need to investigate why this causes Rx0->Tx0 bypass failure */
 	if (config->dev == MIPI_RX0)
 		TOP_OUTf(RX0_MODE, RX0_VC_EN, vc_en);
 	else if (config->dev == MIPI_RX1)
 		TOP_OUTf(RX1_MODE, RX1_VC_EN, vc_en);
 	else
 		TOP_OUTf(RX2_MODE, RX2_VC_EN, vc_en);
-
+#endif
 	return 0;
 }
 
@@ -262,6 +264,8 @@ int top_start_tx(struct mipicsi_top_cfg *config)
 			vc_en |= 1<<(vc-1);
 	}
 
+#if 0
+	/* TO DO: Enable when Rx is resolved */
 	if (config->dev == MIPI_TX0) {
 		TOP_OUTf(TX0_IPU_VC_EN, TX0_IPU_VC_EN, vc_en);
 		/* Enable TOP level interrupt */
@@ -271,7 +275,7 @@ int top_start_tx(struct mipicsi_top_cfg *config)
 		/* Enable TOP level interrupt */
 		TOP_OUTf(TX1_BYPINT, TX1_INT_EN, 1);
 	}
-
+#endif
 	return 0;
 }
 
