@@ -115,7 +115,7 @@ void __iomem *get_timer_base(struct kobject *kobj)
 static ssize_t mode_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
         u32 ctrl;
-        int ret;
+        int ret = 0;
 
         void __iomem *base = get_timer_base(kobj);
 	if(!base) return -EIO;
@@ -127,13 +127,13 @@ static ssize_t mode_show(struct kobject *kobj, struct kobj_attribute *attr, char
  
         if(MNH_TIMER_MODE_USER_DEFINED & ctrl)
 	{
-		strncpy(buf, cmode1, strlen(cmode1));
 		ret =strlen(cmode1);
+		strncpy(buf, cmode1, ret);
 	}
         else 
 	{
-		strncpy(buf, cmode0, strlen(cmode0));
 		ret = strlen(cmode0);
+		strncpy(buf, cmode0, ret);
 	}
         return ret;
 }
@@ -221,12 +221,12 @@ static ssize_t status_show(struct kobject *kobj, struct kobj_attribute *attr, ch
 	if(MNH_TIMER_ENABLE & ctrl)
 	{
 		ret = strlen(enable_str); 
-		strncpy(buf, enable_str, strlen(enable_str)); 
+		strncpy(buf, enable_str, ret); 
 	}
 	else
 	{
 		ret = strlen(disable_str);
-		strncpy(buf, disable_str, strlen(disable_str));
+		strncpy(buf, disable_str, ret);
 	}
 
         return ret;
@@ -246,17 +246,19 @@ static ssize_t status_store(struct kobject *kobj, struct kobj_attribute *attr, c
 	if(ret < 0)
 		return ret;
 
-        if(var>=1) 
-		var = MNH_TIMER_ENABLE;
-	else 
-		var = 0;
-        
+
 	ctrl = mnh_timer_readl(base, MNH_TIMER_CONTROLREG_OFFSET);        
 
 	if(var & MNH_TIMER_ENABLE)
+	{
+		pr_alert("timer enable\n");
 		ctrl |= MNH_TIMER_ENABLE;
-	else
+	}
+	else 
+        {
+		pr_alert("timer disable\n");	
 		ctrl &= ~MNH_TIMER_ENABLE;
+	}
 
 	mnh_timer_writel(base, ctrl, MNH_TIMER_CONTROLREG_OFFSET);
 
