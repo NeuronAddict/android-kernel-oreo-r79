@@ -89,8 +89,9 @@ cycle_t mnh_timer_get_loadcount(void __iomem *base)
 static void mnh_timer_disable_int(void __iomem *base)
 {
          u32 ctrl = mnh_timer_readl(base, MNH_TIMER_CONTROLREG_OFFSET);
- 
-         ctrl &= ~MNH_TIMER_INTERRUPT_MASK;
+
+         /* set 1 - disable interrupts, 0 - enable interrupts (reverse of synopsis spec  */
+         ctrl |= MNH_TIMER_INTERRUPT_MASK;
          mnh_timer_writel(base, ctrl, MNH_TIMER_CONTROLREG_OFFSET);
 }
 
