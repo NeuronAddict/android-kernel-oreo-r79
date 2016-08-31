@@ -6,9 +6,10 @@
  * This file is licensed under a dual GPLv2 or BSD license.
  *
  */
-	soc_mnh25mhz: clk25mhz {
-		compatible = "fixed-clock";
-		#clock-cells = <0>;
-		clock-frequency = <25000000>;
-		clock-output-names = "mnh_clk";
-	};
+        soc_refclk100mhz: refclk100mhz {
+                compatible = "fixed-clock";
+                #clock-cells = <0>;
+/*                clock-frequency = <100000000>;*/
+                clock-frequency = <25000000>;
+                clock-output-names = "apb_pclk";
+        };

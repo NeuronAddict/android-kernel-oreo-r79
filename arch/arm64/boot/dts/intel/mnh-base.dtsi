@@ -4,19 +4,66 @@
 			     <GIC_PPI 14 (GIC_CPU_MASK_SIMPLE(6) | IRQ_TYPE_LEVEL_LOW)>,
 			     <GIC_PPI 11 (GIC_CPU_MASK_SIMPLE(6) | IRQ_TYPE_LEVEL_LOW)>,
 			     <GIC_PPI 10 (GIC_CPU_MASK_SIMPLE(6) | IRQ_TYPE_LEVEL_LOW)>;
-
-		clock-frequency = <25000000>;
 	};
 
 	/include/ "mnh-clocks.dtsi"
+	/*
+	for everyone's sake, lets put the blocks in address order,
+	unless there is some reason not to
+	*/
+
+	spi@04043000 {
+		compatible = "snps,dw-apb-ssi";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg = <0x0 0x04043000 0x0 0x1000>;
+		interrupts = <GIC_SPI 47 IRQ_TYPE_LEVEL_HIGH>;
+		num-cs = <4>;
+		clocks = <&soc_refclk100mhz>;
+		bus-num = <0>;
+		status = "okay";
+		spidev@0 {
+			compatible = "spidev";
+			spi-max-frequency = <50000000>;
+			reg = <0>;
+		};
+	};
+
+	gpio@04044000 {
+		compatible = "snps,dw-apb-gpio";
+		reg = <0x0 0x04044000 0x0 0x1000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		interrupts = <GIC_SPI 59 IRQ_TYPE_LEVEL_HIGH>;
+		porta:  gpio-controller@0 {
+			compatible = "snps,dw-apb-gpio-port";
+			gpio-controller;
+			#gpio-cells = <2>;
+			snps,nr-gpios = <16>;
+			reg = <0>;
+		};
+	};
 
 	soc_uart0: uart@04049000 {
 		compatible = "snps,dw-apb-uart";
 		reg = <0x0 0x04049000 0x0 0x1000>;
 		#address-cells = <1>;
 		#size-cells = <0>;
-		interrupts = <GIC_SPI 49 IRQ_TYPE_EDGE_RISING>;
-		clock-frequency = <25000000>;
+		interrupts = <GIC_SPI 49 IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&soc_refclk100mhz>;
+		reg-shift = <2>;
+		reg-io-width = <4>;
+		dcd-override;
+		ri-override;
+	};
+
+	soc_uart1: uart@0404a000 {
+		compatible = "snps,dw-apb-uart";
+		reg = <0x0 0x0404a000 0x0 0x1000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		interrupts = <GIC_SPI 50 IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&soc_refclk100mhz>;
 		reg-shift = <2>;
 		reg-io-width = <4>;
 		dcd-override;
