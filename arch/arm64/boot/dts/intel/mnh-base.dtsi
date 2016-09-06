@@ -83,3 +83,35 @@
 		device_type = "memory";
 		reg = <0x00000000 0x40000000 0x0 0x20000000>;
 	};
+
+	dma0: dma@04000000 {
+		compatible = "snps,dma-spear1340";
+		reg = <0 0x04000000 0 0x1000>;
+		interrupts = <GIC_SPI 29 IRQ_TYPE_EDGE_RISING>;
+		is_memcpy;
+		dma-channels = <4>;
+		dma-requests = <16>;
+		dma-masters = <1>;
+		#dma-cells = <3>;
+		chan_allocation_order = <1>;
+		chan_priority = <1>;
+		block_size = <0xfff>;
+		data_width = <2>;
+		clocks = <&soc_mnh25mhz>;
+	};
+
+	pcie@041C2000 {
+		compatible = "snps, dw_pcie_ep";
+		reg = <0x0 0x00200000 0x0 0x2000>,
+			  <0x0 0x040C0000 0x0 0x1000>,
+			  <0x0 0x80000000 0x0 0x80000000>;
+		interrupts = <GIC_SPI 25 IRQ_TYPE_EDGE_RISING>,
+					 <GIC_SPI 26 IRQ_TYPE_EDGE_RISING>;
+	};
+
+	perfmon@0404C000 {
+		compatible = "intel, perf_mon";
+		reg = <0x0 0x0404C000 0x0 0x1000>,
+			  <0x0 0x04003000 0x0 0x1000>;
+		interrupts = <GIC_SPI 12 IRQ_TYPE_EDGE_RISING>;
+	};

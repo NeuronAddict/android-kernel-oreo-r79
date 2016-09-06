@@ -42,7 +42,6 @@
 #include <linux/mnh_pcie_ep.h>
 #include <linux/mnh_pcie_reg.h>
 #include <linux/mnh_pcie_str.h>
-#include <linux/mnh_dma_adr.h>
 /* #include <asm-generic/page.h> */
 #include <linux/mm.h>
 #include <linux/rwsem.h>
@@ -649,9 +648,9 @@ int pcie_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
 		u = 0;
 		for_each_sg(sgl->sc_list, in_sg, count, i) {
 			if (u < maxsg) {
-				sg[u].paddr = FPGA_ADR(sg_dma_address(in_sg));
+				sg[u].paddr = sg_dma_address(in_sg);
 				sg[u].size = sg_dma_len(in_sg);
-				test_addr = FPGA_ADR(sg_dma_address(in_sg));
+				test_addr = sg_dma_address(in_sg);
 				test_len = sg_dma_len(in_sg);
 #ifdef COMBINE_SG
 				if ((u > 0) && (sg[u-1].paddr + sg[u-1].size ==
@@ -711,7 +710,7 @@ static int pcie_ll_build(struct mnh_sg_entry *src_sg,
 
 	ll_element = kcalloc(DMA_LL_LENGTH,
 			sizeof(struct mnh_dma_ll_element), GFP_KERNEL);
-	*start_addr = FPGA_ADR(virt_to_phys(ll_element));
+	*start_addr = virt_to_phys(ll_element);
 	if (!ll_element)
 		return -EINVAL;
 	i = 0;
@@ -781,10 +780,10 @@ static int pcie_ll_build(struct mnh_sg_entry *src_sg,
 			}
 			ll_element[u].sar_low =
 				LOWER((uint64_t)
-					FPGA_ADR(virt_to_phys(tmp_element)));
+					virt_to_phys(tmp_element));
 			ll_element[u].sar_high =
 				UPPER((uint64_t)
-					FPGA_ADR(virt_to_phys(tmp_element)));
+					virt_to_phys(tmp_element));
 			ll_element = tmp_element;
 			u = 0;
 		}
@@ -801,12 +800,12 @@ static int pcie_ll_destroy(phys_addr_t *start_addr)
 	int i;
 	struct mnh_dma_ll_element *ll_element, *tmp_element;
 
-	ll_element = phys_to_virt(CPU_ADR(start_addr));
+	ll_element = phys_to_virt(start_addr);
 	i = 0;
 	while (1) {
 		if (ll_element[i].header == LL_LINK_ELEMENT) {
-			tmp_element = phys_to_virt(CPU_ADR(ll_element[i].sar_low
-				+ (((uint64_t) ll_element[i].sar_high) << 32)));
+			tmp_element = phys_to_virt(ll_element[i].sar_low
+				+ (((uint64_t) ll_element[i].sar_high) << 32));
 			kfree(ll_element);
 			ll_element = tmp_element;
 			i = 0;
