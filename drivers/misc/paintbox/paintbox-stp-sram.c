@@ -13,10 +13,12 @@
  * GNU General Public License for more details.
  */
 
+#include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/kernel.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
+#include <linux/spinlock.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
 
@@ -27,22 +29,138 @@
 #include "paintbox-stp-sram.h"
 
 
+int stp_sram_write_word(struct paintbox_data *pb,
+		struct paintbox_sram_config *sram_config, const uint8_t *buf,
+		uint32_t ram_ctrl_addr)
+{
+	unsigned long irq_flags;
+	unsigned int attempts = 0;
+
+	spin_lock_irqsave(&pb->stp_lock, irq_flags);
+
+	writel(sram_config->core_id, pb->stp_base + STP_SEL);
+
+	/* TODO(ahampson):  This can be removed once the SWAP and COL_MAJOR
+	 * support is moved outside the driver.
+	 */
+	switch (sram_config->ram_data_mode) {
+	case RAM_DATA_MODE_NORMAL:
+		write_ram_data_registers(pb, buf, pb->stp_base +
+				STP_RAM_DATA0_L, STP_DATA_REG_COUNT);
+		break;
+	case RAM_DATA_MODE_SWAP:
+		write_ram_data_registers_swapped(pb, buf, pb->stp_base +
+				STP_RAM_DATA0_L, STP_DATA_REG_COUNT);
+		break;
+	case RAM_DATA_MODE_COL_MAJOR:
+		write_ram_data_registers_column_major(pb, buf);
+		break;
+	};
+
+	writel(STP_RAM_RUN | STP_RAM_WRITE | ram_ctrl_addr |
+			sram_config->ram_ctrl_target, pb->stp_base +
+			STP_RAM_CTRL);
+
+	while (readl(pb->stp_base + STP_RAM_CTRL) & STP_RAM_RUN) {
+		spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+
+		if (++attempts >= MAX_MEMORY_ACCESS_ATTEMPTS) {
+			dev_err(&pb->pdev->dev, "%s: write timeout\n",
+					__func__);
+			return -ETIMEDOUT;
+		}
+
+		usleep_range(MIN_RAM_ACCESS_SLEEP, MAX_RAM_ACCESS_SLEEP);
+
+		spin_lock_irqsave(&pb->stp_lock, irq_flags);
+
+		/* Make sure the STP_SEL register is set to the correct STP ID
+		 * before reading the STP_RAM_CTRL register.  If an interrupt
+		 * occurred while stp_lock was not held then the STP_SEL
+		 * register may have been changed.
+		 */
+		writel(sram_config->core_id, pb->stp_base + STP_SEL);
+	}
+
+	spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+
+	return 0;
+}
+
+int stp_sram_read_word(struct paintbox_data *pb,
+		struct paintbox_sram_config *sram_config, uint8_t *buf,
+		uint32_t ram_ctrl_addr)
+{
+	unsigned long irq_flags;
+	unsigned int attempts = 0;
+
+	spin_lock_irqsave(&pb->stp_lock, irq_flags);
+
+	writel(sram_config->core_id, pb->stp_base + STP_SEL);
+
+	writel(STP_RAM_RUN | ram_ctrl_addr | sram_config->ram_ctrl_target,
+			pb->stp_base + STP_RAM_CTRL);
+
+	while (readl(pb->stp_base + STP_RAM_CTRL) & STP_RAM_RUN) {
+		spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+
+		if (++attempts >= MAX_MEMORY_ACCESS_ATTEMPTS) {
+			dev_err(&pb->pdev->dev, "%s: read timeout\n", __func__);
+			return -ETIMEDOUT;
+		}
+
+		usleep_range(MIN_RAM_ACCESS_SLEEP, MAX_RAM_ACCESS_SLEEP);
+
+		spin_lock_irqsave(&pb->stp_lock, irq_flags);
+
+		/* Make sure the STP_SEL register is set to the correct STP ID
+		 * before reading the STP_RAM_CTRL register.  If an interrupt
+		 * occurred while stp_lock was not held then the STP_SEL
+		 * register may have been changed.
+		 */
+		writel(sram_config->core_id, pb->stp_base + STP_SEL);
+	}
+
+	/* TODO(ahampson):  This can be removed once the SWAP and COL_MAJOR
+	 * support is moved outside the driver.
+	 */
+	switch (sram_config->ram_data_mode) {
+	case RAM_DATA_MODE_NORMAL:
+		read_ram_data_registers(pb, buf, pb->stp_base +
+				STP_RAM_DATA0_L, STP_DATA_REG_COUNT);
+		break;
+	case RAM_DATA_MODE_SWAP:
+		read_ram_data_registers_swapped(pb, buf, pb->stp_base +
+				STP_RAM_DATA0_L, STP_DATA_REG_COUNT);
+		break;
+	case RAM_DATA_MODE_COL_MAJOR:
+		read_ram_data_registers_column_major(pb, buf);
+		break;
+	};
+
+	spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+
+	return 0;
+}
+
 static int validate_ram_transfer(struct paintbox_data *pb,
 		struct paintbox_stp *stp, uint16_t sram_addr_bytes,
-		uint8_t sram_target, size_t len_bytes)
+		enum sram_target_type sram_target, size_t len_bytes)
 {
-	size_t sram_len_words;
 	size_t sram_len_bytes;
 
 	switch (sram_target) {
-	case STP_RAM_TARGET_INSTRUCTION_RAM:
-		sram_len_words = stp->inst_mem_size_in_words;
+	case SRAM_TARGET_STP_INSTRUCTION_RAM:
+		sram_len_bytes = stp->inst_mem_size_in_instructions *
+				STP_INST_SRAM_INSTRUCTION_WIDTH_BYTES;
 		break;
-	case STP_RAM_TARGET_CONSTANT_RAM:
-		sram_len_words = stp->const_mem_size_in_words;
+	case SRAM_TARGET_STP_CONSTANT_RAM:
+		sram_len_bytes = stp->const_mem_size_in_words *
+				STP_CONST_SRAM_WORD_WIDTH_BYTES;
 		break;
-	case STP_RAM_TARGET_SCALAR_RAM:
-		sram_len_words = stp->scalar_mem_size_in_words;
+	case SRAM_TARGET_STP_SCALAR_RAM:
+		sram_len_bytes = stp->scalar_mem_size_in_words *
+				STP_SCALAR_SRAM_WORD_WIDTH_BYTES;
 		break;
 	default:
 		dev_err(&pb->pdev->dev,
@@ -50,8 +168,6 @@ static int validate_ram_transfer(struct paintbox_data *pb,
 						__func__, stp->stp_id);
 		return -EINVAL;
 	};
-
-	sram_len_bytes = sram_len_words * STP_WORD_WIDTH_BYTES;
 
 	if (sram_addr_bytes + len_bytes > sram_len_bytes) {
 		dev_err(&pb->pdev->dev,
@@ -64,26 +180,49 @@ static int validate_ram_transfer(struct paintbox_data *pb,
 	return 0;
 }
 
-static int set_ram_target(uint32_t *ram_ctrl, uint8_t ram_target)
+int create_scalar_sram_config(struct paintbox_sram_config *sram_config,
+		unsigned int stp_id, enum sram_target_type sram_target,
+		bool swap_data)
 {
-	switch (ram_target) {
-	case STP_RAM_TARGET_INSTRUCTION_RAM:
-		*ram_ctrl |= (STP_RAM_TARG_INST_RAM << STP_RAM_TARG_SHIFT);
+	switch (sram_target) {
+	case SRAM_TARGET_STP_INSTRUCTION_RAM:
+		sram_config->ram_ctrl_target = STP_RAM_TARG_INST_RAM <<
+				STP_RAM_TARG_SHIFT;
 		break;
-	case STP_RAM_TARGET_CONSTANT_RAM:
-		*ram_ctrl |= (STP_RAM_TARG_CNST_RAM << STP_RAM_TARG_SHIFT);
+	case SRAM_TARGET_STP_CONSTANT_RAM:
+		sram_config->ram_ctrl_target = STP_RAM_TARG_CNST_RAM <<
+				STP_RAM_TARG_SHIFT;
 		break;
-	case STP_RAM_TARGET_SCALAR_RAM:
-		*ram_ctrl |= (STP_RAM_TARG_DATA_RAM << STP_RAM_TARG_SHIFT);
+	case SRAM_TARGET_STP_SCALAR_RAM:
+		sram_config->ram_ctrl_target = STP_RAM_TARG_DATA_RAM <<
+				STP_RAM_TARG_SHIFT;
 		break;
 	default:
 		return -EINVAL;
 	};
 
+	sram_config->core_id = stp_id;
+	sram_config->sram_word_bytes = STP_PIO_WORD_WIDTH_BYTES;
+	sram_config->ram_data_mode = swap_data ? RAM_DATA_MODE_SWAP :
+			RAM_DATA_MODE_NORMAL;
+	sram_config->write_word = &stp_sram_write_word;
+	sram_config->read_word = &stp_sram_read_word;
+
 	return 0;
 }
 
-static inline uint32_t generate_vector_address(uint32_t lane_group_x,
+static void create_vector_sram_config(struct paintbox_sram_config *sram_config,
+		unsigned int stp_id)
+{
+	sram_config->core_id = stp_id;
+	sram_config->ram_ctrl_target = 0;
+	sram_config->sram_word_bytes = STP_PIO_WORD_WIDTH_BYTES;
+	sram_config->ram_data_mode = RAM_DATA_MODE_COL_MAJOR;
+	sram_config->write_word = &stp_sram_write_word;
+	sram_config->read_word = &stp_sram_read_word;
+}
+
+static inline uint32_t get_vector_address(uint32_t lane_group_x,
 		uint32_t lane_group_y, uint32_t sheet_slot, bool alu_registers)
 {
 	uint32_t target_base = alu_registers ? STP_RAM_TARG_ALU_IO_RF_0 :
@@ -114,8 +253,8 @@ static int validate_stp_vector_write_replicate_parameters(
 	num_sheet_slots = req->write_halo_lanes ? stp->halo_mem_size_in_words :
 			stp->vector_mem_size_in_words;
 
-	sram_len_bytes = num_sheet_slots * STP_WORD_WIDTH_BYTES;
-	sram_start_bytes = req->sheet_slot * STP_WORD_WIDTH_BYTES;
+	sram_len_bytes = num_sheet_slots * STP_PIO_WORD_WIDTH_BYTES;
+	sram_start_bytes = req->sheet_slot * STP_PIO_WORD_WIDTH_BYTES;
 
 	if (req->len_bytes  > sram_len_bytes - sram_start_bytes) {
 		dev_err(&pb->pdev->dev, "%s: write length too long %lu > %lu\n",
@@ -131,12 +270,12 @@ static int validate_stp_vector_write_replicate_parameters(
 		return -ERANGE;
 	}
 
-	if (req->byte_offset_in_lane_group > STP_WORD_WIDTH_BYTES) {
+	if (req->byte_offset_in_lane_group > STP_PIO_WORD_WIDTH_BYTES) {
 		dev_err(&pb->pdev->dev,
 				"%s: byte offset in lange group exceeds the "
 				"size of a lange group %u > %u\n", __func__,
 				req->byte_offset_in_lane_group,
-				STP_WORD_WIDTH_BYTES);
+				STP_PIO_WORD_WIDTH_BYTES);
 		return -EINVAL;
 	}
 
@@ -162,8 +301,8 @@ static int validate_stp_vector_write_coordinate_parameters(
 	num_sheet_slots = is_halo_write ? stp->halo_mem_size_in_words :
 			stp->vector_mem_size_in_words;
 
-	sram_len_bytes = num_sheet_slots * STP_WORD_WIDTH_BYTES;
-	sram_start_bytes = req->sheet_slot * STP_WORD_WIDTH_BYTES;
+	sram_len_bytes = num_sheet_slots * STP_PIO_WORD_WIDTH_BYTES;
+	sram_start_bytes = req->sheet_slot * STP_PIO_WORD_WIDTH_BYTES;
 
 	max_rows = VECTOR_SRAM_LANE_GROUP_SIMD_ROWS;
 	max_cols = VECTOR_SRAM_LANE_GROUP_SIMD_COLS;
@@ -187,12 +326,12 @@ static int validate_stp_vector_write_coordinate_parameters(
 		return -ERANGE;
 	}
 
-	if (req->byte_offset_in_lane_group > STP_WORD_WIDTH_BYTES) {
+	if (req->byte_offset_in_lane_group > STP_PIO_WORD_WIDTH_BYTES) {
 		dev_err(&pb->pdev->dev,
 				"%s: byte offset in lange group exceeds the "
 				"size of a lange group %u > %u\n", __func__,
 				req->byte_offset_in_lane_group,
-				STP_WORD_WIDTH_BYTES);
+				STP_PIO_WORD_WIDTH_BYTES);
 		return -EINVAL;
 	}
 
@@ -231,8 +370,8 @@ static int validate_stp_vector_read_coordinate_parameters(
 	num_sheet_slots = is_halo_read ? stp->halo_mem_size_in_words :
 			stp->vector_mem_size_in_words;
 
-	sram_len_bytes = num_sheet_slots * STP_WORD_WIDTH_BYTES;
-	sram_start_bytes = req->sheet_slot * STP_WORD_WIDTH_BYTES;
+	sram_len_bytes = num_sheet_slots * STP_PIO_WORD_WIDTH_BYTES;
+	sram_start_bytes = req->sheet_slot * STP_PIO_WORD_WIDTH_BYTES;
 
 	max_rows = VECTOR_SRAM_LANE_GROUP_SIMD_ROWS;
 	max_cols = VECTOR_SRAM_LANE_GROUP_SIMD_COLS;
@@ -256,12 +395,12 @@ static int validate_stp_vector_read_coordinate_parameters(
 		return -ERANGE;
 	}
 
-	if (req->byte_offset_in_lane_group > STP_WORD_WIDTH_BYTES) {
+	if (req->byte_offset_in_lane_group > STP_PIO_WORD_WIDTH_BYTES) {
 		dev_err(&pb->pdev->dev,
 				"%s: byte offset in lange group exceeds the "
 				"size of a lange group %u > %u\n", __func__,
 				req->byte_offset_in_lane_group,
-				STP_WORD_WIDTH_BYTES);
+				STP_PIO_WORD_WIDTH_BYTES);
 		return -EINVAL;
 	}
 
@@ -287,8 +426,8 @@ int write_stp_scalar_sram_ioctl(struct paintbox_data *pb,
 {
 	struct ipu_sram_write __user *user_req;
 	struct ipu_sram_write req;
+	struct paintbox_sram_config sram_config;
 	struct paintbox_stp *stp;
-	uint32_t ram_ctrl_mask = 0;
 	int ret;
 
 	user_req = (struct ipu_sram_write __user *)arg;
@@ -307,35 +446,31 @@ int write_stp_scalar_sram_ioctl(struct paintbox_data *pb,
 		return ret;
 	}
 
-	ret = validate_ram_transfer(pb, stp, req.sram_byte_addr, req.ram_target,
-			req.len_bytes);
+	ret = validate_ram_transfer(pb, stp, req.sram_byte_addr,
+			req.sram_target, req.len_bytes);
 	if (ret < 0) {
 		mutex_unlock(&pb->lock);
 		return ret;
 	}
 
-	writel(stp->stp_id, pb->stp_base + STP_SEL);
-
-	ret = set_ram_target(&ram_ctrl_mask, req.ram_target);
+	ret = create_scalar_sram_config(&sram_config, stp->stp_id,
+			req.sram_target, req.swap_data);
 	if (ret < 0) {
 		mutex_unlock(&pb->lock);
 		dev_err(&pb->pdev->dev,
 				"%s: stp%u: invalid ram target: 0x%04x "
-				"err = %d\n", __func__, req.id, req.ram_target,
+				"err = %d\n", __func__, req.id, req.sram_target,
 				ret);
 		return ret;
 	}
 
-	ret = sram_write_user_buffer(pb, req.buf, req.sram_byte_addr,
-			req.len_bytes, ram_ctrl_mask,
-			pb->stp_base + STP_RAM_CTRL, STP_DATA_REG_COUNT);
+	ret = sram_write_user_buffer(pb, &sram_config, req.sram_byte_addr,
+			req.buf, req.len_bytes);
 	if (ret < 0)
 		dev_err(&pb->pdev->dev,
 				"%s: stp%u: write error addr: 0x%04x "
-				"type: 0x%02x ram_ctrl 0x%08x err = %d\n",
-				__func__, req.id, req.sram_byte_addr,
-				req.ram_target,
-				readl(pb->stp_base + STP_RAM_CTRL), ret);
+				"type: 0x%02x err = %d\n", __func__, req.id,
+				req.sram_byte_addr, req.sram_target, ret);
 
 	mutex_unlock(&pb->lock);
 
@@ -347,8 +482,8 @@ int read_stp_scalar_sram_ioctl(struct paintbox_data *pb,
 {
 	struct ipu_sram_read __user *user_req;
 	struct ipu_sram_read req;
+	struct paintbox_sram_config sram_config;
 	struct paintbox_stp *stp;
-	uint32_t ram_ctrl_mask = 0;
 	int ret;
 
 	user_req = (struct ipu_sram_read __user *)arg;
@@ -367,67 +502,70 @@ int read_stp_scalar_sram_ioctl(struct paintbox_data *pb,
 		return ret;
 	}
 
-	ret = validate_ram_transfer(pb, stp, req.sram_byte_addr, req.ram_target,
-			req.len_bytes);
+	ret = validate_ram_transfer(pb, stp, req.sram_byte_addr,
+			req.sram_target, req.len_bytes);
 	if (ret < 0) {
 		mutex_unlock(&pb->lock);
 		return ret;
 	}
 
-	writel(stp->stp_id, pb->stp_base + STP_SEL);
-
-	ret = set_ram_target(&ram_ctrl_mask, req.ram_target);
+	ret = create_scalar_sram_config(&sram_config, stp->stp_id,
+			req.sram_target, req.swap_data);
 	if (ret < 0) {
 		mutex_unlock(&pb->lock);
 		dev_err(&pb->pdev->dev,
 				"%s: stp%u: invalid ram target: 0x%04x "
-				"err = %d\n", __func__, req.id, req.ram_target,
+				"err = %d\n", __func__, req.id, req.sram_target,
 				ret);
 		return ret;
 	}
 
-	ret = sram_read_user_buffer(pb, req.buf, req.sram_byte_addr,
-			req.len_bytes, ram_ctrl_mask,
-			pb->stp_base + STP_RAM_CTRL, STP_DATA_REG_COUNT);
+	ret = sram_read_user_buffer(pb, &sram_config, req.sram_byte_addr,
+			req.buf, req.len_bytes);
 	if (ret < 0)
 		dev_err(&pb->pdev->dev,
 				"%s: stp%u: read error addr: 0x%04x "
-				"type: 0x%02x ram_ctrl 0x%08x err = %d\n",
-				__func__, req.id, req.sram_byte_addr,
-				req.ram_target,
-				readl(pb->stp_base + STP_RAM_CTRL), ret);
+				"type: 0x%02x err = %d\n", __func__, req.id,
+				req.sram_byte_addr, req.sram_target, ret);
 
 	mutex_unlock(&pb->lock);
 
 	return ret;
 }
 
-static int sram_read_vector_buffer(struct paintbox_data *pb, uint8_t *buf,
-		uint32_t lane_group_x, uint32_t lane_group_y,
-		uint32_t sheet_slot_start, uint32_t byte_offest_in_lane_group,
-		size_t len_bytes, bool read_alu_registers)
+static int sram_read_vector_buffer(struct paintbox_data *pb,
+		unsigned int stp_id, uint8_t *buf, uint32_t lane_group_x,
+		uint32_t lane_group_y, uint32_t sheet_slot_start,
+		uint32_t byte_offest_in_lane_group, size_t len_bytes,
+		bool read_alu_registers)
 {
+	struct paintbox_sram_config sram_config;
 	size_t bytes_remaining = len_bytes;
 	size_t bytes_read = 0;
-	uint32_t sheet_slot = sheet_slot_start, ram_ctrl;
+	uint32_t sheet_slot = sheet_slot_start, ram_ctrl_addr;
 	int ret;
+
+	create_vector_sram_config(&sram_config, stp_id);
 
 	/* If the transfer does not start at the beginning of a word then it
 	 * will require special handling before we can get to the main body of
 	 * the transfer.
 	 */
 	if (byte_offest_in_lane_group > 0) {
-		size_t short_read_len = STP_WORD_WIDTH_BYTES -
+		uint8_t transfer_buf[STP_PIO_WORD_WIDTH_BYTES];
+		size_t short_read_len = STP_PIO_WORD_WIDTH_BYTES -
 				byte_offest_in_lane_group;
-		ram_ctrl = generate_vector_address(lane_group_x, lane_group_y,
+
+		ram_ctrl_addr = get_vector_address(lane_group_x, lane_group_y,
 				sheet_slot, read_alu_registers);
 
-		ret = sram_read_word_partial(pb, buf, byte_offest_in_lane_group,
-				short_read_len, ram_ctrl,
-				pb->stp_base + STP_RAM_CTRL, STP_DATA_REG_COUNT,
-				RAM_DATA_MODE_COL_MAJOR);
+		ret = stp_sram_read_word(pb, &sram_config, transfer_buf,
+				ram_ctrl_addr);
 		if (ret < 0)
 			return ret;
+
+		memcpy(buf, transfer_buf + byte_offest_in_lane_group,
+				short_read_len);
 
 		bytes_remaining -= short_read_len;
 		bytes_read += short_read_len;
@@ -437,62 +575,74 @@ static int sram_read_vector_buffer(struct paintbox_data *pb, uint8_t *buf,
 	/* If the transfer data length is greater than or equal to an SRAM word
 	* then transfer the data in full word transfers.
 	 */
-	while (bytes_remaining && bytes_remaining >= STP_WORD_WIDTH_BYTES) {
-		ram_ctrl = generate_vector_address(lane_group_x, lane_group_y,
+	while (bytes_remaining && bytes_remaining >= STP_PIO_WORD_WIDTH_BYTES) {
+		ram_ctrl_addr = get_vector_address(lane_group_x, lane_group_y,
 				sheet_slot, read_alu_registers);
 
-		ret = sram_read_word(pb, buf + bytes_read, ram_ctrl,
-				pb->stp_base + STP_RAM_CTRL, STP_DATA_REG_COUNT,
-				RAM_DATA_MODE_COL_MAJOR);
+		ret = stp_sram_read_word(pb, &sram_config, buf + bytes_read,
+				ram_ctrl_addr);
 		if (ret < 0)
 			return ret;
 
-		bytes_remaining -= STP_WORD_WIDTH_BYTES;
-		bytes_read += STP_WORD_WIDTH_BYTES;
+		bytes_remaining -= STP_PIO_WORD_WIDTH_BYTES;
+		bytes_read += STP_PIO_WORD_WIDTH_BYTES;
 		sheet_slot++;
 	}
 
 	/* Handle any remaining bytes that are shorter than an SRAM word */
 	if (bytes_remaining > 0) {
-		ram_ctrl = generate_vector_address(lane_group_x, lane_group_y,
+		uint8_t transfer_buf[STP_PIO_WORD_WIDTH_BYTES];
+
+		ram_ctrl_addr = get_vector_address(lane_group_x, lane_group_y,
 				sheet_slot, read_alu_registers);
 
-		ret = sram_read_word_partial(pb, buf, 0, bytes_remaining,
-				ram_ctrl, pb->stp_base + STP_RAM_CTRL,
-				STP_DATA_REG_COUNT, RAM_DATA_MODE_COL_MAJOR);
+		ret = stp_sram_read_word(pb, &sram_config, transfer_buf,
+				ram_ctrl_addr);
 		if (ret < 0)
 			return ret;
+
+		memcpy(buf + bytes_read, transfer_buf, bytes_remaining);
 	}
 
 	return 0;
 }
 
 static int sram_write_vector_buffer(struct paintbox_data *pb,
-		const uint8_t *buf, uint32_t lane_group_x,
+		unsigned int stp_id, const uint8_t *buf, uint32_t lane_group_x,
 		uint32_t lane_group_y, uint32_t sheet_slot_start,
 		uint32_t byte_offset_in_lane_group, size_t len_bytes,
 		bool write_alu_registers)
 {
+	struct paintbox_sram_config sram_config;
 	size_t bytes_remaining = len_bytes;
 	size_t bytes_written = 0;
-	uint32_t sheet_slot = sheet_slot_start, ram_ctrl;
+	uint32_t sheet_slot = sheet_slot_start, ram_ctrl_addr;
 	int ret;
+
+	create_vector_sram_config(&sram_config, stp_id);
 
 	/* If the transfer does not start at the beginning of a word then it
 	 * will require special handling before we can get to the main body of
 	 * the transfer.
 	 */
 	if (byte_offset_in_lane_group > 0) {
-		size_t short_write_len = STP_WORD_WIDTH_BYTES -
+		uint8_t transfer_buf[STP_PIO_WORD_WIDTH_BYTES];
+		size_t short_write_len = STP_PIO_WORD_WIDTH_BYTES -
 				byte_offset_in_lane_group;
 
-		ram_ctrl = generate_vector_address(lane_group_x, lane_group_y,
+		ram_ctrl_addr = get_vector_address(lane_group_x, lane_group_y,
 				sheet_slot, write_alu_registers);
 
-		ret = sram_write_word_partial(pb, buf,
-				byte_offset_in_lane_group, short_write_len,
-				ram_ctrl, pb->stp_base + STP_RAM_CTRL,
-				STP_DATA_REG_COUNT, RAM_DATA_MODE_COL_MAJOR);
+		ret = stp_sram_read_word(pb, &sram_config, transfer_buf,
+				ram_ctrl_addr);
+		if (ret < 0)
+			return ret;
+
+		memcpy(transfer_buf + byte_offset_in_lane_group, buf,
+				short_write_len);
+
+		ret = stp_sram_write_word(pb, &sram_config, transfer_buf,
+				ram_ctrl_addr);
 		if (ret < 0)
 			return ret;
 
@@ -504,30 +654,36 @@ static int sram_write_vector_buffer(struct paintbox_data *pb,
 	/* If the transfer data length is greater than or equal to the SRAM
 	 * word then transfer the data in full word transfers.
 	 */
-	while (bytes_remaining && bytes_remaining >= STP_WORD_WIDTH_BYTES) {
-		ram_ctrl = generate_vector_address(lane_group_x, lane_group_y,
+	while (bytes_remaining && bytes_remaining >= STP_PIO_WORD_WIDTH_BYTES) {
+		ram_ctrl_addr = get_vector_address(lane_group_x, lane_group_y,
 				sheet_slot, write_alu_registers);
 
-		ret = sram_write_word(pb, buf + bytes_written, ram_ctrl,
-				pb->stp_base + STP_RAM_CTRL, STP_DATA_REG_COUNT,
-				RAM_DATA_MODE_COL_MAJOR);
+		ret = stp_sram_write_word(pb, &sram_config, buf + bytes_written,
+				ram_ctrl_addr);
 		if (ret < 0)
 			return ret;
 
-		bytes_remaining -= STP_WORD_WIDTH_BYTES;
-		bytes_written += STP_WORD_WIDTH_BYTES;
+		bytes_remaining -= STP_PIO_WORD_WIDTH_BYTES;
+		bytes_written += STP_PIO_WORD_WIDTH_BYTES;
 		sheet_slot++;
 	}
 
 	/* Handle any remaining bytes that are shorter than an SRAM word. */
 	if (bytes_remaining > 0) {
-		ram_ctrl = generate_vector_address(lane_group_x, lane_group_y,
+		uint8_t transfer_buf[STP_PIO_WORD_WIDTH_BYTES];
+
+		ram_ctrl_addr = get_vector_address(lane_group_x, lane_group_y,
 				sheet_slot, write_alu_registers);
 
-		ret = sram_write_word_partial(pb, buf + bytes_written, 0,
-				bytes_remaining, ram_ctrl,
-				pb->stp_base + STP_RAM_CTRL, STP_DATA_REG_COUNT,
-				RAM_DATA_MODE_COL_MAJOR);
+		ret = stp_sram_read_word(pb, &sram_config, transfer_buf,
+				ram_ctrl_addr);
+		if (ret < 0)
+			return ret;
+
+		memcpy(transfer_buf, buf + bytes_written, bytes_remaining);
+
+		ret = stp_sram_write_word(pb, &sram_config, transfer_buf,
+				ram_ctrl_addr);
 		if (ret < 0)
 			return ret;
 	}
@@ -578,9 +734,7 @@ int write_stp_vector_sram_coordinates_ioctl(struct paintbox_data *pb,
 	if (ret < 0)
 		goto exit;
 
-	writel(stp->stp_id, pb->stp_base + STP_SEL);
-
-	ret = sram_write_vector_buffer(pb, buf,
+	ret = sram_write_vector_buffer(pb, stp->stp_id, buf,
 			logical_to_phys_col_map[req.lane_group_x],
 			logical_to_phys_row_map[req.lane_group_y],
 			req.sheet_slot, req.byte_offset_in_lane_group,
@@ -631,8 +785,6 @@ int write_stp_vector_sram_replicate_ioctl(struct paintbox_data *pb,
 	if (ret < 0)
 		goto exit;
 
-	writel(stp->stp_id, pb->stp_base + STP_SEL);
-
 	/* Iterate over all lane groups and write the supplied user buffer to
 	 * those groups.
 	 */
@@ -644,8 +796,8 @@ int write_stp_vector_sram_replicate_ioctl(struct paintbox_data *pb,
 				lane_group_row++) {
 			phys_row = logical_to_phys_row_map[lane_group_row];
 
-			ret = sram_write_vector_buffer(pb, buf, phys_col,
-					phys_row, req.sheet_slot,
+			ret = sram_write_vector_buffer(pb, stp->stp_id, buf,
+					phys_col, phys_row, req.sheet_slot,
 					req.byte_offset_in_lane_group,
 					req.len_bytes, req.write_alu_registers);
 			if (ret < 0)
@@ -690,9 +842,7 @@ int read_stp_vector_sram_coordinates_ioctl(struct paintbox_data *pb,
 		goto exit;
 	}
 
-	writel(stp->stp_id, pb->stp_base + STP_SEL);
-
-	ret = sram_read_vector_buffer(pb, buf,
+	ret = sram_read_vector_buffer(pb, stp->stp_id, buf,
 			logical_to_phys_col_map[req.lane_group_x],
 			logical_to_phys_row_map[req.lane_group_y],
 			req.sheet_slot, req.byte_offset_in_lane_group,

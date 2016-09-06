@@ -24,11 +24,23 @@
 #include <linux/version.h>
 
 #include "paintbox-dma.h"
+#include "paintbox-dma-debug.h"
+#include "paintbox-dma-dram.h"
+#include "paintbox-dma-lbp.h"
+#include "paintbox-dma-stp.h"
 #include "paintbox-io.h"
+#include "paintbox-irq.h"
 #include "paintbox-lbp.h"
 #include "paintbox-regs.h"
 #include "paintbox-sim-regs.h"
 
+
+/* The caller to this function must hold pb->lock */
+void dma_select_channel(struct paintbox_data *pb, uint32_t channel_id)
+{
+	writel((channel_id << DMA_CHAN_SEL_SHIFT) & DMA_CHAN_SEL_MASK,
+			pb->dma.dma_base + DMA_CTRL);
+}
 
 /* The caller to this function must hold pb->lock */
 int validate_dma_channel(struct paintbox_data *pb,
@@ -64,29 +76,22 @@ struct paintbox_dma_channel *get_dma_channel(struct paintbox_data *pb,
 }
 
 /* The caller to this function must hold pb->lock */
-int unbind_dma_interrupt(struct paintbox_data *pb,
-		struct paintbox_session *session, uint8_t interrupt_id,
-		uint8_t channel_id)
+int dma_stop_transfer(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel)
 {
-	struct paintbox_dma_channel *dma;
-	struct paintbox_irq *irq;
-	unsigned long irq_flags;
-	int ret = 0;
+	uint32_t mode;
 
-	dma = get_dma_channel(pb, session, channel_id, &ret);
-	if (ret < 0)
-		return ret;
+	io_disable_dma_interrupts(pb);
 
-	irq = get_interrupt(pb, session, interrupt_id, &ret);
-	if (ret < 0)
-		return ret;
+	dma_select_channel(pb, channel->channel_id);
 
-	spin_lock_irqsave(&pb->irq_lock, irq_flags);
+	writel(0, pb->dma.dma_base + DMA_CHAN_IMR);
 
-	dma->interrupt_id = DMA_NO_INTERRUPT;
-	irq->channel_id = IRQ_NO_DMA_CHANNEL;
+	mode = readl(pb->dma.dma_base + DMA_CHAN_MODE);
+	mode &= ~DMA_CHAN_ENA;
+	writel(mode, pb->dma.dma_base + DMA_CHAN_MODE);
 
-	spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
+	io_enable_dma_interrupts(pb);
 
 	return 0;
 }
@@ -135,27 +140,21 @@ int release_dma_channel_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg)
 {
 	unsigned int channel_id = (unsigned int)arg;
-	struct paintbox_dma_channel *dma;
+	struct paintbox_dma_channel *channel;
 	int ret = 0;
 
 	mutex_lock(&pb->lock);
-	dma = get_dma_channel(pb, session, channel_id, &ret);
+	channel = get_dma_channel(pb, session, channel_id, &ret);
 	if (ret < 0) {
 		mutex_unlock(&pb->lock);
 		return ret;
 	}
 
 	/* Unbind any associated interrupt */
-	if (dma->interrupt_id != DMA_NO_INTERRUPT) {
-		ret = unbind_dma_interrupt(pb, session, dma->interrupt_id,
-				dma->channel_id);
-		if (ret < 0) {
-			mutex_unlock(&pb->lock);
-			return ret;
-		}
-	}
+	unbind_dma_interrupt(pb, session, channel);
 
-	release_dma_channel(pb, session, dma);
+	release_dma_channel(pb, session, channel);
+
 	mutex_unlock(&pb->lock);
 
 	return ret;
@@ -192,97 +191,6 @@ int allocate_dma_channel_ioctl(struct paintbox_data *pb,
 	return 0;
 }
 
-/* The caller to this function must hold pb->lock */
-static int dma_map_buffer_cma(struct paintbox_data *pb,
-		struct paintbox_dma_transfer *transfer, void __user *buf,
-		size_t len_bytes, enum dma_data_direction dir)
-{
-	/* TODO(ahampson):  We are temporarily going to have one transfer
-	 * hardcoded with the channel.  The CMA memory associated with the
-	 * transfer is freed lazily.  If there is a buffer associated with the
-	 * channel then free it here.  This will get cleaned up once the
-	 * interrupt code is refactored.
-	 */
-	if (transfer->buf_vaddr) {
-		dma_free_coherent(&pb->pdev->dev,
-				transfer->len_bytes,
-				transfer->buf_vaddr,
-				transfer->buf_paddr);
-	}
-
-	transfer->buf_vaddr = dma_alloc_coherent(&pb->pdev->dev, len_bytes,
-			&transfer->buf_paddr, GFP_KERNEL);
-	if (!transfer->buf_vaddr) {
-		dev_err(&pb->pdev->dev, "%s: allocation failure\n", __func__);
-		return -ENOMEM;
-	}
-
-	/* Copy the entire user buffer into the transfer buffer for both
-	 * directions in case the actual transfer is just a stripe.  This will
-	 * ensure that portions of the buffer outside of the stripe will be
-	 * consistent between the user buffer and the transfer buffer.
-	 *
-	 * TODO(ahampson):  Once the driver switches to locked user buffers this
-	 * will no longer be necessary.  b/28405438
-	 */
-	if (copy_from_user(transfer->buf_vaddr, buf, len_bytes)) {
-		dma_free_coherent(&pb->pdev->dev, len_bytes,
-				transfer->buf_vaddr, transfer->buf_paddr);
-
-		transfer->len_bytes = 0;
-		transfer->buf_vaddr = NULL;
-		transfer->buf_paddr = 0;
-
-		return -EFAULT;
-	}
-
-	if (dir == DMA_TO_DEVICE)
-		dma_sync_single_for_device(&pb->pdev->dev, transfer->buf_paddr,
-				len_bytes, DMA_TO_DEVICE);
-
-	transfer->len_bytes = len_bytes;
-
-	dev_dbg(&pb->pdev->dev, "%s: len %lu\n", __func__,  len_bytes);
-	dev_dbg(&pb->pdev->dev, "\tva 0x%p pa 0x%pa\n",
-			transfer->buf_vaddr, &transfer->buf_paddr);
-
-	return 0;
-}
-
-/* The caller to this function must hold pb->lock */
-static int dma_unmap_buffer_cma(struct paintbox_data *pb,
-		struct paintbox_dma_transfer *transfer, void __user *buf,
-		size_t len_bytes, enum dma_data_direction dir)
-{
-	if (dir == DMA_FROM_DEVICE) {
-		dma_sync_single_for_cpu(&pb->pdev->dev,
-			transfer->buf_paddr, transfer->len_bytes,
-			DMA_FROM_DEVICE);
-
-		if (copy_to_user(buf, transfer->buf_vaddr,
-				min(transfer->len_bytes, len_bytes)))
-			return -EFAULT;
-	}
-
-	dev_dbg(&pb->pdev->dev, "%s: len %lu\n", __func__, transfer->len_bytes);
-	dev_dbg(&pb->pdev->dev, "\tva 0x%p pa 0x%pa\n",
-			transfer->buf_vaddr,
-			&transfer->buf_paddr);
-
-	dma_free_coherent(&pb->pdev->dev, transfer->len_bytes,
-			transfer->buf_vaddr, transfer->buf_paddr);
-
-	/* TODO(ahampson):  We are going to temporarily have one hardcoded
-	 * transfer associated with each channel.  NULL out the transfer instead
-	 * of freeing it.
-	 */
-	transfer->len_bytes = 0;
-	transfer->buf_vaddr = NULL;
-	transfer->buf_paddr = 0;
-
-	return 0;
-}
-
 int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg)
 {
@@ -310,74 +218,36 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 	 * channel.
 	 */
 	transfer = &channel->transfer;
+
+	/* TODO(ahampson):  We are temporarily going to have one transfer
+	 * hardcoded with the channel.  The CMA memory associated with the
+	 * transfer is freed lazily.  If there is a buffer associated with the
+	 * channel then free it here.  This will get cleaned up once the
+	 * interrupt code is refactored.
+	 */
+	if (transfer->buf_vaddr) {
+		dma_free_coherent(&pb->pdev->dev,
+				transfer->len_bytes,
+				transfer->buf_vaddr,
+				transfer->buf_paddr);
+	}
+
 	memset(transfer, 0, sizeof(struct paintbox_dma_transfer));
 
 	switch (config.transfer_type) {
 	case DMA_DRAM_TO_LBP:
-		if (config.src.dram.len_bytes > DMA_MAX_IMG_TRANSFER_LEN) {
-			mutex_unlock(&pb->lock);
-			return -ERANGE;
-		}
-
-		if (!access_ok(VERIFY_READ, config.src.dram.host_vaddr,
-				config.src.dram.len_bytes)) {
-			mutex_unlock(&pb->lock);
-			return -EFAULT;
-		}
-
 		channel->read_transfer = false;
-
-		/* TODO(ahampson):  This needs to be conditionalized for IOMMU
-		 * or CMA.
-		 */
-		ret = dma_map_buffer_cma(pb, transfer,
-				config.src.dram.host_vaddr,
-				config.src.dram.len_bytes, DMA_TO_DEVICE);
-		if (ret < 0) {
-			mutex_unlock(&pb->lock);
-			return ret;
-		}
-
 		ret = dma_setup_dram_to_lbp_transfer(pb, session, channel,
 				transfer, &config);
 		break;
 	case DMA_DRAM_TO_STP:
 		channel->read_transfer = false;
-
 		ret = dma_setup_dram_to_stp_transfer(pb, session, channel,
 				transfer, &config);
 		break;
 	case DMA_LBP_TO_DRAM:
-		if (config.dst.dram.len_bytes > DMA_MAX_IMG_TRANSFER_LEN) {
-			mutex_unlock(&pb->lock);
-			return -ERANGE;
-		}
-
-		if (!access_ok(VERIFY_WRITE, config.dst.dram.host_vaddr,
-				config.dst.dram.len_bytes)) {
-			mutex_unlock(&pb->lock);
-			return -EFAULT;
-		}
-
 		channel->read_transfer = true;
-
-		/* TODO(ahampson):  This needs to be conditionalized for IOMMU
-		 * or CMA.
-		 */
-		ret = dma_map_buffer_cma(pb, transfer,
-				config.dst.dram.host_vaddr,
-				config.dst.dram.len_bytes, DMA_FROM_DEVICE);
-		if (ret < 0) {
-			mutex_unlock(&pb->lock);
-			return ret;
-		}
-
 		ret = dma_setup_lbp_to_dram_transfer(pb, session, channel,
-				transfer, &config);
-		break;
-	case DMA_STP_TO_DRAM:
-		channel->read_transfer = true;
-		ret = dma_setup_stp_to_dram_transfer(pb, session, channel,
 				transfer, &config);
 		break;
 	case DMA_MIPI_TO_LBP:
@@ -441,22 +311,78 @@ int read_dma_transfer_ioctl(struct paintbox_data *pb,
 	 * We may need to have some sort of transaction id as well.
 	 */
 	ret = dma_unmap_buffer_cma(pb, &channel->transfer, req.host_vaddr,
-			req.len_bytes, DMA_FROM_DEVICE);
+			req.len_bytes);
 
 	mutex_unlock(&pb->lock);
 
 	return ret;
 }
 
+static void commit_transfer_to_hardware(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel)
+{
+	struct paintbox_dma_transfer *transfer;
+	struct paintbox_dma *dma = &pb->dma;
+	uint32_t val;
+
+	io_disable_dma_interrupts(pb);
+
+	/* TODO(ahampson):  There should be a transfer queue that we dequeue
+	 * from here.  Currently only a single transfer is supported.
+	 */
+	transfer = &channel->transfer;
+
+	dma_select_channel(pb, channel->channel_id);
+
+	/* Load the transfer into the DMA channel registers */
+	writel(transfer->chan_img_format, dma->dma_base + DMA_CHAN_IMG_FORMAT);
+	writel(transfer->chan_img_size, dma->dma_base + DMA_CHAN_IMG_SIZE);
+	writel(transfer->chan_img_pos_low, dma->dma_base + DMA_CHAN_IMG_POS_L);
+	writel(transfer->chan_img_pos_high, dma->dma_base + DMA_CHAN_IMG_POS_H);
+	writel(transfer->chan_img_layout_low, dma->dma_base +
+			DMA_CHAN_IMG_LAYOUT_L);
+	writel(transfer->chan_img_layout_high, dma->dma_base +
+			DMA_CHAN_IMG_LAYOUT_H);
+
+	val = readl(dma->dma_base + DMA_CHAN_BIF_XFER);
+	val &= ~DMA_CHAN_STRIPE_HEIGHT_MASK;
+	val |= transfer->chan_bif_xfer;
+	writel(val, dma->dma_base + DMA_CHAN_BIF_XFER);
+
+	writel(transfer->chan_va_low, dma->dma_base + DMA_CHAN_VA_L);
+	writel(transfer->chan_va_high, dma->dma_base + DMA_CHAN_VA_H);
+	writel(transfer->chan_va_bdry_low, dma->dma_base + DMA_CHAN_VA_BDRY_L);
+	writel(transfer->chan_va_bdry_high, dma->dma_base + DMA_CHAN_VA_BDRY_H);
+	writel(transfer->chan_noc_xfer_low, dma->dma_base +
+			DMA_CHAN_NOC_XFER_L);
+
+	writel(transfer->chan_node, dma->dma_base + DMA_CHAN_NODE);
+
+	/* Enable interrupts for the channel */
+	writel(DMA_CHAN_INT_EOF | DMA_CHAN_INT_VA_ERR, dma->dma_base +
+			DMA_CHAN_IMR);
+
+	/* Write the channel mode register last as this will enqueue the
+	 * transfer into the hardware.
+	 */
+	writel(transfer->chan_mode, dma->dma_base + DMA_CHAN_MODE);
+
+	io_enable_dma_channel_interrupt(pb, channel->channel_id);
+
+	io_enable_dma_interrupts(pb);
+
+	LOG_DMA_REGISTERS(pb, channel);
+}
+
 int start_dma_transfer_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg)
 {
 	unsigned int channel_id = (unsigned int)arg;
-	struct paintbox_dma_channel *dma;
+	struct paintbox_dma_channel *channel;
 	int ret;
 
 	mutex_lock(&pb->lock);
-	dma = get_dma_channel(pb, session, channel_id, &ret);
+	channel = get_dma_channel(pb, session, channel_id, &ret);
 	if (ret < 0) {
 		mutex_unlock(&pb->lock);
 		return ret;
@@ -464,7 +390,9 @@ int start_dma_transfer_ioctl(struct paintbox_data *pb,
 
 	dev_dbg(&pb->pdev->dev, "%s: dma%u: start\n",  __func__, channel_id);
 
-	ret = dma_start_transfer(pb, dma);
+	/* TODO(ahampson):  Implement support for double buffering b/28316153 */
+	commit_transfer_to_hardware(pb, channel);
+
 	if (ret < 0) {
 		mutex_unlock(&pb->lock);
 		return ret;
@@ -478,105 +406,56 @@ int start_dma_transfer_ioctl(struct paintbox_data *pb,
 int bind_dma_interrupt_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg)
 {
-	struct interrupt_config __user *user_config;
-	struct interrupt_config config;
-	struct paintbox_dma_channel *dma;
-	struct paintbox_irq *irq;
-	unsigned long irq_flags;
+	struct dma_interrupt_config __user *user_req;
+	struct dma_interrupt_config req;
+	struct paintbox_dma_channel *channel;
 	int ret;
 
-	user_config = (struct interrupt_config __user *)arg;
-	if (copy_from_user(&config, user_config, sizeof(config)))
+	user_req = (struct dma_interrupt_config __user *)arg;
+	if (copy_from_user(&req, user_req, sizeof(req)))
 		return -EFAULT;
 
 	mutex_lock(&pb->lock);
-	dma = get_dma_channel(pb, session, config.channel_id, &ret);
+	channel = get_dma_channel(pb, session, req.channel_id, &ret);
 	if (ret < 0) {
 		mutex_unlock(&pb->lock);
 		return ret;
 	}
 
-	irq = get_interrupt(pb, session, config.interrupt_id, &ret);
-	if (ret < 0) {
-		mutex_unlock(&pb->lock);
-		return ret;
-	}
+	ret = bind_dma_interrupt(pb, session, channel, req.interrupt_id);
 
-	if (dma->interrupt_id != DMA_NO_INTERRUPT) {
-		dev_err(&pb->pdev->dev,
-				"%s: dma%u: unable to bind int%u, int%u is "
-				"already bound to this channel\n", __func__,
-				config.channel_id, config.interrupt_id,
-				dma->interrupt_id);
-		mutex_unlock(&pb->lock);
-		return -EEXIST;
-	}
-
-	if (irq->channel_id != IRQ_NO_DMA_CHANNEL) {
-		dev_err(&pb->pdev->dev,
-				"%s: dma%u: unable to bind int%u, the interrupt"
-				" is already bound to dma%u\n",
-				__func__, config.channel_id,
-				config.interrupt_id,
-				irq->channel_id);
-		mutex_unlock(&pb->lock);
-		return -EEXIST;
-	}
-
-	dev_dbg(&pb->pdev->dev, "%s: dma%u: bind int%u" , __func__,
-			config.channel_id, config.interrupt_id);
-
-	spin_lock_irqsave(&pb->irq_lock, irq_flags);
-
-	irq->channel_id = config.channel_id;
-	dma->interrupt_id = config.interrupt_id;
-
-	/* TODO(ahampson): This should be cleaned up when the QEMU kernel is
-	 * updated to 3.13 or greater.
-	 */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0)
-	INIT_COMPLETION(irq->completion);
-#else
-	reinit_completion(&irq->completion);
-#endif
-
-	spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
+	init_waiters(pb, channel->irq);
 
 	mutex_unlock(&pb->lock);
 
-	return 0;
+	return ret;
 }
 
 int unbind_dma_interrupt_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg)
 {
-	uint8_t channel_id = (uint8_t)arg;
-	struct paintbox_dma_channel *dma;
+	unsigned int channel_id = (unsigned int)arg;
+	struct paintbox_dma_channel *channel;
 	int ret = 0;
 
 	mutex_lock(&pb->lock);
-	dma = get_dma_channel(pb, session, channel_id, &ret);
+	channel = get_dma_channel(pb, session, channel_id, &ret);
 	if (ret < 0) {
 		mutex_unlock(&pb->lock);
 		return ret;
 	}
 
-	if (dma->interrupt_id == DMA_NO_INTERRUPT) {
-		dev_err(&pb->pdev->dev, "%s: dma%u: no interrupt to unbind\n",
-				__func__, channel_id);
-		mutex_unlock(&pb->lock);
-		return -ENOENT;
-	}
-
-	dev_dbg(&pb->pdev->dev, "%s: dma%u: unbind int%u" , __func__,
-			channel_id, dma->interrupt_id);
-
-	ret = unbind_dma_interrupt(pb, session, dma->interrupt_id,
-			dma->channel_id);
+	ret = unbind_dma_interrupt(pb, session, channel);
 	if (ret < 0) {
+		dev_err(&pb->pdev->dev,
+				"%s: dma channel%u: unable to unbind interrupt,"
+				" %d\n", __func__, channel_id, ret);
 		mutex_unlock(&pb->lock);
 		return ret;
 	}
+
+	dev_dbg(&pb->pdev->dev, "%s: dma channel%u: unbind interrupt\n",
+			__func__, channel_id);
 
 	mutex_unlock(&pb->lock);
 
@@ -612,21 +491,83 @@ int get_completed_transfer_count_ioctl(struct paintbox_data *pb,
 }
 
 /* This function is called in an interrupt context */
-void dma_report_completion(struct paintbox_data *pb,
+static void dma_report_completion(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel, int err)
 {
-	struct paintbox_irq *irq;
-
 	if (channel->read_transfer) {
 		smp_wmb();
 		atomic_inc(&channel->completed_unread);
 	}
 
-	if (channel->interrupt_id == DMA_NO_INTERRUPT)
-		return;
+	signal_waiters(channel->irq, err);
+}
 
-	irq = &pb->irqs[channel->interrupt_id];
-	irq->error = err;
+irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
+		uint32_t channel_mask)
+{
+	unsigned int channel_id;
 
-	complete_all(&irq->completion);
+	for (channel_id = 0; channel_id < pb->dma.num_channels && channel_mask;
+			channel_id++, channel_mask >>= 1) {
+		struct paintbox_dma_channel *channel;
+		uint32_t status;
+
+		if (!(channel_mask & 0x01))
+			continue;
+
+		channel = &pb->dma.channels[channel_id];
+
+		dma_select_channel(pb, channel_id);
+
+		status = readl(pb->dma.dma_base + DMA_CHAN_ISR);
+		writel(status, pb->dma.dma_base + DMA_CHAN_ISR);
+
+		if (status & DMA_CHAN_INT_VA_ERR)
+			dma_report_completion(pb, channel, -EIO);
+		else if (status & DMA_CHAN_INT_EOF)
+			dma_report_completion(pb, channel, 0);
+	}
+
+	return IRQ_HANDLED;
+}
+
+int paintbox_dma_init(struct paintbox_data *pb)
+{
+	unsigned int i;
+
+	pb->dma.dma_base = pb->reg_base + IPU_DMA_OFFSET;
+
+	pb->dma.num_channels = readl(pb->dma.dma_base + DMA_CAP0) &
+			MAX_DMA_CHAN_MASK;
+
+#ifdef CONFIG_DEBUG_FS
+	paintbox_dma_debug_init(pb);
+#endif
+
+	/* TODO(ahampson):  refactor out the storage of the caps structure  */
+	pb->caps.num_dma_channels = pb->dma.num_channels;
+
+	pb->dma.channels = kzalloc(sizeof(struct paintbox_dma_channel) *
+			pb->dma.num_channels, GFP_KERNEL);
+	if (!pb->dma.channels)
+		return -ENOMEM;
+
+	/* Store channel id with object as a convenience to avoid doing a
+	 * lookup later on.
+	 */
+	for (i = 0; i < pb->dma.num_channels; i++) {
+		struct paintbox_dma_channel *channel = &pb->dma.channels[i];
+		channel->channel_id = i;
+		atomic_set(&channel->completed_unread, 0);
+
+#ifdef CONFIG_DEBUG_FS
+		paintbox_dma_channel_debug_init(pb, channel);
+#endif
+	}
+
+	dev_dbg(&pb->pdev->dev, "dma: base %p len %u dma channels %u\n",
+			pb->dma.dma_base, DMA_BLOCK_LEN,
+			pb->dma.num_channels);
+
+	return 0;
 }

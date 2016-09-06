@@ -16,7 +16,9 @@
 #ifndef __PAINTBOX_STP_H__
 #define __PAINTBOX_STP_H__
 
+#include <linux/interrupt.h>
 #include <linux/io.h>
+#include <linux/types.h>
 
 #include "paintbox-common.h"
 
@@ -38,9 +40,19 @@ int resume_stp_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 int reset_stp_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
+int init_stp_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg);
 int setup_stp_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 int get_program_state_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg);
+int enable_stp_interrupt_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg);
+int disable_stp_interrupt_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg);
+int bind_stp_interrupt_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg);
+int unbind_stp_interrupt_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 
 int paintbox_stp_init(struct paintbox_data *pb);
@@ -61,5 +73,17 @@ void disable_stp_access_to_lbp(struct paintbox_data *pb,
 #if defined(CONFIG_DEBUG_FS) || defined(VERBOSE_DEBUG)
 int dump_stp_registers(struct paintbox_debug *debug, char *buf, size_t len);
 #endif
+
+irqreturn_t paintbox_stp_interrupt(struct paintbox_data *pb, uint32_t stp_mask);
+
+static inline unsigned int stp_id_to_index(unsigned int stp_id)
+{
+	return stp_id - 1;
+}
+
+static inline unsigned int stp_index_to_id(unsigned int stp_index)
+{
+	return stp_index + 1;
+}
 
 #endif /* __PAINTBOX_STP_H__ */

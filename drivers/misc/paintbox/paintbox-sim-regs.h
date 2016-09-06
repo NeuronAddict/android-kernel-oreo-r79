@@ -29,9 +29,18 @@
 /* SIM_CTRL Register Bits */
 #define SIM_RUN               (1 << 0)
 #define SIM_WAIT_IDLE         (1 << 1)
-#define SIM_INT_SHIFT         24
-#define SIM_INT               0xFF
-#define SIM_INT_MASK          (SIM_INT << SIM_INT_SHIFT)
+#define SIM_INT_SRC_M         0xFF
+#define SIM_INT_SRC_SHIFT     16
+#define SIM_INT_SRC_DMA       0
+#define SIM_INT_SRC_MIPI_IN   1
+#define SIM_INT_SRC_MIPI_OUT  2
+#define SIM_INT_SRC_STP       3
+#define SIM_INT_SRC_MMU       4
+#define SIM_INT_SRC_BIF       5
+#define SIM_INT_SRC_MASK      (SIM_INT_SRC_M << SIM_INT_SRC_SHIFT)
+#define SIM_INT_ID_SHIFT      24
+#define SIM_INT_ID_M          0xFF
+#define SIM_INT_ID_MASK       (SIM_INT_ID_M << SIM_INT_ID_SHIFT)
 
 /* SIM_STAT Register Bits */
 #define SIM_STP_IDLE_MASK     0xFF

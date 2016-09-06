@@ -36,16 +36,41 @@
  *
  * The caller to this function must hold pb->lock
  */
-void sim_execute(struct paintbox_data *pb, unsigned int channel_id,
+int sim_execute(struct paintbox_data *pb, struct paintbox_irq *irq,
 		uint64_t timeout_ns)
 {
-	writel((uint32_t)(timeout_ns & 0xFFFFFFFF),
-			pb->sim_base + SIM_TIMEOUT_L);
-	writel((uint32_t)(timeout_ns >> 32),
-			pb->sim_base + SIM_TIMEOUT_H);
+	uint32_t val;
 
-	writel((channel_id << SIM_INT_SHIFT) | SIM_RUN,
-			pb->sim_base + SIM_CTRL);
+	writel((uint32_t)(timeout_ns & 0xFFFFFFFF), pb->sim_base +
+			SIM_TIMEOUT_L);
+	writel((uint32_t)(timeout_ns >> 32), pb->sim_base + SIM_TIMEOUT_H);
+
+	switch (irq->source) {
+	case IRQ_SRC_DMA_CHANNEL:
+		val = irq->dma_channel->channel_id << SIM_INT_ID_SHIFT;
+		val |= SIM_INT_SRC_DMA << SIM_INT_SRC_SHIFT;
+		break;
+	case IRQ_SRC_MIPI_IN_STREAM:
+		val = irq->mipi_stream->stream_id << SIM_INT_ID_SHIFT;
+		val |= SIM_INT_SRC_MIPI_IN << SIM_INT_SRC_SHIFT;
+		break;
+	case IRQ_SRC_MIPI_OUT_STREAM:
+		val = irq->mipi_stream->stream_id << SIM_INT_ID_SHIFT;
+		val |= SIM_INT_SRC_MIPI_OUT << SIM_INT_SRC_SHIFT;
+		break;
+	case IRQ_SRC_STP:
+		val = irq->stp->stp_id << SIM_INT_ID_SHIFT;
+		val |= SIM_INT_SRC_STP << SIM_INT_SRC_SHIFT;
+		break;
+	default:
+		dev_err(&pb->pdev->dev, "%s: invalid interrupt source\n",
+				__func__);
+		return -EINVAL;
+	};
+
+	writel(val | SIM_RUN, pb->sim_base + SIM_CTRL);
+
+	return 0;
 }
 
 int sim_get_stp_idle_ioctl(struct paintbox_data *pb,

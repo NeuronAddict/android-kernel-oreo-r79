@@ -34,6 +34,7 @@
 #include "paintbox-io.h"
 #include "paintbox-mipi.h"
 #include "paintbox-regs.h"
+#include "paintbox-stp.h"
 
 
 #ifdef CONFIG_DEBUG_FS
@@ -307,6 +308,10 @@ static irqreturn_t paintbox_io_interrupt(int irq, void *arg)
 	if (status & pb->io.dma_mask)
 		paintbox_dma_interrupt(pb, status & pb->io.dma_mask);
 
+	if (status & pb->io.stp_mask)
+		paintbox_stp_interrupt(pb, (status & pb->io.stp_mask) >>
+				pb->io.stp_start);
+
 	if (status & pb->io.mipi_input_mask)
 		paintbox_mipi_input_interrupt(pb, (status &
 				pb->io.mipi_input_mask) >>
@@ -317,7 +322,7 @@ static irqreturn_t paintbox_io_interrupt(int irq, void *arg)
 				pb->io.mipi_output_mask) >>
 				pb->io.mipi_output_start);
 
-	/* TODO(ahampson):  Check for STP, BIF, and MMU interrupts */
+	/* TODO(ahampson):  Check for BIF, and MMU interrupts */
 
 	return IRQ_HANDLED;
 }
@@ -381,7 +386,35 @@ void io_disable_dma_channel_interrupt(struct paintbox_data *pb,
 	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
 }
 
-static void io_enable_mipi_stream_interrupt(struct paintbox_data *pb,
+void io_enable_stp_interrupt(struct paintbox_data *pb, unsigned int stp_id)
+{
+	unsigned long irq_flags;
+	uint32_t ipu_imr;
+
+	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
+
+	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
+	ipu_imr |= 1 << (stp_id_to_index(stp_id) + pb->io.stp_start);
+	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
+
+	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
+}
+
+void io_disable_stp_interrupt(struct paintbox_data *pb, unsigned int stp_id)
+{
+	unsigned long irq_flags;
+	uint32_t ipu_imr;
+
+	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
+
+	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
+	ipu_imr &= ~(1 << (stp_id_to_index(stp_id) + pb->io.stp_start));
+	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
+
+	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
+}
+
+static void io_enable_mipi_interface_interrupt(struct paintbox_data *pb,
 		uint32_t int_offset)
 {
 	unsigned long irq_flags;
@@ -400,7 +433,7 @@ static void io_enable_mipi_stream_interrupt(struct paintbox_data *pb,
 	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
 }
 
-static void io_disable_mipi_stream_interrupt(struct paintbox_data *pb,
+static void io_disable_mipi_interface_interrupt(struct paintbox_data *pb,
 		uint32_t int_offset)
 {
 	unsigned long irq_flags;
@@ -419,31 +452,31 @@ static void io_disable_mipi_stream_interrupt(struct paintbox_data *pb,
 	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
 }
 
-void io_enable_mipi_input_stream_interrupt(struct paintbox_data *pb,
-		unsigned int stream_id)
+void io_enable_mipi_input_interface_interrupt(struct paintbox_data *pb,
+		unsigned int interface_id)
 {
-	io_enable_mipi_stream_interrupt(pb, stream_id +
+	io_enable_mipi_interface_interrupt(pb, interface_id +
 			pb->io.mipi_input_start);
 }
 
-void io_disable_mipi_input_stream_interrupt(struct paintbox_data *pb,
-		unsigned int stream_id)
+void io_disable_mipi_input_interface_interrupt(struct paintbox_data *pb,
+		unsigned int interface_id)
 {
-	io_disable_mipi_stream_interrupt(pb, stream_id +
+	io_disable_mipi_interface_interrupt(pb, interface_id +
 			pb->io.mipi_input_start);
 }
 
-void io_enable_mipi_output_stream_interrupt(struct paintbox_data *pb,
-		unsigned int stream_id)
+void io_enable_mipi_output_interface_interrupt(struct paintbox_data *pb,
+		unsigned int interface_id)
 {
-	io_enable_mipi_stream_interrupt(pb, stream_id +
+	io_enable_mipi_interface_interrupt(pb, interface_id +
 			pb->io.mipi_output_start);
 }
 
-void io_disable_mipi_output_stream_interrupt(struct paintbox_data *pb,
-		unsigned int stream_id)
+void io_disable_mipi_output_interface_interrupt(struct paintbox_data *pb,
+		unsigned int interface_id)
 {
-	io_disable_mipi_stream_interrupt(pb, stream_id +
+	io_disable_mipi_interface_interrupt(pb, interface_id +
 			pb->io.mipi_output_start);
 }
 
@@ -557,14 +590,27 @@ int paintbox_io_apb_init(struct paintbox_data *pb)
 
 	pb->io.dma_mask = (1 << pb->dma.num_channels) - 1;
 
-	pb->io.mipi_input_start = pb->dma.num_channels;
-	pb->io.mipi_input_mask = ((1 << pb->io_ipu.num_mipi_input_streams) -
-			1) << pb->io.mipi_input_start;
+	pb->io.stp_start = pb->dma.num_channels;
+	pb->io.stp_mask = ((1 << pb->caps.num_stps) - 1) << pb->io.stp_start;
+	pb->io.bif_start = pb->io.stp_start + pb->caps.num_stps;
+	pb->io.bif_mask = ((1 << NUM_BIF_INTERRUPTS) - 1) << pb->io.bif_start;
+	pb->io.mmu_start = pb->io.bif_start + NUM_BIF_INTERRUPTS;
+	pb->io.mmu_mask = ((1 << NUM_MMU_INTERRUPTS) - 1) << pb->io.mmu_start;
 
-	pb->io.mipi_output_start = pb->io.mipi_input_start +
-			pb->io_ipu.num_mipi_input_streams;
-	pb->io.mipi_output_mask = ((1 << pb->io_ipu.num_mipi_output_streams) -
-			1) << pb->io.mipi_output_start;
+	if (pb->io_ipu.num_mipi_input_interfaces > 0) {
+		pb->io.mipi_input_start = pb->io.mmu_start + NUM_MMU_INTERRUPTS;
+		pb->io.mipi_input_mask = ((1 <<
+				pb->io_ipu.num_mipi_input_interfaces) -
+				1) << pb->io.mipi_input_start;
+	}
+
+	if (pb->io_ipu.num_mipi_output_interfaces > 0) {
+		pb->io.mipi_output_start = pb->io.mipi_input_start +
+				pb->io_ipu.num_mipi_input_interfaces;
+		pb->io.mipi_output_mask = ((1 <<
+				pb->io_ipu.num_mipi_output_interfaces) -
+				1) << pb->io.mipi_output_start;
+	}
 
 	ret = devm_request_irq(&pb->pdev->dev, pb->io.irq,
 			paintbox_io_interrupt, IRQF_SHARED, pb->pdev->name, pb);

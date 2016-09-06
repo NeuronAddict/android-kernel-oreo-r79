@@ -43,43 +43,60 @@
 #define VECTOR_LANE_GROUP_WIDTH 4 /* lanes */
 #define VECTOR_LANE_GROUP_HEIGHT 2 /* lanes */
 
-int sram_write_buffer(struct paintbox_data *pb, const uint8_t *buf,
-		uint32_t sram_byte_addr, size_t len_bytes,
-		uint32_t ram_ctrl_mask, void __iomem *reg_base,
-		unsigned int reg_count);
+#define MIN_RAM_ACCESS_SLEEP       10  /* us */
+#define MAX_RAM_ACCESS_SLEEP       100 /* us */
+#define MAX_MEMORY_ACCESS_ATTEMPTS 5
+
+
+struct paintbox_sram_config {
+	uint32_t ram_ctrl_target;
+	unsigned int ram_data_mode;
+	unsigned int core_id;
+	size_t sram_word_bytes;
+	int (*write_word)(struct paintbox_data *pb,
+			struct paintbox_sram_config *sram_config,
+			const uint8_t *buf, uint32_t ram_ctrl_addr);
+	int (*read_word)(struct paintbox_data *pb,
+			struct paintbox_sram_config *sram_config, uint8_t *buf,
+			uint32_t ram_ctrl_addr);
+};
+
+int sram_write_buffer(struct paintbox_data *pb,
+		struct paintbox_sram_config *sram_config,
+		uint32_t sram_byte_addr, const uint8_t *buf, size_t len_bytes);
 
 int sram_write_user_buffer(struct paintbox_data *pb,
-		const void __user *user_buf, uint32_t sram_byte_addr,
-		size_t len_bytes, uint32_t ram_ctrl_mask,
-		void __iomem *reg_base, unsigned int reg_count);
+		struct paintbox_sram_config *sram_config,
+		uint32_t sram_byte_addr, const void __user *user_buf,
+		size_t len_bytes);
 
-int sram_read_buffer(struct paintbox_data *pb, uint8_t *buf,
-		uint32_t sram_byte_addr, size_t len_bytes,
-		uint32_t ram_ctrl_mask, void __iomem *reg_base,
+int sram_read_buffer(struct paintbox_data *pb,
+		struct paintbox_sram_config *sram_config,
+		uint32_t sram_byte_addr, uint8_t *buf, size_t len_bytes);
+
+int sram_read_user_buffer(struct paintbox_data *pb,
+		struct paintbox_sram_config *sram_config,
+		uint32_t sram_byte_addr, void __user *user_buf,
+		size_t len_bytes);
+
+void write_ram_data_registers(struct paintbox_data *pb, const uint8_t *buf,
+		void __iomem *data_reg, unsigned int reg_count);
+
+void write_ram_data_registers_swapped(struct paintbox_data *pb,
+		const uint8_t *buf, void __iomem *data_reg,
 		unsigned int reg_count);
 
-int sram_read_user_buffer(struct paintbox_data *pb, void __user *user_buf,
-		uint32_t sram_byte_addr, size_t len_bytes,
-		uint32_t ram_ctrl_mask, void __iomem *reg_base,
-		unsigned int reg_count);
+void write_ram_data_registers_column_major(struct paintbox_data *pb,
+		const uint8_t *buf);
 
-int sram_write_word(struct paintbox_data *pb, const uint8_t *buf,
-		uint32_t ram_ctrl_mask, void __iomem *reg_base,
-		size_t reg_count, unsigned int ram_data_mode);
+void read_ram_data_registers(struct paintbox_data *pb, uint8_t *buf,
+		void __iomem *data_reg, unsigned int reg_count);
 
-int sram_write_word_partial(struct paintbox_data *pb, const uint8_t *buf,
-		unsigned int byte_offset_in_word, size_t len_bytes,
-		uint32_t ram_ctrl_mask, void __iomem *reg_base,
-		size_t reg_count, unsigned int ram_data_mode);
+void read_ram_data_registers_swapped(struct paintbox_data *pb,
+		uint8_t *buf, void __iomem *data_reg, unsigned int reg_count);
 
-int sram_read_word(struct paintbox_data *pb, uint8_t *buf,
-		uint32_t ram_ctrl_mask, void __iomem *reg_base,
-		size_t reg_count, unsigned int ram_data_mode);
-
-int sram_read_word_partial(struct paintbox_data *pb, uint8_t *buf,
-		unsigned int byte_offset_in_word, size_t len_bytes,
-		uint32_t ram_ctrl_mask, void __iomem *reg_base,
-		size_t reg_count, unsigned int ram_data_mode);
+void read_ram_data_registers_column_major(struct paintbox_data *pb,
+		uint8_t *buf);
 
 int alloc_and_copy_from_user(struct paintbox_data *pb, uint8_t **buf,
 			const void __user *user_buf, size_t len_bytes);

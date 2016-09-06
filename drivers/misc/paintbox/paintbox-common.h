@@ -17,11 +17,11 @@
 #define __PAINTBOX_COMMON_H__
 
 #include <linux/atomic.h>
+#include <linux/dma-mapping.h>
 #include <linux/miscdevice.h>
 #include <linux/paintbox.h>
 #include <linux/platform_device.h>
 
-#define MAX_CHAN_OFFSET      15
 
 #define IRQ_NO_DMA_CHANNEL   0xFF
 #define DMA_NO_INTERRUPT     0xFF
@@ -31,7 +31,7 @@
 /* TODO(ahampson): Temporary FPGA_VERSION.  This should be removed once
  * b/30112936 is fixed.
  */
-#define FPGA_VERSION         2
+#define FPGA_HARDWARE_ID     6
 
 struct paintbox_data;
 
@@ -93,9 +93,15 @@ struct paintbox_io {
 	void __iomem *axi_base;
 	void __iomem *apb_base;
 	int irq;
+	unsigned int stp_start;
+	unsigned int bif_start;
+	unsigned int mmu_start;
 	unsigned int mipi_input_start;
 	unsigned int mipi_output_start;
 	uint32_t dma_mask;
+	uint32_t stp_mask;
+	uint32_t bif_mask;
+	uint32_t mmu_mask;
 	uint32_t mipi_input_mask;
 	uint32_t mipi_output_mask;
 	uint32_t dma_imr;
@@ -107,11 +113,18 @@ struct paintbox_io {
 	spinlock_t io_lock;
 };
 
+struct paintbox_mipi_interface {
+	unsigned int interface_id;
+	unsigned int num_streams;
+	struct paintbox_mipi_stream **streams;
+};
+
 struct paintbox_mipi_stream {
 	struct list_head entry;
 	struct paintbox_debug debug;
-	struct completion completion;
 	struct paintbox_session *session;
+	struct paintbox_mipi_interface *interface;
+	struct paintbox_irq *irq;
 	unsigned long irq_flags;
 	unsigned int stream_id;
 	uint32_t ctrl_offset;
@@ -119,7 +132,6 @@ struct paintbox_mipi_stream {
 	int error;
 	bool is_input;
 	bool enabled;
-	int wait_count;
 };
 
 struct paintbox_io_ipu {
@@ -127,24 +139,46 @@ struct paintbox_io_ipu {
 	void __iomem *ipu_base;
 	struct paintbox_mipi_stream *mipi_input_streams;
 	struct paintbox_mipi_stream *mipi_output_streams;
+	struct paintbox_mipi_interface *mipi_input_interfaces;
+	struct paintbox_mipi_interface *mipi_output_interfaces;
 	unsigned int num_mipi_input_streams;
 	unsigned int num_mipi_output_streams;
+	unsigned int num_mipi_input_interfaces;
+	unsigned int num_mipi_output_interfaces;
+};
+
+enum paintbox_irq_src {
+	IRQ_SRC_NONE,
+	IRQ_SRC_DMA_CHANNEL,
+	IRQ_SRC_STP,
+	IRQ_SRC_MIPI_IN_STREAM,
+	IRQ_SRC_MIPI_OUT_STREAM
 };
 
 /* Data structure for information specific to an interrupt.
  * One entry will be allocated for each interrupt in the IPU's interrupt mask.
  *
  * Note that the interrupt id is stored with the paintbox_irq as a convenience
- * to avoid having to recovery the interrupt id from the pb->irqs array when a
+ * to avoid having to recover the interrupt id from the pb->irqs array when a
  * function only has the paintbox_irq object.
+ *
+ * All fields are protected by pb->irq_lock except the following:
+ * interrupt_id - Only set at init.
+ * entry, session - protected by pb->lock
  */
 struct paintbox_irq {
 	struct list_head entry;
 	struct completion completion;
 	struct paintbox_session *session;
-	uint8_t channel_id;
-	uint8_t interrupt_id;
+	enum paintbox_irq_src source;
+	unsigned int interrupt_id;
+	union {
+		struct paintbox_dma_channel *dma_channel;
+		struct paintbox_stp *stp;
+		struct paintbox_mipi_stream *mipi_stream;
+	};
 	int error;
+	int wait_count;
 };
 
 /* TODO(ahampson):  There will eventually be a queue of transfers for each
@@ -177,13 +211,14 @@ struct paintbox_dma_transfer {
 	uint32_t chan_va_bdry_high;
 	uint32_t chan_noc_xfer_low;
 	uint32_t chan_node;
+	enum dma_data_direction dir;
 };
 
 /* Data structure for information specific to a DMA channel.
  * One entry will be allocated for each channel on a DMA controller.
  *
  * Note that the channel id is stored with the paintbox_dma as a convenience
- * to avoid having to recovery the channel id from the pb->dmas array when a
+ * to avoid having to recover the channel id from the pb->dmas array when a
  * function only has the paintbox_dma object.
  */
 struct paintbox_dma_channel {
@@ -195,8 +230,9 @@ struct paintbox_dma_channel {
 	 * a transfer queue will be implemented in the future.
 	 */
 	struct paintbox_dma_transfer transfer;
-	uint8_t channel_id;
-	uint8_t interrupt_id;
+
+	unsigned int channel_id;
+	struct paintbox_irq *irq;
 	atomic_t completed_unread;
 	bool read_transfer;
 };
@@ -212,15 +248,16 @@ struct paintbox_dma {
  * One entry will be allocated for each processor on the IPU.
  *
  * Note that the processor id is stored with the paintbox_stp as a convenience
- * to avoid having to recovery the processor_id from the pb->stps array when a
+ * to avoid having to recover the processor_id from the pb->stps array when a
  * function only has the paintbox_stp object.
  */
 struct paintbox_stp {
 	struct list_head entry;
 	struct paintbox_debug debug;
 	struct paintbox_session *session;
+	struct paintbox_irq *irq;
 	unsigned int stp_id;
-	unsigned int inst_mem_size_in_words;
+	unsigned int inst_mem_size_in_instructions;
 	unsigned int scalar_mem_size_in_words;
 	unsigned int const_mem_size_in_words;
 	unsigned int vector_mem_size_in_words;
@@ -250,7 +287,7 @@ struct paintbox_lb {
  * One entry will be allocated for each pool on the IPU.
  *
  * Note that the pool id is stored with the paintbox_lbp as a convenience to
- * avoid having to recovery the pool id from the pb->lbps array when a
+ * avoid having to recover the pool id from the pb->lbps array when a
  * function only has the paintbox_lbp object.
  */
 struct paintbox_lbp {
@@ -273,6 +310,11 @@ struct paintbox_data {
 	 * handlers.
 	 */
 	spinlock_t irq_lock;
+
+	/* stp_lock is used to protect access to the STP registers betweeen
+	 * threads and the STP interrupt handler.
+	 */
+	spinlock_t stp_lock;
 	void __iomem *reg_base;
 	void __iomem *lbp_base;
 	void __iomem *stp_base;
@@ -294,11 +336,6 @@ struct paintbox_data {
 	size_t vdbg_log_len;
 	char *vdbg_log;
 };
-
-/* The caller to this function must hold pb->lock */
-struct paintbox_irq *get_interrupt(struct paintbox_data *pb,
-		struct paintbox_session *session, unsigned int interrupt_id,
-		int *err);
 
 static inline uint8_t lbp_id_to_noc_id(uint8_t lbp_id)
 {

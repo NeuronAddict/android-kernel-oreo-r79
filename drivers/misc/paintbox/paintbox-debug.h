@@ -32,6 +32,11 @@ int dump_ipu_register(struct paintbox_data *pb, void __iomem *group_base,
 		uint32_t reg_offset, const char *reg_name, char *buf,
 		int *written, size_t len);
 
+int dump_ipu_register_with_value(struct paintbox_data *pb,
+		void __iomem *group_base, uint32_t reg_offset,
+		uint32_t reg_value, const char *reg_name, char *buf,
+		int *written, size_t len);
+
 void paintbox_debug_create_entry(struct paintbox_data *pb,
 		struct paintbox_debug *debug, struct dentry *debug_root,
 		const char *name, unsigned int resource_id,

@@ -17,6 +17,18 @@
 #define __PAINTBOX_STP_SRAM_H__
 
 #include "paintbox-common.h"
+#include "paintbox-sram.h"
+
+int create_scalar_sram_config(struct paintbox_sram_config *sram_config,
+		unsigned int stp_id, enum sram_target_type sram_target,
+		bool swap_data);
+
+int stp_sram_write_word(struct paintbox_data *pb,
+		struct paintbox_sram_config *config, const uint8_t *buf,
+		uint32_t ram_ctrl_mask);
+int stp_sram_read_word(struct paintbox_data *pb,
+		struct paintbox_sram_config *config, uint8_t *buf,
+		uint32_t ram_ctrl_mask);
 
 int write_stp_scalar_sram_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);

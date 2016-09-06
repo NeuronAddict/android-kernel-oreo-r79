@@ -78,6 +78,18 @@ int dump_ipu_register(struct paintbox_data *pb, void __iomem *group_base,
 			readl(group_base + reg_offset));
 }
 
+int dump_ipu_register_with_value(struct paintbox_data *pb,
+		void __iomem *group_base, uint32_t reg_offset,
+		uint32_t reg_value, const char *reg_name, char *buf,
+		int *written, size_t len)
+{
+	return dump_ipu_printf(pb, buf, written, len, "0x%04lx: %-*s0x%08x\n",
+			group_base - pb->reg_base + reg_offset,
+			REG_VALUE_COLUMN_NUMBER - REG_NAME_COLUMN_NUMBER,
+			reg_name ? reg_name : REG_UNUSED, reg_value);
+}
+
+
 #ifdef CONFIG_DEBUG_FS
 static int debug_regs_show(struct seq_file *s, void *unused)
 {

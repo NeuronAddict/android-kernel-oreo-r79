@@ -45,6 +45,7 @@ struct ipu_capabilities {
 	uint32_t version_major;
 	uint32_t version_minor;
 	uint32_t version_build;
+	uint32_t hardware_id;
 	uint32_t max_fb_rows;
 	uint32_t num_stps;
 	uint32_t num_interrupts;
@@ -57,11 +58,18 @@ struct ipu_capabilities {
 	bool is_fpga;
 };
 
+enum sram_target_type {
+	SRAM_TARGET_LBP = 0,
+	SRAM_TARGET_STP_INSTRUCTION_RAM,
+	SRAM_TARGET_STP_CONSTANT_RAM,
+	SRAM_TARGET_STP_SCALAR_RAM,
+	SRAM_TARGET_STP_VECTOR_RAM
+};
+
 enum dma_transfer_type {
 	DMA_DRAM_TO_LBP = 0,
 	DMA_DRAM_TO_STP,
 	DMA_LBP_TO_DRAM,
-	DMA_STP_TO_DRAM,
 	DMA_MIPI_TO_LBP,
 	DMA_LBP_TO_MIPI,
 	DMA_SRC_DST_PAIRS
@@ -79,6 +87,13 @@ struct dma_lbp_config {
 	int32_t start_x_pixels;
 	int32_t start_y_pixels;
 	bool gather;
+};
+
+struct dma_stp_config {
+	enum sram_target_type sram_target;
+	uint32_t stp_id;
+	uint32_t sram_addr;
+	bool include_halo;
 };
 
 enum dma_rgba_format {
@@ -108,20 +123,21 @@ struct dma_transfer_config {
 	enum dma_transfer_type transfer_type;
 	struct dma_image_config img;
 	union {
-		/* TODO(ahampson):  Add STP config support. b/28341158 */
 		/* MIPI transfers do not require any additional settings */
+		struct dma_stp_config stp;
 		struct dma_dram_config dram;
 		struct dma_lbp_config lbp;
 	} src;
 	union {
-		/* TODO(ahampson):  Add STP config support. b/28341158 */
 		/* MIPI transfers do not require any additional settings */
+		struct dma_stp_config stp;
 		struct dma_dram_config dram;
 		struct dma_lbp_config lbp;
 	} dst;
 	uint32_t sheet_width;
 	uint32_t sheet_height;
 	uint32_t stripe_height;
+	uint32_t noc_outstanding;
 };
 
 /* TODO(ahampson):  We can remove this when the IOMMU based transfers are
@@ -163,9 +179,9 @@ struct line_buffer_reset {
 	uint32_t lb_id;
 };
 
-struct interrupt_config {
-	uint8_t channel_id;
-	uint8_t interrupt_id;
+struct dma_interrupt_config {
+	uint32_t channel_id;
+	uint32_t interrupt_id;
 };
 
 struct interrupt_wait {
@@ -184,17 +200,18 @@ struct stp_program_state {
 	uint8_t stp_id;
 };
 
-#define STP_RAM_TARGET_INSTRUCTION_RAM 0
-#define STP_RAM_TARGET_CONSTANT_RAM    1
-#define STP_RAM_TARGET_SCALAR_RAM      2
-#define STP_RAM_TARGET_VECTOR_RAM      3
+struct stp_interrupt_config {
+	uint32_t stp_id;
+	uint32_t interrupt_id;
+};
 
 struct ipu_sram_write {
 	const void __user *buf;
 	size_t len_bytes;
 	uint32_t sram_byte_addr;
 	uint32_t id;
-	uint32_t ram_target;
+	enum sram_target_type sram_target;
+	bool swap_data;
 };
 
 struct ipu_sram_read {
@@ -202,7 +219,8 @@ struct ipu_sram_read {
 	size_t len_bytes;
 	uint32_t sram_byte_addr;
 	uint32_t id;
-	uint32_t ram_target;
+	enum sram_target_type sram_target;
+	bool swap_data;
 };
 
 struct sram_vector_coordinate_write {
@@ -241,9 +259,11 @@ struct mipi_input_stream_setup {
 	uint32_t seg_start;
 	uint32_t seg_end;
 	uint32_t seg_words_per_row;
+	uint32_t segs_per_row;
 };
 
 struct mipi_output_stream_setup {
+	uint32_t seg_end;
 	uint32_t segs_per_row;
 };
 
@@ -257,6 +277,7 @@ struct mipi_stream_setup {
 	uint32_t unpacked_data_type;
 	uint32_t img_width;
 	uint32_t img_height;
+	uint32_t stripe_height;
 	union {
 		struct mipi_input_stream_setup input;
 		struct mipi_output_stream_setup output;
@@ -264,9 +285,9 @@ struct mipi_stream_setup {
 	bool enable_on_setup;
 };
 
-struct mipi_interrupt_wait {
+struct mipi_interrupt_config {
 	uint32_t stream_id;
-	int64_t timeout_ns;
+	uint32_t interrupt_id;
 };
 
 /* Ioctl interface to IPU driver
@@ -286,7 +307,7 @@ struct mipi_interrupt_wait {
 #define PB_ALLOCATE_DMA_CHANNEL      _IOW('p', 2, unsigned int)
 #define PB_SETUP_DMA_TRANSFER        _IOW('q', 3, struct dma_transfer_config)
 #define PB_START_DMA_TRANSFER        _IOW('p', 4, unsigned int)
-#define PB_BIND_DMA_INTERRUPT        _IOW('p', 5, struct interrupt_config)
+#define PB_BIND_DMA_INTERRUPT        _IOW('p', 5, struct dma_interrupt_config)
 #define PB_UNBIND_DMA_INTERRUPT      _IOW('p', 6, unsigned int)
 #define PB_RELEASE_DMA_CHANNEL       _IOW('p', 7, unsigned int)
 #define PB_ALLOCATE_INTERRUPT        _IOW('p', 8, unsigned int)
@@ -336,21 +357,28 @@ struct mipi_interrupt_wait {
 #define PB_CLEANUP_MIPI_IN_STREAM    _IOW('p', 42, unsigned int)
 #define PB_ENABLE_MIPI_IN_INTERRUPT  _IOW('p', 43, unsigned int)
 #define PB_DISABLE_MIPI_IN_INTERRUPT _IOW('p', 44, unsigned int)
-#define PB_WAIT_FOR_MIPI_IN_INTERRUPT _IOW('p', 45, struct mipi_interrupt_wait)
-#define PB_ALLOCATE_MIPI_OUT_STREAM  _IOW('p', 46, unsigned int)
-#define PB_RELEASE_MIPI_OUT_STREAM   _IOW('p', 47, unsigned int)
-#define PB_SETUP_MIPI_OUT_STREAM     _IOW('p', 48, struct mipi_stream_setup)
-#define PB_ENABLE_MIPI_OUT_STREAM    _IOW('p', 49, unsigned int)
-#define PB_DISABLE_MIPI_OUT_STREAM   _IOW('p', 50, unsigned int)
-#define PB_RESET_MIPI_OUT_STREAM     _IOW('p', 51, unsigned int)
-#define PB_CLEANUP_MIPI_OUT_STREAM   _IOW('p', 52, unsigned int)
-#define PB_ENABLE_MIPI_OUT_INTERRUPT _IOW('p', 53, unsigned int)
-#define PB_DISABLE_MIPI_OUT_INTERRUPT _IOW('p', 54, unsigned int)
-#define PB_WAIT_FOR_MIPI_OUT_INTERRUPT _IOW('p', 55, struct mipi_interrupt_wait)
+#define PB_ALLOCATE_MIPI_OUT_STREAM  _IOW('p', 45, unsigned int)
+#define PB_RELEASE_MIPI_OUT_STREAM   _IOW('p', 46, unsigned int)
+#define PB_SETUP_MIPI_OUT_STREAM     _IOW('p', 47, struct mipi_stream_setup)
+#define PB_ENABLE_MIPI_OUT_STREAM    _IOW('p', 48, unsigned int)
+#define PB_DISABLE_MIPI_OUT_STREAM   _IOW('p', 49, unsigned int)
+#define PB_RESET_MIPI_OUT_STREAM     _IOW('p', 50, unsigned int)
+#define PB_CLEANUP_MIPI_OUT_STREAM   _IOW('p', 51, unsigned int)
+#define PB_ENABLE_MIPI_OUT_INTERRUPT _IOW('p', 52, unsigned int)
+#define PB_DISABLE_MIPI_OUT_INTERRUPT _IOW('p', 53, unsigned int)
+#define PB_BIND_MIPI_IN_INTERRUPT    _IOW('p', 54, struct mipi_interrupt_config)
+#define PB_UNBIND_MIPI_IN_INTERRUPT  _IOW('p', 55, unsigned int)
+#define PB_BIND_MIPI_OUT_INTERRUPT   _IOW('p', 56, struct mipi_interrupt_config)
+#define PB_UNBIND_MIPI_OUT_INTERRUPT _IOW('p', 57, unsigned int)
 
 /* Returns the number of transfers that have completed and are ready to be
  * read back into the userspace buffer.
  */
-#define PB_GET_COMPLETED_UNREAD_COUNT _IOW('p', 56, unsigned int)
+#define PB_GET_COMPLETED_UNREAD_COUNT _IOW('p', 58, unsigned int)
+#define PB_INIT_PROCESSOR             _IOW('p', 59, unsigned int)
+#define PB_ENABLE_STP_INTERRUPT       _IOW('p', 60, unsigned int)
+#define PB_DISABLE_STP_INTERRUPT      _IOW('p', 61, unsigned int)
+#define PB_BIND_STP_INTERRUPT         _IOW('p', 62, struct stp_interrupt_config)
+#define PB_UNBIND_STP_INTERRUPT       _IOW('p', 63, unsigned int)
 
 #endif /* __PAINTBOX_H__ */

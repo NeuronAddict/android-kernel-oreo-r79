@@ -14,6 +14,7 @@
  */
 
 #include <linux/debugfs.h>
+#include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/dma-mapping.h>
 #include <linux/err.h>
@@ -474,16 +475,6 @@ static int validate_lb_config(struct paintbox_data *pb,
 		return -EINVAL;
 	}
 
-	/* TODO(ahampson): this will need to be reevaluated when sliding buffer
-	 * support is added.
-	 */
-	if (lb_config->fb_rows == 0) {
-		dev_err(&pb->pdev->dev, "%s: lb%u.%u: invalid fb_rows, %u\n",
-				__func__, lb_config->lb_pool_id,
-				lb_config->lb_id, lb_config->fb_rows);
-		return -EINVAL;
-	}
-
 	if (lb_config->x_offset_pixels > LB_OFFSET_MAX ||
 			lb_config->x_offset_pixels < LB_OFFSET_MIN) {
 		dev_err(&pb->pdev->dev,
@@ -504,12 +495,12 @@ static int validate_lb_config(struct paintbox_data *pb,
 		return -ERANGE;
 	}
 
-	if (lb_config->chan_offset_pixels > MAX_CHAN_OFFSET) {
+	if (lb_config->chan_offset_pixels > LB_OFFSET_CHAN_MAX) {
 		dev_err(&pb->pdev->dev,
 				"%s: lb%u.%u: invalid CHAN offset, %u > %u\n",
 				__func__, lb_config->lb_pool_id,
 				lb_config->lb_id, lb_config->chan_offset_pixels,
-				MAX_CHAN_OFFSET);
+				LB_OFFSET_CHAN_MAX);
 		return -EINVAL;
 	}
 
@@ -643,6 +634,10 @@ void release_lbp(struct paintbox_data *pb,
 {
 	disable_stp_access_to_lbp(pb, session, lbp);
 
+	/* Disable all line buffers within the pool. */
+	writel(lbp->pool_id, pb->lbp_base + LBP_SEL);
+	writel(0, pb->lbp_base + LBP_CTRL_L);
+
 	list_del(&lbp->entry);
 	lbp->session = NULL;
 }
@@ -698,6 +693,47 @@ int release_lbp_ioctl(struct paintbox_data *pb,
 	mutex_unlock(&pb->lock);
 
 	return ret;
+}
+
+static int write_l_param_register(struct paintbox_data *pb,
+		struct paintbox_lb *lb)
+{
+	unsigned int width_rounded, sb_cols_rounded;
+	uint32_t l_inc, l_width;
+
+	width_rounded = (lb->width_pixels + LB_BLOCK_TRANSFER_WIDTH - 1) /
+			LB_BLOCK_TRANSFER_WIDTH;
+	sb_cols_rounded =  (lb->sb_cols + LB_BLOCK_TRANSFER_HEIGHT - 1) /
+			LB_BLOCK_TRANSFER_HEIGHT;
+
+	/* Linear address increment.
+	 * (ROUND_UP4(img_width) / 4
+	 */
+	l_inc = width_rounded;
+	if (l_inc > LB_L_INC_MAX) {
+		dev_err(&pb->pdev->dev,
+				"%s: lbp%u lb%u: invalid l_inc valid %u "
+				"(max %u)\n", __func__, lb->lbp->pool_id,
+				lb->lb_id, l_inc, LB_L_INC_MAX);
+		return -EINVAL;
+	}
+
+	/* Capacity of the linear space in 256 words.
+	 * ROUND_UP4(img_width) / 4 + ROUND_UP4(sb_cols) / 4
+	 */
+	l_width = width_rounded + sb_cols_rounded;
+	if (l_width > LB_L_WIDTH_MAX) {
+		dev_err(&pb->pdev->dev,
+				"%s: lbp%u lb%u: invalid l_width valid %u "
+				"(max %u)\n", __func__, lb->lbp->pool_id,
+				lb->lb_id, l_width, LB_L_WIDTH_MAX);
+		return -EINVAL;
+	}
+
+	writel(l_inc | (l_width << LB_L_WIDTH_SHIFT), pb->lbp_base +
+			LB_L_PARAM);
+
+	return 0;
 }
 
 int setup_lb_ioctl(struct paintbox_data *pb,
@@ -757,6 +793,16 @@ int setup_lb_ioctl(struct paintbox_data *pb,
 	writel(lb_config.lb_pool_id | lb_config.lb_id << LBP_LB_SEL_SHIFT,
 			pb->lbp_base + LBP_SEL);
 
+	/* Disable the line buffer before configuring it in case there is an
+	 * active configuration.  Setting the ENA count to the line buffer id
+	 * will disable this line buffer and leave all the earlier ones
+	 * enabled.
+	 */
+	val = readl(pb->lbp_base + LBP_CTRL_L);
+	val &= ~LBP_LB_ENA_MASK;
+	val |= lb_config.lb_id;
+	writel(val, pb->lbp_base + LBP_CTRL_L);
+
 	reset_line_buffer(pb, lb);
 
 	writel(lb_config.fb_rows << LB_FB_ROWS_SHIFT | lb_config.num_channels <<
@@ -798,14 +844,20 @@ int setup_lb_ioctl(struct paintbox_data *pb,
 			LB_SB_BASE_ADDR_SHIFT;
 	writel(val, pb->lbp_base + LB_BASE);
 
-	/* Compute the parameters for the LB_L_PARAM */
-	val = (lb->fb_rows / LB_BLOCK_TRANSFER_HEIGHT) *
-			(lb->width_pixels / LB_BLOCK_TRANSFER_WIDTH);
-	val |= ((lb->fb_rows / LB_BLOCK_TRANSFER_HEIGHT) *
-			(lb->width_pixels / LB_BLOCK_TRANSFER_WIDTH) +
-			(lb->sb_cols / LB_BLOCK_TRANSFER_HEIGHT)) <<
-			LB_L_WIDTH_SHIFT;
-	writel(val, pb->lbp_base + LB_L_PARAM);
+	/* LB_L_PARAM L_INC and L_WIDTH are only set in sliding buffer mode. */
+	if (lb->sb_rows > 0 || lb->sb_cols > 0) {
+		ret = write_l_param_register(pb, lb);
+		if (ret < 0) {
+			mutex_unlock(&pb->lock);
+			return ret;
+		}
+	} else {
+		/* In full buffer mode the L_INC field is set to zero and the
+		 * L_WIDTH field is set to the maximum value.
+		 */
+		writel(LB_L_WIDTH_MAX << LB_L_WIDTH_SHIFT, pb->lbp_base +
+				LB_L_PARAM);
+	}
 
 	/* Enable the line buffer. */
 	val = readl(pb->lbp_base + LBP_CTRL_L);
@@ -831,13 +883,76 @@ int setup_lb_ioctl(struct paintbox_data *pb,
 	return 0;
 }
 
+static int lbp_sram_write_word(struct paintbox_data *pb,
+		struct paintbox_sram_config *sram_config, const uint8_t *buf,
+		uint32_t ram_ctrl_addr)
+{
+	unsigned int attempts = 0;
+
+	writel(sram_config->core_id | LBP_LBP_SEL_MASK, pb->lbp_base + LBP_SEL);
+
+	write_ram_data_registers(pb, buf, pb->lbp_base + LBP_RAM_DATA0,
+			LBP_DATA_REG_COUNT);
+
+	writel(LBP_RAM_RUN | LBP_RAM_WRITE | ram_ctrl_addr, pb->lbp_base +
+			LBP_RAM_CTRL);
+
+	while (readl(pb->lbp_base + LBP_RAM_CTRL) & LBP_RAM_RUN) {
+		if (++attempts >= MAX_MEMORY_ACCESS_ATTEMPTS) {
+			dev_err(&pb->pdev->dev, "%s: write timeout\n",
+					__func__);
+			return -ETIMEDOUT;
+		}
+
+		usleep_range(MIN_RAM_ACCESS_SLEEP, MAX_RAM_ACCESS_SLEEP);
+	}
+
+	return 0;
+}
+
+static int lbp_sram_read_word(struct paintbox_data *pb,
+		struct paintbox_sram_config *sram_config, uint8_t *buf,
+		uint32_t ram_ctrl_addr)
+{
+	unsigned int attempts = 0;
+
+	writel(sram_config->core_id | LBP_LBP_SEL_MASK, pb->lbp_base + LBP_SEL);
+
+	writel(LBP_RAM_RUN | ram_ctrl_addr, pb->lbp_base + LBP_RAM_CTRL);
+
+	while (readl(pb->lbp_base + LBP_RAM_CTRL) & LBP_RAM_RUN) {
+		if (++attempts >= MAX_MEMORY_ACCESS_ATTEMPTS) {
+			dev_err(&pb->pdev->dev, "%s: read timeout\n", __func__);
+			return -ETIMEDOUT;
+		}
+
+		usleep_range(MIN_RAM_ACCESS_SLEEP, MAX_RAM_ACCESS_SLEEP);
+	}
+
+	read_ram_data_registers(pb, buf, pb->lbp_base + LBP_RAM_DATA0,
+			LBP_DATA_REG_COUNT);
+
+	return 0;
+}
+
+static void create_lbp_sram_config(struct paintbox_sram_config *sram_config,
+		unsigned int lbp_id)
+{
+	sram_config->core_id = lbp_id;
+	sram_config->ram_ctrl_target = 0;
+	sram_config->ram_data_mode = RAM_DATA_MODE_NORMAL;
+	sram_config->sram_word_bytes = LBP_DATA_REG_COUNT * IPU_REG_WIDTH;
+	sram_config->write_word = &lbp_sram_write_word;
+	sram_config->read_word = &lbp_sram_read_word;
+}
+
 int write_lbp_memory_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg)
 {
 	struct ipu_sram_write __user *user_req;
 	struct ipu_sram_write req;
+	struct paintbox_sram_config sram_config;
 	struct paintbox_lbp *lbp;
-	uint32_t ram_ctrl_mask = 0;
 	int ret;
 
 	user_req = (struct ipu_sram_write __user *)arg;
@@ -851,11 +966,10 @@ int write_lbp_memory_ioctl(struct paintbox_data *pb,
 		return ret;
 	}
 
-	writel(req.id | LBP_LBP_SEL_MASK, pb->lbp_base + LBP_SEL);
+	create_lbp_sram_config(&sram_config, req.id);
 
-	ret = sram_write_user_buffer(pb, req.buf, req.sram_byte_addr,
-			req.len_bytes, ram_ctrl_mask,
-			pb->lbp_base + LBP_RAM_CTRL, LBP_DATA_REG_COUNT);
+	ret = sram_write_user_buffer(pb, &sram_config, req.sram_byte_addr,
+			req.buf, req.len_bytes);
 	if (ret < 0)
 		dev_err(&pb->pdev->dev,
 				"%s: lbp%u: write error addr: 0x%04x "
@@ -873,8 +987,8 @@ int read_lbp_memory_ioctl(struct paintbox_data *pb,
 {
 	struct ipu_sram_read __user *user_req;
 	struct ipu_sram_read req;
+	struct paintbox_sram_config sram_config;
 	struct paintbox_lbp *lbp;
-	uint32_t ram_ctrl_mask = 0;
 	int ret;
 
 	user_req = (struct ipu_sram_read __user *)arg;
@@ -888,11 +1002,10 @@ int read_lbp_memory_ioctl(struct paintbox_data *pb,
 		return ret;
 	}
 
-	writel(req.id | LBP_LBP_SEL_MASK, pb->lbp_base + LBP_SEL);
+	create_lbp_sram_config(&sram_config, req.id);
 
-	ret = sram_read_user_buffer(pb, req.buf, req.sram_byte_addr,
-			req.len_bytes, ram_ctrl_mask,
-			pb->lbp_base + LBP_RAM_CTRL, LBP_DATA_REG_COUNT);
+	ret = sram_read_user_buffer(pb, &sram_config, req.sram_byte_addr,
+			req.buf, req.len_bytes);
 	if (ret < 0)
 		dev_err(&pb->pdev->dev,
 				"%s: lbp%u: read error addr: 0x%04x "

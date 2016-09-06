@@ -13,21 +13,18 @@
  * GNU General Public License for more details.
  */
 
-#include <linux/completion.h>
-#include <linux/debugfs.h>
-#include <linux/dma-mapping.h>
 #include <linux/interrupt.h>
 #include <linux/kernel.h>
 #include <linux/paintbox.h>
-#include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
-#include <linux/version.h>
 
 #include "paintbox-debug.h"
 #include "paintbox-io.h"
+#include "paintbox-irq.h"
 #include "paintbox-mipi.h"
+#include "paintbox-mipi-debug.h"
 #include "paintbox-regs.h"
 
 
@@ -69,7 +66,8 @@ static int validate_mipi_output_stream(struct paintbox_data *pb,
 	return 0;
 }
 
-static struct paintbox_mipi_stream *mipi_stream_lock(struct paintbox_data *pb,
+/* The caller to this function must hold pb->lock */
+struct paintbox_mipi_stream *get_mipi_stream(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned int stream_id,
 		bool is_input, int *err)
 {
@@ -88,7 +86,23 @@ static struct paintbox_mipi_stream *mipi_stream_lock(struct paintbox_data *pb,
 		return NULL;
 	}
 
+	*err = 0;
+	return stream;
+}
+
+static struct paintbox_mipi_stream *mipi_stream_lock(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned int stream_id,
+		bool is_input, int *err)
+{
+	struct paintbox_mipi_stream *stream;
+
 	mutex_lock(&pb->lock);
+
+	stream = get_mipi_stream(pb, session, stream_id, is_input, err);
+	if (!stream) {
+		mutex_unlock(&pb->lock);
+		return NULL;
+	}
 
 	io_disable_mipi_interrupts(pb);
 
@@ -178,11 +192,6 @@ void release_mipi_stream(struct paintbox_data *pb,
 {
 	writel(0, pb->io_ipu.ipu_base + stream->ctrl_offset);
 
-	if (stream->wait_count > 0) {
-		complete_all(&stream->completion);
-		stream->wait_count = 0;
-	}
-
 	list_del(&stream->entry);
 	stream->session = NULL;
 }
@@ -199,355 +208,14 @@ int release_mipi_stream_ioctl(struct paintbox_data *pb,
 	if (ret < 0)
 		return ret;
 
+	unbind_mipi_interrupt(pb, session, stream);
+
 	release_mipi_stream(pb, session, stream);
 
 	mipi_stream_unlock(pb, stream);
 
 	return 0;
 }
-
-#ifdef CONFIG_DEBUG_FS
-static uint32_t mipi_reg_entry_read(struct paintbox_debug_reg_entry *reg_entry)
-{
-	struct paintbox_debug *debug = reg_entry->debug;
-	struct paintbox_mipi_stream *stream = container_of(debug,
-			struct paintbox_mipi_stream, debug);
-	struct paintbox_data *pb = debug->pb;
-	uint32_t val;
-
-	mutex_lock(&pb->lock);
-
-	if (stream->is_input) {
-		writel(stream->stream_id, pb->io_ipu.ipu_base + MPI_STRM_SEL);
-		val = readl(pb->io_ipu.ipu_base + reg_entry->reg_offset);
-	} else {
-		writel(stream->stream_id, pb->io_ipu.ipu_base + MPO_STRM_SEL);
-		val = readl(pb->io_ipu.ipu_base + MPO_COMMON_BLOCK_START +
-				reg_entry->reg_offset);
-	}
-
-	mutex_unlock(&pb->lock);
-
-	return val;
-}
-
-static void mipi_reg_entry_write(struct paintbox_debug_reg_entry *reg_entry,
-		uint32_t val)
-{
-	struct paintbox_debug *debug = reg_entry->debug;
-	struct paintbox_mipi_stream *stream = container_of(debug,
-			struct paintbox_mipi_stream, debug);
-	struct paintbox_data *pb = debug->pb;
-
-	mutex_lock(&pb->lock);
-
-	if (stream->is_input) {
-		writel(stream->stream_id, pb->io_ipu.ipu_base + MPI_STRM_SEL);
-		writel(val, pb->io_ipu.ipu_base + reg_entry->reg_offset);
-	} else {
-		writel(stream->stream_id, pb->io_ipu.ipu_base + MPO_STRM_SEL);
-		writel(val, pb->io_ipu.ipu_base + MPO_COMMON_BLOCK_START +
-				reg_entry->reg_offset);
-	}
-
-	mutex_unlock(&pb->lock);
-}
-
-#endif
-
-#if defined(CONFIG_DEBUG_FS) || defined(VERBOSE_DEBUG)
-
-static const char *io_ipu_reg_names[IO_IPU_NUM_REGS] = {
-	REG_NAME_ENTRY(MPI_CAP),
-	REG_NAME_ENTRY(MPI_STRM_SEL),
-	REG_NAME_ENTRY(MPI_STRM_CTRL),
-	REG_NAME_ENTRY(MPI_STRM_CNFG0_L),
-	REG_NAME_ENTRY(MPI_STRM_CNFG0_H),
-	REG_NAME_ENTRY(MPI_STRM_CNFG1_L),
-	REG_NAME_ENTRY(MPI_STRM_CNFG1_H),
-	REG_NAME_ENTRY(MPI_STRM_CNFG0_L_RO),
-	REG_NAME_ENTRY(MPI_STRM_CNFG0_H_RO),
-	REG_NAME_ENTRY(MPI_STRM_CNFG1_L_RO),
-	REG_NAME_ENTRY(MPI_STRM_CNFG1_H_RO),
-	REG_NAME_ENTRY(MPO_CAP),
-	REG_NAME_ENTRY(MPO_STRM_SEL),
-	REG_NAME_ENTRY(MPO_STRM_CTRL),
-	REG_NAME_ENTRY(MPO_STRM_CNFG0_L),
-	REG_NAME_ENTRY(MPO_STRM_CNFG0_H),
-	REG_NAME_ENTRY(MPO_STRM_CNFG1),
-	REG_NAME_ENTRY(MPO_STRM_CNFG0_L_RO),
-	REG_NAME_ENTRY(MPO_STRM_CNFG0_H_RO),
-	REG_NAME_ENTRY(MPO_STRM_CNFG1_RO)
-};
-
-static inline int dump_io_ipu_reg(struct paintbox_data *pb, uint32_t reg_offset,
-		char *buf, int *written, size_t len)
-{
-	const char *reg_name = io_ipu_reg_names[REG_INDEX(reg_offset)];
-	return dump_ipu_register(pb, pb->io_ipu.ipu_base, reg_offset, reg_name,
-			buf, written, len);
-}
-
-static int dump_io_ipu_reg_verbose(struct paintbox_data *pb,
-		uint32_t reg_offset, char *buf, int *written, size_t len,
-		const char *format, ...)
-{
-	va_list args;
-	int ret;
-
-	ret = dump_io_ipu_reg(pb, reg_offset, buf, written, len);
-	if (ret < 0)
-		return ret;
-
-	va_start(args, format);
-
-	ret = dump_ipu_vprintf(pb, buf, written, len, format, args);
-
-	va_end(args);
-
-	return ret;
-}
-
-static int dump_io_ipu_strm_ctrl(struct paintbox_data *pb, uint32_t offset,
-		char *buf, int *written, size_t len)
-{
-	uint32_t val;
-
-	val = readl(pb->io_ipu.ipu_base + offset);
-	return dump_io_ipu_reg_verbose(pb, offset, buf, written, len,
-			"\tIMR %u IRQ %u RST %u CLEANUP %u EN %u\n",
-			!!(val & MPI_STRM_IMR), !!(val & MPI_STRM_IRQ),
-			!!(val & MPI_STRM_RST), !!(val & MPI_STRM_CLEANUP),
-			!!(val & MPI_STRM_EN));
-}
-
-static int dump_io_ipu_strm_cnfg0_high(struct paintbox_data *pb,
-		uint32_t offset, char *buf, int *written, size_t len)
-{
-	uint32_t val;
-
-	val = readl(pb->io_ipu.ipu_base + offset);
-	return dump_io_ipu_reg_verbose(pb, offset, buf, written, len,
-			"\tIMG_WIDTH %u IMG_HEIGHT %u\n",
-			val & MPI_IMG_WIDTH_MASK,
-			(val & MPI_IMG_HEIGHT_MASK) >> MPI_IMG_HEIGHT_SHIFT);
-}
-
-int dump_io_ipu_registers(struct paintbox_debug *debug, char *buf, size_t len)
-{
-	struct paintbox_data *pb = debug->pb;
-	int ret, written = 0;
-
-	ret = dump_io_ipu_reg_verbose(pb, MPI_CAP, buf, &written,
-			len, "\tMAX_STRM %u\n",
-			readl(pb->io_ipu.ipu_base + MPI_CAP) &
-			MPI_MAX_STRM_MASK);
-	if (ret < 0)
-		return ret;
-
-	ret = dump_io_ipu_reg(pb, MPI_STRM_SEL, buf, &written, len);
-	if (ret < 0)
-		return ret;
-
-	ret = dump_io_ipu_reg_verbose(pb, MPO_CAP, buf, &written,
-			len, "\tMAX_STRM %u\n",
-			readl(pb->io_ipu.ipu_base + MPO_CAP) &
-			MPO_MAX_STRM_MASK);
-	if (ret < 0)
-		return ret;
-
-	ret = dump_io_ipu_reg(pb, MPO_STRM_SEL, buf, &written, len);
-	if (ret < 0)
-		return ret;
-
-	return written;
-}
-
-int dump_mipi_input_stream_registers(struct paintbox_debug *debug, char *buf,
-		size_t len)
-{
-	struct paintbox_mipi_stream *stream = container_of(debug,
-			struct paintbox_mipi_stream, debug);
-	struct paintbox_data *pb = debug->pb;
-	int ret, written = 0;
-	uint32_t val;
-
-	writel(stream->stream_id, pb->io_ipu.ipu_base + MPI_STRM_SEL);
-
-	ret = dump_io_ipu_strm_ctrl(pb, MPI_STRM_CTRL, buf, &written, len);
-	if (ret < 0)
-		return ret;
-
-	val = readl(pb->io_ipu.ipu_base + MPI_STRM_CNFG0_L);
-	ret = dump_io_ipu_reg_verbose(pb, MPI_STRM_CNFG0_L, buf, &written, len,
-			"\tVC %u DT_IN %u DT_PROC %u STRP_HEIGHT %u\n",
-			val & MPI_VC_MASK,
-			(val & MPI_DT_IN_MASK) >> MPI_DT_IN_SHIFT,
-			(val & MPI_DT_PROC_MASK) >> MPI_DT_PROC_SHIFT,
-			(val & MPI_STRP_HEIGHT_MASK) >> MPI_STRP_HEIGHT_SHIFT);
-	if (ret < 0)
-		return ret;
-
-	ret = dump_io_ipu_strm_cnfg0_high(pb, MPI_STRM_CNFG0_H, buf, &written,
-			len);
-	if (ret < 0)
-		return ret;
-
-	val = readl(pb->io_ipu.ipu_base + MPI_STRM_CNFG1_L);
-	ret = dump_io_ipu_reg_verbose(pb, MPI_STRM_CNFG1_L, buf, &written, len,
-			"\tSEG_START %u SEG_END %u\n", val & MPI_SEG_START_MASK,
-			(val & MPI_SEG_END_MASK) >> MPI_SEG_END_SHIFT);
-	if (ret < 0)
-		return ret;
-
-	val = readl(pb->io_ipu.ipu_base + MPI_STRM_CNFG1_H);
-	ret = dump_io_ipu_reg_verbose(pb, MPI_STRM_CNFG1_H, buf, &written, len,
-			"\tSEGS_PER_ROW %u SEG_WORDS_PER_ROW %u\n",
-			val & MPI_SEGS_PER_ROW_MASK, (val &
-			MPI_SEG_WORDS_PER_ROW_MASK) >>
-			MPI_SEG_WORDS_PER_ROW_SHIFT );
-	if (ret < 0)
-		return ret;
-
-	val = readl(pb->io_ipu.ipu_base + MPI_STRM_CNFG0_L_RO);
-	ret = dump_io_ipu_reg_verbose(pb, MPI_STRM_CNFG0_L_RO, buf, &written,
-			len, "\tVC %u DT_IN %u DT_PROC %u\n", val & MPI_VC_MASK,
-			(val & MPI_DT_IN_MASK) >> MPI_DT_IN_SHIFT,
-			(val & MPI_DT_PROC_MASK) >> MPI_DT_PROC_SHIFT);
-	if (ret < 0)
-		return ret;
-
-	ret = dump_io_ipu_strm_cnfg0_high(pb, MPI_STRM_CNFG0_H_RO, buf,
-			&written, len);
-	if (ret < 0)
-		return ret;
-
-	val = readl(pb->io_ipu.ipu_base + MPI_STRM_CNFG1_L_RO);
-	ret = dump_io_ipu_reg_verbose(pb, MPI_STRM_CNFG1_L_RO, buf, &written,
-			len, "\tSEG_START %u SEG_END %u\n",
-			val & MPI_SEG_START_MASK,
-			(val & MPI_SEG_END_MASK) >> MPI_SEG_END_SHIFT);
-	if (ret < 0)
-		return ret;
-
-	val = readl(pb->io_ipu.ipu_base + MPI_STRM_CNFG1_H_RO);
-	ret = dump_io_ipu_reg_verbose(pb, MPI_STRM_CNFG1_H_RO, buf, &written,
-			len, "\tSEGS_PER_ROW %u SEG_WORDS_PER_ROW %u\n",
-			val & MPI_SEGS_PER_ROW_MASK, (val &
-			MPI_SEG_WORDS_PER_ROW_MASK) >>
-			MPI_SEG_WORDS_PER_ROW_SHIFT );
-	if (ret < 0)
-		return ret;
-
-	return written;
-}
-
-int dump_mipi_output_stream_registers(struct paintbox_debug *debug, char *buf,
-		size_t len)
-{
-	struct paintbox_mipi_stream *stream = container_of(debug,
-			struct paintbox_mipi_stream, debug);
-	struct paintbox_data *pb = debug->pb;
-	int ret, written = 0;
-	uint32_t val;
-
-	writel(stream->stream_id, pb->io_ipu.ipu_base + MPO_STRM_SEL);
-
-	ret = dump_io_ipu_strm_ctrl(pb, MPO_STRM_CTRL, buf, &written, len);
-	if (ret < 0)
-		return ret;
-
-	val = readl(pb->io_ipu.ipu_base + MPO_STRM_CNFG0_L);
-	ret = dump_io_ipu_reg_verbose(pb, MPO_STRM_CNFG0_L, buf, &written, len,
-			"\tVC %u DT_OUT %u DT_PROC %u STRP_HEIGHT %u\n",
-			val & MPO_VC_MASK,
-			(val & MPO_DT_OUT_MASK) >> MPO_DT_OUT_SHIFT,
-			(val & MPO_DT_PROC_MASK) >> MPO_DT_PROC_SHIFT,
-			(val & MPO_STRP_HEIGHT_MASK) >> MPO_STRP_HEIGHT_SHIFT);
-	if (ret < 0)
-		return ret;
-
-	ret = dump_io_ipu_strm_cnfg0_high(pb, MPO_STRM_CNFG0_H, buf, &written,
-			len);
-	if (ret < 0)
-		return ret;
-
-	val = readl(pb->io_ipu.ipu_base + MPO_STRM_CNFG1);
-	ret = dump_io_ipu_reg_verbose(pb, MPO_STRM_CNFG1, buf, &written, len,
-			"\tSEG_END %u SEGS_PER_ROW %u\n",
-			val & MPO_SEG_END_MASK, (val & MPO_SEGS_PER_ROW_MASK) >>
-			MPO_SEGS_PER_ROW_SHIFT);
-	if (ret < 0)
-		return ret;
-
-	val = readl(pb->io_ipu.ipu_base + MPO_STRM_CNFG0_L_RO);
-	ret = dump_io_ipu_reg_verbose(pb, MPO_STRM_CNFG0_L_RO, buf, &written,
-			len, "\tVC %u DT_OUT %u DT_PROC %u STRP_HEIGHT %u\n",
-			val & MPO_VC_MASK,
-			(val & MPO_DT_OUT_MASK) >> MPO_DT_OUT_SHIFT,
-			(val & MPO_DT_PROC_MASK) >> MPO_DT_PROC_SHIFT,
-			(val & MPO_STRP_HEIGHT_MASK) >> MPO_STRP_HEIGHT_SHIFT);
-
-	ret = dump_io_ipu_strm_cnfg0_high(pb, MPO_STRM_CNFG0_H, buf, &written,
-			len);
-	if (ret < 0)
-		return ret;
-
-	val = readl(pb->io_ipu.ipu_base + MPO_STRM_CNFG1_RO);
-	ret = dump_io_ipu_reg_verbose(pb, MPO_STRM_CNFG1_RO, buf, &written, len,
-			"\tSEG_END %u SEGS_PER_ROW %u\n",
-			val & MPO_SEG_END_MASK, (val & MPO_SEGS_PER_ROW_MASK) >>
-			MPO_SEGS_PER_ROW_SHIFT);
-	if (ret < 0)
-		return ret;
-
-	return written;
-}
-
-#endif
-
-#ifdef VERBOSE_DEBUG
-static void log_mipi_registers(struct paintbox_data *pb,
-		struct paintbox_mipi_stream *stream, const char *msg)
-{
-	int ret, written;
-
-	ret = snprintf(pb->vdbg_log, pb->vdbg_log_len, "mipi stream%u:\n",
-			stream->stream_id);
-	if (ret < 0)
-		goto err_exit;
-
-	written = ret;
-
-	if (stream->is_input)
-		ret = dump_mipi_input_stream_registers(
-				&pb->io_ipu.mipi_input_streams[
-						stream->stream_id],
-				pb->vdbg_log + written,
-				pb->vdbg_log_len - written);
-	else
-		ret = dump_mipi_output_stream_registers(
-				&pb->io_ipu.mipi_output_streams[
-						stream->stream_id],
-				pb->vdbg_log + written,
-				pb->vdbg_log_len - written);
-	if (ret < 0)
-		goto err_exit;
-
-	dev_vdbg(&pb->pdev->dev, "%s\n%s", msg, pb->vdbg_log);
-
-err_exit:
-	dev_err(&pb->pdev->dev, "%s: register log error, err = %d", __func__,
-			ret);
-}
-
-#define LOG_MIPI_REGISTERS(pb, stream)		\
-	log_mipi_output_registers(pb, stream, __func__)
-
-#else
-#define LOG_MIPI_REGISTERS(pb, stream)		\
-do { } while (0)
-#endif
 
 /* The caller to this function must hold pb->lock and with mipi interrupts
  * disabled.
@@ -594,6 +262,7 @@ int enable_mipi_stream_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg,
 		bool is_input)
 {
+	struct paintbox_mipi_interface *interface;
 	struct paintbox_mipi_stream *stream;
 	unsigned int stream_id = (unsigned int)arg;
 	int ret = 0;
@@ -601,6 +270,8 @@ int enable_mipi_stream_ioctl(struct paintbox_data *pb,
 	stream = mipi_stream_lock(pb, session, stream_id, is_input, &ret);
 	if (ret < 0)
 		return ret;
+
+	interface = stream->interface;
 
 	strm_ctrl_set(pb, stream, MPI_STRM_EN);
 
@@ -680,12 +351,21 @@ static int validate_mipi_stream_setup(struct paintbox_data *pb,
 		return -EINVAL;
 	}
 
+	if (setup->stripe_height > MPI_STRP_HEIGHT_MAX) {
+		dev_err(&pb->pdev->dev,
+				"%s: mipi %u: stripe height too large, %u > "
+				"%u\n", __func__, setup->stream_id,
+				setup->stripe_height, MPI_STRP_HEIGHT_MAX);
+		return -EINVAL;
+	}
+
 	dev_dbg(&pb->pdev->dev,
 			"\tvirtual channels: %u data type: %u data proc: %u\n",
 			setup->virtual_channel, setup->data_type,
 			setup->unpacked_data_type);
-	dev_dbg(&pb->pdev->dev, "\twidth: %u height: %u\n", setup->img_width,
-			setup->img_height);
+	dev_dbg(&pb->pdev->dev, "\twidth: %u height: %u stripe height: %u\n",
+			setup->img_width, setup->img_height,
+			setup->stripe_height);
 
 	return 0;
 }
@@ -726,13 +406,20 @@ static int validate_mipi_input_stream_setup(struct paintbox_data *pb,
 		return -EINVAL;
 	}
 
-	/* TODO(ahampson): Determine bounds checking for SEGS_PER_ROW and
-	 * and STRP_HEIGHT if these are to be passed in.
-	 */
+	if (setup->input.segs_per_row > MPI_SEGS_PER_ROW_MAX) {
+		dev_err(&pb->pdev->dev,
+				"%s: mipi in%u: segs per row too large, %u > %u"
+				"\n", __func__, setup->stream_id,
+				setup->input.segs_per_row,
+				MPI_SEGS_PER_ROW_MAX);
+		return -EINVAL;
+	}
 
 	dev_dbg(&pb->pdev->dev, "\tseg start %u, seg end %u, seg words per row "
-			"%u\n", setup->input.seg_start, setup->input.seg_end,
-			setup->input.seg_words_per_row);
+			"%u segs per row %u\n",
+			setup->input.seg_start, setup->input.seg_end,
+			setup->input.seg_words_per_row,
+			setup->input.segs_per_row);
 
 	return 0;
 }
@@ -747,6 +434,14 @@ static int validate_mipi_output_stream_setup(struct paintbox_data *pb,
 	ret = validate_mipi_stream_setup(pb, setup);
 	if (ret < 0)
 		return ret;
+
+	if (setup->output.seg_end > MPO_SEG_END_MAX) {
+		dev_err(&pb->pdev->dev,
+				"%s: mipi out%u: seg end too large, %u > %u\n",
+				__func__, setup->stream_id,
+				setup->output.seg_end, MPO_SEG_END_MAX);
+		return -EINVAL;
+	}
 
 	if (setup->output.segs_per_row > MPO_SEGS_PER_ROW_MAX) {
 		dev_err(&pb->pdev->dev,
@@ -778,22 +473,24 @@ int setup_mipi_input_stream(struct paintbox_data *pb,
 	val = setup->virtual_channel & MPI_VC_MASK;
 	val |= (setup->data_type & MPI_DT_IN_M) << MPI_DT_IN_SHIFT;
 	val |= (setup->unpacked_data_type & MPI_DT_PROC_M) << MPI_DT_PROC_SHIFT;
+	val |= (setup->stripe_height & MPI_STRP_HEIGHT_M) <<
+			MPI_STRP_HEIGHT_SHIFT;
 	writel(val, pb->io_ipu.ipu_base + MPI_STRM_CNFG0_L);
 
 	val = setup->img_width & MPI_IMG_WIDTH_MASK;
 	val |= (setup->img_height & MPI_IMG_HEIGHT_M) << MPI_IMG_HEIGHT_SHIFT;
 	writel(val, pb->io_ipu.ipu_base + MPI_STRM_CNFG0_H);
 
-	/* TODO(ahampson): Determine if SEGS_PER_ROW and STRP_HEIGHT should be
-	 * passed in or computed in the driver.
-	 */
-
 	val = setup->input.seg_start & MPI_SEG_START_MASK;
 	val |= (setup->input.seg_end & MPI_SEG_END_M) <<  MPI_SEG_END_SHIFT;
 	writel(val, pb->io_ipu.ipu_base + MPI_STRM_CNFG1_L);
 
-	writel(setup->input.seg_words_per_row & MPI_SEG_WORDS_PER_ROW_MASK,
-			pb->io_ipu.ipu_base + MPI_STRM_CNFG1_H);
+	val = setup->input.segs_per_row & MPI_SEGS_PER_ROW_MASK;
+	val |= (setup->input.seg_words_per_row & MPI_SEG_WORDS_PER_ROW_M) <<
+			MPI_SEG_WORDS_PER_ROW_SHIFT;
+	writel(val, pb->io_ipu.ipu_base + MPI_STRM_CNFG1_H);
+
+	LOG_MIPI_REGISTERS(pb, stream);
 
 	return 0;
 }
@@ -813,14 +510,20 @@ int setup_mipi_output_stream(struct paintbox_data *pb,
 	val = setup->virtual_channel & MPO_VC_MASK;
 	val |= (setup->data_type & MPO_DT_OUT_M) << MPO_DT_OUT_SHIFT;
 	val |= (setup->unpacked_data_type & MPO_DT_PROC_M) << MPO_DT_PROC_SHIFT;
+	val |= (setup->stripe_height & MPO_STRP_HEIGHT_M) <<
+			MPO_STRP_HEIGHT_SHIFT;
 	writel(val, pb->io_ipu.ipu_base + MPO_STRM_CNFG0_L);
 
 	val = setup->img_width & MPO_IMG_WIDTH_MASK;
 	val |= (setup->img_height & MPO_IMG_HEIGHT_M) << MPO_IMG_HEIGHT_SHIFT;
 	writel(val, pb->io_ipu.ipu_base + MPO_STRM_CNFG0_H);
 
-	writel(setup->output.segs_per_row & MPO_SEGS_PER_ROW_MASK,
-			pb->io_ipu.ipu_base + MPO_STRM_CNFG1);
+	val = setup->output.seg_end & MPO_SEG_END_MASK;
+	val |= (setup->output.segs_per_row & MPO_SEGS_PER_ROW_M) <<
+			MPO_SEGS_PER_ROW_SHIFT;
+	writel(val, pb->io_ipu.ipu_base + MPO_STRM_CNFG1);
+
+	LOG_MIPI_REGISTERS(pb, stream);
 
 	return 0;
 }
@@ -881,7 +584,7 @@ int reset_mipi_stream_ioctl(struct paintbox_data *pb,
 	if (ret < 0)
 		return ret;
 
-	strm_ctrl_toggle(pb, stream, MPI_STRM_RST);
+	strm_ctrl_toggle(pb, stream, is_input ? MPI_STRM_RST : MPO_STRM_RST);
 
 	stream->enabled = false;
 
@@ -905,7 +608,8 @@ int cleanup_mipi_stream_ioctl(struct paintbox_data *pb,
 	if (ret < 0)
 		return ret;
 
-	strm_ctrl_toggle(pb, stream, MPI_STRM_CLEANUP);
+	strm_ctrl_toggle(pb, stream, is_input ? MPI_STRM_CLEANUP :
+			MPO_STRM_CLEANUP);
 
 	stream->enabled = false;
 
@@ -929,16 +633,15 @@ int enable_mipi_interrupt_ioctl(struct paintbox_data *pb,
 	if (ret < 0)
 		return ret;
 
-	/* TODO(ahampson): This should be cleaned up when the QEMU kernel is
-	 * updated to 3.13 or greater.
-	 */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0)
-	INIT_COMPLETION(stream->completion);
-#else
-	reinit_completion(&stream->completion);
-#endif
-
-	strm_ctrl_set(pb, stream, MPI_STRM_IMR);
+	if (is_input) {
+		strm_ctrl_set(pb, stream, MPI_STRM_SOF_IMR | MPI_STRM_OVF_IMR);
+		io_enable_mipi_input_interface_interrupt(pb,
+				stream->interface->interface_id);
+	} else {
+		strm_ctrl_set(pb, stream, MPO_STRM_EOF_IMR);
+		io_enable_mipi_output_interface_interrupt(pb,
+				stream->interface->interface_id);
+	}
 
 	mipi_stream_unlock(pb, stream);
 
@@ -960,7 +663,15 @@ int disable_mipi_interrupt_ioctl(struct paintbox_data *pb,
 	if (ret < 0)
 		return ret;
 
-	strm_ctrl_clr(pb, stream, MPI_STRM_IMR);
+	if (is_input) {
+		strm_ctrl_clr(pb, stream, MPI_STRM_SOF_IMR | MPI_STRM_OVF_IMR);
+		io_disable_mipi_input_interface_interrupt(pb,
+				stream->interface->interface_id);
+	} else {
+		strm_ctrl_clr(pb, stream, MPO_STRM_EOF_IMR);
+		io_disable_mipi_output_interface_interrupt(pb,
+				stream->interface->interface_id);
+	}
 
 	dev_dbg(&pb->pdev->dev, "%s: mipi %s stream%u: disable interrupt\n",
 			__func__, is_input ? "input" : "output", stream_id);
@@ -970,112 +681,147 @@ int disable_mipi_interrupt_ioctl(struct paintbox_data *pb,
 	return 0;
 }
 
-int wait_for_mipi_interrupt_ioctl(struct paintbox_data *pb,
+int bind_mipi_interrupt_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg,
 		bool is_input)
 {
-	struct mipi_interrupt_wait __user *user_wait;
-	struct mipi_interrupt_wait wait;
+	struct mipi_interrupt_config __user *user_req;
+	struct mipi_interrupt_config req;
 	struct paintbox_mipi_stream *stream;
-	long err;
-	int wait_ret = 0, ret = 0;
+	int ret;
 
-	user_wait = (struct mipi_interrupt_wait __user *)arg;
-	if (copy_from_user(&wait, user_wait, sizeof(wait)))
+	user_req = (struct mipi_interrupt_config __user *)arg;
+	if (copy_from_user(&req, user_req, sizeof(req)))
 		return -EFAULT;
 
-	stream = mipi_stream_lock(pb, session, wait.stream_id, is_input, &ret);
-	if (ret < 0)
+	mutex_lock(&pb->lock);
+	stream = get_mipi_stream(pb, session, req.stream_id, is_input, &ret);
+	if (ret < 0) {
+		mutex_unlock(&pb->lock);
 		return ret;
-
-	stream->wait_count++;
-
-	mipi_stream_unlock(pb, stream);
-
-	if (wait.timeout_ns != INT_MAX) {
-		err = wait_for_completion_interruptible_timeout(
-				&stream->completion,
-				nsecs_to_jiffies64(wait.timeout_ns));
-		if (err == 0) {
-			dev_err(&pb->pdev->dev,
-					"%s: mipi %s stream%u: wait for "
-					"interrupt timeout\n", __func__,
-					is_input ? "input" : "output",
-					wait.stream_id);
-			wait_ret = -ETIMEDOUT;
-		}
-	} else {
-		wait_ret = wait_for_completion_interruptible(
-				&stream->completion);
 	}
 
-	stream = mipi_stream_lock(pb, session, wait.stream_id, is_input, &ret);
-	if (ret < 0)
-		return ret;
+	ret = bind_mipi_interrupt(pb, session, stream, req.interrupt_id,
+			is_input);
 
-	stream->wait_count--;
+	init_waiters(pb, stream->irq);
 
-	if (wait_ret >= 0)
-		wait_ret = stream->error;
+	mutex_unlock(&pb->lock);
 
-	mipi_stream_unlock(pb, stream);
-
-	return wait_ret;
+	return ret;
 }
 
-/* This function is called from an interrupt context.  */
+int unbind_mipi_interrupt_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg,
+		bool is_input)
+{
+	unsigned int stream_id = (unsigned int)arg;
+	struct paintbox_mipi_stream *stream;
+	int ret = 0;
+
+	mutex_lock(&pb->lock);
+	stream = get_mipi_stream(pb, session, stream_id, is_input, &ret);
+	if (ret < 0) {
+		mutex_unlock(&pb->lock);
+		return ret;
+	}
+
+	ret = unbind_mipi_interrupt(pb, session, stream);
+	if (ret < 0) {
+		dev_err(&pb->pdev->dev,
+				"%s: mipi stream%u: unable to unbind interrupt,"
+				" %d\n", __func__, stream_id, ret);
+		mutex_unlock(&pb->lock);
+		return ret;
+	}
+
+	dev_dbg(&pb->pdev->dev, "%s: mipi stream%u: unbind interrupt\n",
+			__func__, stream_id);
+
+	mutex_unlock(&pb->lock);
+
+	return 0;
+}
+
+/* This function is called from an interrupt context. */
 void mipi_report_completion(struct paintbox_data *pb,
 		struct paintbox_mipi_stream *stream, int err)
 {
-	stream->error = err;
-	complete_all(&stream->completion);
+	signal_waiters(stream->irq, err);
 }
 
 irqreturn_t paintbox_mipi_input_interrupt(struct paintbox_data *pb,
-		uint32_t stream_mask)
+		uint32_t interface_mask)
 {
-	unsigned int stream_id;
+	unsigned int interface_id, stream_index;
 
-	for (stream_id = 0; stream_id < pb->io_ipu.num_mipi_input_streams &&
-			stream_mask; stream_id++, stream_mask >>= 1) {
+	for (interface_id = 0;
+			interface_id < pb->io_ipu.num_mipi_input_interfaces &&
+			interface_mask; interface_id++, interface_mask >>= 1) {
+		struct paintbox_mipi_interface *interface;
 		struct paintbox_mipi_stream *stream;
 
-		if (!(stream_mask & 0x01))
+		if (!(interface_mask & 0x01))
 			continue;
 
-		stream = &pb->io_ipu.mipi_input_streams[stream_id];
+		interface = &pb->io_ipu.mipi_input_interfaces[interface_id];
 
-		writel(stream_id, pb->io_ipu.ipu_base + MPI_STRM_SEL);
+		for (stream_index = 0; stream_index < interface->num_streams;
+				stream_index++) {
+			uint32_t status;
 
-		strm_ctrl_clr(pb, stream, MPI_STRM_IRQ);
+			stream = interface->streams[stream_index];
 
-		stream->enabled = false;
+			writel(stream->stream_id, pb->io_ipu.ipu_base +
+					MPI_STRM_SEL);
 
-		mipi_report_completion(pb, stream, -EIO);
+			status = readl(pb->io_ipu.ipu_base + MPI_STRM_CTRL);
+			writel(status & ~(MPI_STRM_SOF_ISR | MPI_STRM_OVF_ISR),
+					pb->io_ipu.ipu_base + MPI_STRM_CTRL);
+
+			if (status & MPI_STRM_OVF_ISR)
+				mipi_report_completion(pb, stream, -EIO);
+			else if (status & MPI_STRM_SOF_ISR)
+				mipi_report_completion(pb, stream, 0);
+		}
 	}
 
 	return IRQ_HANDLED;
 }
 
 irqreturn_t paintbox_mipi_output_interrupt(struct paintbox_data *pb,
-		uint32_t stream_mask)
+		uint32_t interface_mask)
 {
-	unsigned int stream_id;
+	unsigned int interface_id, stream_index;
 
-	for (stream_id = 0; stream_id < pb->io_ipu.num_mipi_output_streams &&
-			stream_mask; stream_id++, stream_mask >>= 1) {
+	for (interface_id = 0;
+			interface_id < pb->io_ipu.num_mipi_output_interfaces &&
+			interface_mask; interface_id++, interface_mask >>= 1) {
+		struct paintbox_mipi_interface *interface;
 		struct paintbox_mipi_stream *stream;
 
-		if (!(stream_mask & 0x01))
+		if (!(interface_mask & 0x01))
 			continue;
 
-		stream = &pb->io_ipu.mipi_output_streams[stream_id];
+		interface = &pb->io_ipu.mipi_output_interfaces[interface_id];
 
-		writel(stream_id, pb->io_ipu.ipu_base + MPI_STRM_SEL);
+		for (stream_index = 0; stream_index < interface->num_streams;
+				stream_index++) {
+			uint32_t status;
 
-		strm_ctrl_clr(pb, stream, MPI_STRM_IRQ);
+			stream = interface->streams[stream_index];
 
-		mipi_report_completion(pb, stream, 0);
+			writel(stream->stream_id, pb->io_ipu.ipu_base +
+					MPO_STRM_SEL);
+
+			status = readl(pb->io_ipu.ipu_base + MPO_STRM_CTRL);
+			if (status & MPO_STRM_EOF_ISR) {
+				writel(status & ~MPO_STRM_EOF_ISR,
+						pb->io_ipu.ipu_base +
+						MPO_STRM_CTRL);
+				mipi_report_completion(pb, stream, 0);
+			}
+		}
 	}
 
 	return IRQ_HANDLED;
@@ -1083,100 +829,157 @@ irqreturn_t paintbox_mipi_output_interrupt(struct paintbox_data *pb,
 
 static int paintbox_mipi_input_init(struct paintbox_data *pb)
 {
-	unsigned int stream_id;
+	struct paintbox_io_ipu *ipu = &pb->io_ipu;
+	unsigned int stream_id, interface_id;
+	unsigned int streams_per_interface = ipu->num_mipi_input_streams /
+			ipu->num_mipi_input_interfaces;
+	int ret;
 
-	pb->io_ipu.mipi_input_streams = kzalloc(
-			sizeof(struct paintbox_mipi_stream) *
-			pb->io_ipu.num_mipi_input_streams, GFP_KERNEL);
-	if (!pb->io_ipu.mipi_input_streams)
+	ipu->mipi_input_interfaces = kzalloc(sizeof(
+			struct paintbox_mipi_interface) *
+			ipu->num_mipi_input_interfaces, GFP_KERNEL);
+	if (!ipu->mipi_input_interfaces)
 		return -ENOMEM;
 
-	/* Store stream id with object as a convenience to avoid doing a lookup
-	 * later on.
-	 */
-	for (stream_id = 0; stream_id < pb->io_ipu.num_mipi_input_streams;
-			stream_id++) {
+	ipu->mipi_input_streams = kzalloc(sizeof(struct paintbox_mipi_stream) *
+			ipu->num_mipi_input_streams, GFP_KERNEL);
+	if (!ipu->mipi_input_streams) {
+		ret = -ENOMEM;
+		goto err_exit;
+	}
+
+	for (interface_id = 0; interface_id < ipu->num_mipi_input_interfaces;
+			interface_id++) {
+		struct paintbox_mipi_interface *interface =
+				&ipu->mipi_input_interfaces[interface_id];
+		interface->interface_id = interface_id;
+		interface->num_streams = streams_per_interface;
+
+		interface->streams = kcalloc(ipu->num_mipi_input_streams,
+				sizeof(struct paintbox_mipi_stream *),
+				GFP_KERNEL);
+		if (!interface->streams) {
+			ret = -ENOMEM;
+			goto err_exit;
+		}
+	}
+
+	for (stream_id = 0, interface_id = 0;
+			stream_id < ipu->num_mipi_input_streams; stream_id++) {
 		struct paintbox_mipi_stream *stream =
-				&pb->io_ipu.mipi_input_streams[stream_id];
+				&ipu->mipi_input_streams[stream_id];
+		struct paintbox_mipi_interface *interface =
+				&ipu->mipi_input_interfaces[interface_id];
+
 		stream->stream_id = stream_id;
+		stream->interface = interface;
 		stream->ctrl_offset = MPI_STRM_CTRL;
 		stream->select_offset = MPI_STRM_SEL;
 		stream->is_input = true;
-		init_completion(&stream->completion);
 
-#ifdef CONFIG_DEBUG_FS
-		paintbox_debug_create_entry(pb, &stream->debug,
-				pb->io_ipu.debug.debug_dir, "in",
-				stream_id, dump_mipi_input_stream_registers,
-				stream);
+		interface->streams[stream_id % streams_per_interface] = stream;
 
-		paintbox_debug_create_reg_entries(pb, &stream->debug,
-				io_ipu_reg_names,
-				MPI_COMMON_NUM_REGS + MPI_STRM_NUM_REGS,
-				mipi_reg_entry_write, mipi_reg_entry_read);
-#endif
+		paintbox_mipi_input_stream_debug_init(pb, stream);
+		interface_id = stream_id / streams_per_interface;
 	}
 
 	return 0;
+
+err_exit:
+	kfree(ipu->mipi_input_streams);
+	kfree(ipu->mipi_input_interfaces);
+
+	ipu->mipi_input_streams = NULL;
+	ipu->mipi_input_interfaces = NULL;
+
+	return ret;
 }
 
 static int paintbox_mipi_output_init(struct paintbox_data *pb)
 {
-	unsigned int stream_id;
+	struct paintbox_io_ipu *ipu = &pb->io_ipu;
+	unsigned int stream_id, interface_id;
+	unsigned int streams_per_interface = ipu->num_mipi_output_streams /
+			ipu->num_mipi_output_interfaces;
+	int ret;
 
-	pb->io_ipu.mipi_output_streams = kzalloc(sizeof(
-			struct paintbox_mipi_stream) *
-			pb->io_ipu.num_mipi_output_streams, GFP_KERNEL);
-	if (!pb->io_ipu.mipi_output_streams)
+	ipu->mipi_output_interfaces = kzalloc(sizeof(
+			struct paintbox_mipi_interface) *
+			ipu->num_mipi_output_interfaces, GFP_KERNEL);
+	if (!ipu->mipi_output_interfaces)
 		return -ENOMEM;
+
+	ipu->mipi_output_streams = kzalloc(sizeof(
+			struct paintbox_mipi_stream) *
+			ipu->num_mipi_output_streams, GFP_KERNEL);
+	if (!ipu->mipi_output_streams) {
+		ret = -ENOMEM;
+		goto err_exit;
+	}
+
+	for (interface_id = 0; interface_id < ipu->num_mipi_output_interfaces;
+			interface_id++) {
+		struct paintbox_mipi_interface *interface =
+				&ipu->mipi_output_interfaces[interface_id];
+		interface->interface_id = interface_id;
+		interface->num_streams = streams_per_interface;
+
+		interface->streams = kcalloc(ipu->num_mipi_output_streams,
+				sizeof(struct paintbox_mipi_stream *),
+				GFP_KERNEL);
+		if (!interface->streams) {
+			ret = -ENOMEM;
+			goto err_exit;
+		}
+	}
 
 	/* Store stream id with object as a convenience to avoid doing a lookup
 	 * later on.
 	 */
-	for (stream_id = 0; stream_id < pb->io_ipu.num_mipi_output_streams;
-			stream_id++) {
+	for (stream_id = 0, interface_id = 0;
+			stream_id < ipu->num_mipi_output_streams; stream_id++) {
 		struct paintbox_mipi_stream *stream =
-				&pb->io_ipu.mipi_output_streams[stream_id];
+				&ipu->mipi_output_streams[stream_id];
+		struct paintbox_mipi_interface *interface =
+				&ipu->mipi_output_interfaces[interface_id];
+
 		stream->stream_id = stream_id;
+		stream->interface = &ipu->mipi_output_interfaces[interface_id];
 		stream->ctrl_offset = MPO_STRM_CTRL;
 		stream->select_offset = MPO_STRM_SEL;
 		stream->is_input = false;
-		init_completion(&stream->completion);
 
-#ifdef CONFIG_DEBUG_FS
-		paintbox_debug_create_entry(pb, &stream->debug,
-				pb->io_ipu.debug.debug_dir, "out",
-				stream_id, dump_mipi_output_stream_registers,
-				stream);
+		interface->streams[stream_id % streams_per_interface] = stream;
 
-		paintbox_debug_create_reg_entries(pb, &stream->debug,
-				&io_ipu_reg_names[REG_INDEX(
-						MPO_COMMON_BLOCK_START)],
-				MPO_COMMON_NUM_REGS + MPO_STRM_NUM_REGS,
-				mipi_reg_entry_write, mipi_reg_entry_read);
-#endif
+		paintbox_mipi_output_stream_debug_init(pb, stream);
+		interface_id = stream_id / streams_per_interface;
 	}
 
 	return 0;
+
+err_exit:
+	kfree(ipu->mipi_output_streams);
+	kfree(ipu->mipi_output_interfaces);
+
+	ipu->mipi_output_streams = NULL;
+	ipu->mipi_output_interfaces = NULL;
+
+	return ret;
 }
 
 int paintbox_mipi_init(struct paintbox_data *pb)
 {
+	uint32_t val;
 	int ret;
 
 	pb->io_ipu.ipu_base = pb->reg_base + IPU_IO_IPU_OFFSET;
 
-#ifdef CONFIG_DEBUG_FS
-	paintbox_debug_create_entry(pb, &pb->io_ipu.debug, pb->debug_root,
-			"mipi", -1, dump_io_ipu_registers, &pb->io_ipu);
-#endif
+	paintbox_mipi_debug_init(pb);
 
-#ifdef VERBOSE_DEBUG
-	paintbox_alloc_debug_buffer(pb, MIPI_DEBUG_BUFFER_SIZE);
-#endif
-
-	pb->io_ipu.num_mipi_input_streams = readl(pb->io_ipu.ipu_base +
-			MPI_CAP);
+	val = readl(pb->io_ipu.ipu_base + MPI_CAP);
+	pb->io_ipu.num_mipi_input_streams = (val & MPI_MAX_STRM_MASK) >>
+			MPI_MAX_STRM_SHIFT;
+	pb->io_ipu.num_mipi_input_interfaces = val & MPI_MAX_IFC_MASK;
 
 	if (pb->io_ipu.num_mipi_input_streams > 0) {
 		ret = paintbox_mipi_input_init(pb);
@@ -1184,8 +987,10 @@ int paintbox_mipi_init(struct paintbox_data *pb)
 			return ret;
 	}
 
-	pb->io_ipu.num_mipi_output_streams = readl(pb->io_ipu.ipu_base +
-			MPO_CAP);
+	val = readl(pb->io_ipu.ipu_base + MPO_CAP);
+	pb->io_ipu.num_mipi_output_streams = (val & MPO_MAX_STRM_MASK) >>
+			MPO_MAX_STRM_SHIFT;
+		pb->io_ipu.num_mipi_output_interfaces = val & MPO_MAX_IFC_MASK;
 
 	if (pb->io_ipu.num_mipi_output_streams > 0) {
 		ret = paintbox_mipi_output_init(pb);

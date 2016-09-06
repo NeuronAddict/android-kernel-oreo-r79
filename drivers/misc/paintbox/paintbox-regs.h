@@ -30,6 +30,14 @@
 #define REG_INDEX(r) (r / IPU_REG_WIDTH)
 #define REG_NAME_ENTRY(r) [r / IPU_REG_WIDTH] = #r
 
+#define STP_INST_SRAM_INSTRUCTION_WIDTH_BYTES 16
+#define STP_CONST_SRAM_WORD_WIDTH_BYTES       2
+#define STP_SCALAR_SRAM_WORD_WIDTH_BYTES      2
+#define STP_VECTOR_SRAM_WORD_WIDTH_BYTES      2
+
+/* Width of STP RAM transfer through PIO interface */
+#define STP_PIO_WORD_WIDTH_BYTES  16
+
 /* Register Group Offsets */
 #define IPU_IO_APB_OFFSET              0x0000
 #define IPU_IO_AXI_OFFSET              0x0400
@@ -133,6 +141,12 @@
 /* MMU_ERROR_BASE_Register Bits */
 #define MMU_ERROR_BASE_RSHIFT 12
 
+/* MMU_ISR / MMU_IMR */
+#define NUM_MMU_INTERRUPTS 1
+
+/* BIF_ISR / BIF_IMR */
+#define NUM_BIF_INTERRUPTS 1
+
 /* IO IPU Register Group Offsets */
 #define MPI_CAP               0x00
 #define MPI_STRM_SEL          0x08
@@ -176,7 +190,10 @@
 #define IO_IPU_NUM_REGS       (IO_IPU_BLOCK_LEN / IPU_REG_WIDTH)
 
 /* MPI_CAP Register Bits */
-#define MPI_MAX_STRM_MASK     0x0F
+#define MPI_MAX_IFC_MASK      0x0F
+#define MPI_MAX_STRM_M        0x0F
+#define MPI_MAX_STRM_SHIFT    4
+#define MPI_MAX_STRM_MASK     (MPI_MAX_STRM_M << MPI_MAX_STRM_SHIFT)
 
 /* MPI_STRM_SEL Register Bits */
 #define MPI_STRM_SEL_MASK     0x0F
@@ -186,8 +203,14 @@
 #define MPI_STRM_EN           (1 << 0)
 #define MPI_STRM_CLEANUP      (1 << 1)
 #define MPI_STRM_RST          (1 << 2)
-#define MPI_STRM_IRQ          (1 << 3)
-#define MPI_STRM_IMR          (1 << 4)
+#define MPI_STRM_SOF_ISR      (1 << 3)
+#define MPI_STRM_SOF_IMR      (1 << 4)
+#define MPI_STRM_OVF_ISR      (1 << 5)
+#define MPI_STRM_OVF_IMR      (1 << 6)
+#define MPI_STRM_NUM_FRAME_M  0xFFFF
+#define MPI_STRM_NUM_FRAME_SHIFT 8
+#define MPI_STRM_NUM_FRAME_MASK (MPI_STRM_NUM_FRAME_M <<                       \
+		MPI_STRM_NUM_FRAME_SHIFT)
 
 /* MPI_STRM_CNFG0_L Register Bits */
 #define MPI_VC_MASK           0x03
@@ -206,6 +229,7 @@
 #define MPI_DT_IN_DEF         42
 #define MPI_DT_PROC_MAX       MPI_DT_PROC_M
 #define MPI_DT_PROC_DEF       46
+#define MPI_STRP_HEIGHT_MAX   63
 #define MPI_STRP_HEIGHT_DEF   3
 
 /* MPI_STRM_CNFG0_H Register Bits */
@@ -235,11 +259,15 @@
 #define MPI_SEG_WORDS_PER_ROW_MASK (MPI_SEG_WORDS_PER_ROW_M <<                 \
 		MPI_SEG_WORDS_PER_ROW_SHIFT)
 
+#define MPI_SEGS_PER_ROW_MAX  127
 #define MPI_SEG_WORDS_PER_ROW_MAX MPI_SEG_WORDS_PER_ROW_M
 #define MPI_SEG_WORDS_PER_ROW_DEF 39
 
 /* MPO_CAP Register Bits */
-#define MPO_MAX_STRM_MASK     0x0F
+#define MPO_MAX_IFC_MASK      0x0F
+#define MPO_MAX_STRM_M        0x0F
+#define MPO_MAX_STRM_SHIFT    4
+#define MPO_MAX_STRM_MASK     (MPO_MAX_STRM_M << MPO_MAX_STRM_SHIFT)
 
 /* MPO_STRM_SEL Register Bits */
 #define MPO_STRM_SEL_MASK     0x0F
@@ -250,8 +278,8 @@
 #define MPO_STRM_RSYNC_EN     (1 << 1)
 #define MPO_STRM_CLEANUP      (1 << 2)
 #define MPO_STRM_RST          (1 << 3)
-#define MPO_STRM_IRQ          (1 << 4)
-#define MPO_STRM_IMR          (1 << 5)
+#define MPO_STRM_EOF_ISR      (1 << 4)
+#define MPO_STRM_EOF_IMR      (1 << 5)
 
 /* MPO_STRM_CNFG0_L Register Bits */
 #define MPO_VC_MASK           0x03
@@ -284,12 +312,15 @@
 #define MPO_SEGS_PER_ROW_SHIFT 16
 #define MPO_SEGS_PER_ROW_MASK (MPO_SEGS_PER_ROW_M << MPO_SEGS_PER_ROW_SHIFT)
 
+#define MPO_SEG_END_MAX       127
+
 #define MPO_SEGS_PER_ROW_MAX  MPO_SEGS_PER_ROW_M
 #define MPO_SEGS_PER_ROW_DEF  2
 
 /* DMA Register Group Offsets */
 #define DMA_CTRL              0x00
-#define DMA_CHAN_CTRL         0x08
+#define DMA_CHAN_CTRL_L       0x08
+#define DMA_CHAN_CTRL_H       0x0C
 #define DMA_CAP0              0x10
 #define DMA_PMON_CFG          0x100
 #define DMA_PMON_CNT_0_CFG    0x108
@@ -382,7 +413,7 @@
 
 #define DMA_CHAN_SEL_DEF      31
 
-/* DMA_CHAN_CTRL Register Bits */
+/* DMA_CHAN_CTRL_L Register Bits */
 #define DMA_CHAN_RESET_MASK   0xFFFF
 #define DMA_CHAN_DOUBLE_BUF_M 0xFFFF
 #define DMA_CHAN_DOUBLE_BUF_SHIFT 16
@@ -390,6 +421,9 @@
 		DMA_CHAN_DOUBLE_BUF_SHIFT)
 
 #define DMA_CHAN_DOUBLE_BUF_DEF 0xFFFF
+
+/* DMA_CHAN_CTRL_H Register Bits */
+#define DMA_STOP_MASK         0xFFFF
 
 /* DMA_CAP0 Register Bits */
 #define MAX_DMA_CHAN_MASK     0xFF
@@ -414,7 +448,7 @@
 #define DMA_CHAN_ADDR_MODE_PHYSICAL (1 << 8)
 #define DMA_CHAN_GATHER       (1 << 9)
 
-#define DMA_CHAN_SRC_DEF      DMA_CHAN_SRC_MIPI_IN
+#define DMA_CHAN_SRC_DEF      DMA_CHAN_SRC_DRAM
 #define DMA_CHAN_DST_DEF      DMA_CHAN_DST_LBP
 
 /* DMA_CHAN_IMG_FORMAT */
@@ -477,6 +511,15 @@
 #define DMA_CHAN_LB_START_MAX     32767
 #define DMA_CHAN_LB_START_MIN     -32767
 
+/* DMA CHAN_IMG_POS_H STP DRAM Register Bits */
+#define DMA_CHAN_LB_START_Y_STP_IRAM        (0 << 2)
+#define DMA_CHAN_LB_START_Y_STP_CRAM        (1 << 2)
+#define DMA_CHAN_LB_START_Y_STP_DRAM        (2 << 2)
+#define DMA_CHAN_LB_START_Y_STP_ARRAY_16x16 (3 << 2)
+#define DMA_CHAN_LB_START_Y_STP_ARRAY_32x32 (4 << 2)
+
+#define DMA_STP_SRAM_ADDR_ALIGN_MASK 0x1F
+
 /* DMA_CHAN_IMG_LAYOUT */
 #define DMA_CHAN_PLANE_STRIDE_WIDTH 35
 #define DMA_CHAN_PLANE_STRIDE_MAX   ((1ULL << DMA_CHAN_PLANE_STRIDE_WIDTH) - 1)
@@ -531,7 +574,9 @@
 #define DMA_CHAN_SHEET_WIDTH_DEF  64
 #define DMA_CHAN_SHEET_HEIGHT_DEF 4
 
-#define DMA_CHAN_NOC_OUTSTANDING_DEF 1
+#define DMA_CHAN_NOC_OUTSTANDING_MIN 1
+#define DMA_CHAN_NOC_OUTSTANDING_MAX 8
+#define DMA_CHAN_NOC_OUTSTANDING_DEF 8
 
 /* DMA_CHAN_NOC_XFER_H Register Bits */
 #define DMA_CHAN_RETRY_INTERVAL_MASK 0x3FF
@@ -552,7 +597,6 @@
 
 /* DMA_CHAN_IMR and DMA_CHAN_ISR Register Bits */
 #define DMA_CHAN_INT_EOF      (1 << 0)
-#define DMA_CHAN_INT_MIF_ERR  (1 << 1)
 #define DMA_CHAN_INT_VA_ERR   (1 << 2)
 
 /* DMA_STS_CTRL Register Bits */
@@ -707,13 +751,16 @@
 #define LB_OFFSET_MAX         32767
 
 /* LB_OFFSET_H Register Bits */
-#define LB_OFFSET_CHAN_MASK   0x0000000F
+#define LB_OFFSET_CHAN_WIDTH  9
+#define LB_OFFSET_CHAN_MASK   ((1 << LB_OFFSET_CHAN_WIDTH) - 1)
 #define LB_FB_OFFSET_M        0xFF
-#define LB_FB_OFFSET_SHIFT    8
+#define LB_FB_OFFSET_SHIFT    16
 #define LB_FB_OFFSET_MASK     (LB_FB_OFFSET_M << LB_FB_OFFSET_SHIFT)
 
 #define LB_FB_OFFSET_MIN      -128
 #define LB_FB_OFFSET_MAX      127
+
+#define LB_OFFSET_CHAN_MAX    ((1 << LB_OFFSET_CHAN_WIDTH) - 1)
 
 /* LB_BDRY Register Bits */
 #define LB_BDRY_VAL_MASK      0xFFFF0000
@@ -741,7 +788,7 @@
 #define LB_SB_BASE_ADDR_MASK  0xFFFF0000
 #define LB_SB_BASE_ADDR_SHIFT 16
 #define LB_FB_BASE_ADDR_MASK  0x0000FFFF
-#define LB_ADDR_ALIGN_MASK    0x3F
+#define LB_ADDR_ALIGN_MASK    0x1F
 #define LB_ADDR_ALIGN_SHIFT   5
 
 /* LB_STAT Register Bits */
@@ -751,10 +798,15 @@
 #define LB_STAT_EMPTY2        (1 << 3)
 
 /* LB_L_PARAM Register Bits */
-#define LB_L_INC_MASK         0x0000FFFF
-#define LB_L_WIDTH_M          0xFFFF
+#define LB_L_INC_MASK         0x00000FFF
+#define LB_L_WIDTH_M          0x0FFF
 #define LB_L_WIDTH_SHIFT      16
 #define LB_L_WIDTH_MASK       (LB_L_WIDTH_M << LB_L_WIDTH_SHIFT)
+
+#define LB_L_INC_WIDTH        12
+#define LB_L_WIDTH_WIDTH      12
+#define LB_L_INC_MAX          ((1 << LB_L_INC_WIDTH) - 1)
+#define LB_L_WIDTH_MAX        ((1 << LB_L_WIDTH_WIDTH) - 1)
 
 /* STP Register Group Offsets */
 #define STP_SEL               0x00
@@ -778,9 +830,6 @@
 #define STP_BLOCK_LEN         0x80
 #define STP_NUM_REGS          (STP_BLOCK_LEN / IPU_REG_WIDTH)
 
-/* Width of STP RAM transfer through PIO interface */
-#define STP_WORD_WIDTH_BYTES  16
-
 /* STP_SEL Register Bits */
 #define STP_SEL_MASK          0x000000FF
 
@@ -790,6 +839,7 @@
 #define STP_ENA               (1 << 0)
 #define STP_RESET             (1 << 1)
 #define STP_RESUME            (1 << 2)
+#define STP_INT               (1 << 3)
 #define STP_LBP_MASK          0xFFFF
 #define STP_LBP_MASK_SHIFT    16
 #define STP_LBP_MASK_MASK     (STP_LBP_MASK << STP_LBP_MASK_SHIFT)
