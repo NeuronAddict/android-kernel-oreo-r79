@@ -4,6 +4,15 @@
 			     <GIC_PPI 14 (GIC_CPU_MASK_SIMPLE(6) | IRQ_TYPE_LEVEL_LOW)>,
 			     <GIC_PPI 11 (GIC_CPU_MASK_SIMPLE(6) | IRQ_TYPE_LEVEL_LOW)>,
 			     <GIC_PPI 10 (GIC_CPU_MASK_SIMPLE(6) | IRQ_TYPE_LEVEL_LOW)>;
+		/*
+		as per:
+		Documentation/devicetree/bindings/arm/arch_timer.txt
+		clock-frequency : The frequency of the main counter, in Hz. Should be present
+		only where necessary to work around broken firmware which does not configure
+		CNTFRQ on all CPUs to a uniform correct value. Use of this property is
+		strongly discouraged; fix your firmware unless absolutely impossible.
+		*/
+		clock-frequency = <2500000>;
 	};
 
 	/include/ "mnh-clocks.dtsi"
