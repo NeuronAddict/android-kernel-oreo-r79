@@ -1187,10 +1187,8 @@ int ion_query_heaps(struct ion_client *client, struct ion_heap_query *query)
 		hdata.type = heap->type;
 		hdata.heap_id = heap->id;
 
-		if (copy_to_user(&buffer[cnt], &hdata, sizeof(hdata))) {
-			ret = -EFAULT;
-			goto out;
-		}
+		ret = copy_to_user(&buffer[cnt],
+				   &hdata, sizeof(hdata));
 
 		cnt++;
 		if (cnt >= max_cnt)
@@ -1420,6 +1418,7 @@ void ion_device_add_heap(struct ion_device *dev, struct ion_heap *heap)
 		}
 	}
 
+	dev->heap_cnt++;
 	up_write(&dev->lock);
 }
 EXPORT_SYMBOL(ion_device_add_heap);
