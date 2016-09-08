@@ -21,6 +21,43 @@
 	unless there is some reason not to
 	*/
 
+        mnh-timer {
+		  compatible = "mnh-timer";
+                  reg = <0x0 0x04041000 0x0 0x1000>;
+	};
+
+	dma0: dma@04000000 {
+		compatible = "snps,dma-spear1340";
+		reg = <0 0x04000000 0 0x1000>;
+		interrupts = <GIC_SPI 29 IRQ_TYPE_EDGE_RISING>;
+		is_memcpy;
+		dma-channels = <4>;
+		dma-requests = <16>;
+		dma-masters = <1>;
+		#dma-cells = <3>;
+		chan_allocation_order = <1>;
+		chan_priority = <1>;
+		block_size = <0xfff>;
+		data_width = <2>;
+		clocks = <&soc_refclk100mhz>;
+	};
+
+	mipi_tx0: mipidevice@04010000 {
+		compatible = "snps,mipicsi_device";
+		reg = <0x0 0x04010000 0x0 0xFFF>;
+	};
+
+	mipi_rx0: mipihost@04012000 {
+		compatible = "snps,mipicsi_host";
+		reg = <0x0 0x04012000 0x0 0xFFF>;
+		interrupts = <GIC_SPI 4 IRQ_TYPE_EDGE_RISING>;
+	};
+
+	mipitop: mipitop@04015000 {
+		compatible = "intel,mipicsi_top";
+		reg = <0x0 0x04015000 0x0 0x0FFF>;
+	};
+
 	spi@04043000 {
 		compatible = "snps,dw-apb-ssi";
 		#address-cells = <1>;
@@ -128,25 +165,11 @@
 		ri-override;
 	};
 
-	memory@40000000 {
-		device_type = "memory";
-		reg = <0x00000000 0x40000000 0x0 0x20000000>;
-	};
-
-	dma0: dma@04000000 {
-		compatible = "snps,dma-spear1340";
-		reg = <0 0x04000000 0 0x1000>;
-		interrupts = <GIC_SPI 29 IRQ_TYPE_EDGE_RISING>;
-		is_memcpy;
-		dma-channels = <4>;
-		dma-requests = <16>;
-		dma-masters = <1>;
-		#dma-cells = <3>;
-		chan_allocation_order = <1>;
-		chan_priority = <1>;
-		block_size = <0xfff>;
-		data_width = <2>;
-		clocks = <&soc_mnh25mhz>;
+	perfmon@0404C000 {
+		compatible = "intel, perf_mon";
+		reg = <0x0 0x0404C000 0x0 0x1000>,
+			  <0x0 0x04003000 0x0 0x1000>;
+		interrupts = <GIC_SPI 12 IRQ_TYPE_EDGE_RISING>;
 	};
 
 	pcie@041C2000 {
@@ -158,25 +181,7 @@
 					 <GIC_SPI 26 IRQ_TYPE_EDGE_RISING>;
 	};
 
-	perfmon@0404C000 {
-		compatible = "intel, perf_mon";
-		reg = <0x0 0x0404C000 0x0 0x1000>,
-			  <0x0 0x04003000 0x0 0x1000>;
-		interrupts = <GIC_SPI 12 IRQ_TYPE_EDGE_RISING>;
-	};
-
-	mipi_tx0: mipidevice@04010000 {
-		compatible = "snps,mipicsi_device";
-		reg = <0x0 0x04010000 0x0 0xFFF>;
-	};
-
-	mipi_rx0: mipihost@04012000 {
-		compatible = "snps,mipicsi_host";
-		reg = <0x0 0x04012000 0x0 0xFFF>;
-		interrupts = <GIC_SPI 4 IRQ_TYPE_EDGE_RISING>;
-	};
-
-	mipitop: mipitop@04015000 {
-		compatible = "intel,mipicsi_top";
-		reg = <0x0 0x04015000 0x0 0x0FFF>;
+	memory@40000000 {
+		device_type = "memory";
+		reg = <0x00000000 0x40000000 0x0 0x20000000>;
 	};
