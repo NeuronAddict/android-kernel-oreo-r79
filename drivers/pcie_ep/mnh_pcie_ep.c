@@ -58,7 +58,7 @@
 #define VENDOR_ID				0x8086
 #define DEVICE_ID				0x3140
 
-#define COMBINE_SG
+#define COMBINE_SG	1
 
 int (*irq_callback)(struct mnh_pcie_irq *irq);
 int (*dma_callback)(struct mnh_dma_irq *irq);
@@ -72,7 +72,7 @@ struct work_struct msi_rx_work, pcie_irq_work;
 uint32_t rw_address_sysfs, rw_size_sysfs;
 struct mnh_pcie_irq sysfs_irq;
 
-static int pcie_ll_destroy(phys_addr_t *start_addr);
+static int pcie_ll_destroy(struct mnh_dma_ll *ll);
 
 #if MNH_PCIE_DEBUG_ENABLE
 
@@ -177,6 +177,8 @@ static int pcie_link_init(void)
 
 	/* Enable interupts */
 	CSR_OUT(PCIE_SS_INTR_EN, PCIE_SS_IRQ_MASK);
+	/* Clear all interrupts */
+	CSR_OUT(PCIE_SW_INTR_TRIGG, MNH_PCIE_SW_IRQ_CLEAR);
 
 	return  CSR_INx(PCIE_GP, 0);
 }
@@ -398,11 +400,13 @@ static int handle_vm(int vm)
 
 static void dma_rx_handler(void)
 {
-	uint32_t data, i;
+	uint32_t data, data1, i;
 	struct mnh_dma_irq dma_event;
 
 	if (dma_callback != NULL) {
-		data = CSR_INx(PCIE_GP, 2);
+		data1 = CSR_INx(PCIE_GP, 2);
+		data = data1;
+		dev_err(pcie_ep_dev->dev, "DMA msg %x rcvd\n", data);
 		if (data & DMA_READ_DONE_MASK) {
 			dma_event.type = MNH_DMA_READ;
 			dma_event.status = MNH_DMA_DONE;
@@ -413,7 +417,10 @@ static void dma_rx_handler(void)
 				i++;
 				};
 			dma_event.channel = i;
-		} else if (data & DMA_READ_ABORT_MASK) {
+			dma_callback(&dma_event);
+		}
+		data = data1;
+		if (data & DMA_READ_ABORT_MASK) {
 			dma_event.type = MNH_DMA_READ;
 			dma_event.status = MNH_DMA_ABORT;
 			data = (data & DMA_READ_ABORT_MASK) >> 8;
@@ -423,7 +430,10 @@ static void dma_rx_handler(void)
 				i++;
 				};
 			dma_event.channel = i;
-		} else if (data & DMA_WRITE_DONE_MASK) {
+			dma_callback(&dma_event);
+		}
+		data = data1;
+		if (data & DMA_WRITE_DONE_MASK) {
 			dma_event.type = MNH_DMA_WRITE;
 			dma_event.status = MNH_DMA_DONE;
 			data = (data & DMA_WRITE_DONE_MASK) >> 16;
@@ -433,19 +443,22 @@ static void dma_rx_handler(void)
 				i++;
 				};
 			dma_event.channel = i;
-		} else if (data & DMA_WRITE_ABORT_MASK) {
+			dma_callback(&dma_event);
+		}
+		data = data1;
+		if (data & DMA_WRITE_ABORT_MASK) {
 			dma_event.type = MNH_DMA_WRITE;
 			dma_event.status = MNH_DMA_ABORT;
-			data = (data & DMA_READ_ABORT_MASK) >> 24;
+			data = (data & DMA_WRITE_ABORT_MASK) >> 24;
 			i = 0;
 			while ((data != 1) && (i < 8)) {
 				data = data >> 1;
 				i++;
 				};
 			dma_event.channel = i;
+			dma_callback(&dma_event);
 		}
 		CSR_OUTx(PCIE_GP, 2, 0x0);
-		dma_callback(&dma_event);
 	}
 }
 static void msi_rx_worker(struct work_struct *work)
@@ -609,10 +622,17 @@ int pcie_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
 
 	struct scatterlist *in_sg;
 	int i, u, fp_offset, count;
-	int n_num, p_num = size/PAGE_SIZE;
-
+	int n_num, p_num;
 	dma_addr_t test_addr;
 	int test_len;
+	int first_page, last_page;
+
+	/* page num calculation */
+	first_page = ((unsigned long) dmadest & PAGE_MASK) >> PAGE_SHIFT;
+	last_page = (((unsigned long) dmadest + size - 1) & PAGE_MASK)
+			>> PAGE_SHIFT;
+	fp_offset = (unsigned long) dmadest & ~PAGE_MASK;
+	p_num = last_page - first_page + 1;
 
 	sgl->mypage = kcalloc(p_num, sizeof(struct page *), GFP_KERNEL);
 	if (!sgl->mypage) {
@@ -627,7 +647,6 @@ int pcie_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
 		dev_err(pcie_ep_dev->dev, "failed to assign sc_list\n");
 		return -EINVAL;
 	}
-	fp_offset = (uint64_t) dmadest & ~PAGE_MASK;
 	down_read(&current->mm->mmap_sem);
 	n_num = get_user_pages(current, current->mm,
 			(unsigned long) dmadest, p_num, 1, 1, sgl->mypage,
@@ -682,7 +701,7 @@ int pcie_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
 			}
 
 		}
-		sg[u].paddr = NULL;
+		sg[u].paddr = 0x0;
 	} else {
 		dev_err(pcie_ep_dev->dev, "maxsg exceeded\n");
 		dma_unmap_sg(pcie_ep_dev->dev, sgl->sc_list,
@@ -697,8 +716,18 @@ int pcie_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
 	return 0;
 }
 
+static int pcie_sg_sync(struct mnh_sg_list *sgl)
+{
+	dma_sync_sg_for_cpu(pcie_ep_dev->dev, sgl->sc_list,
+			sgl->n_num, DMA_BIDIRECTIONAL);
+	return 0;
+}
+
+
 static int pcie_sg_destroy(struct mnh_sg_list *sgl)
 {
+	//dma_sync_sg_for_cpu(pcie_ep_dev->dev, sgl->sc_list,
+	//		sgl->n_num, DMA_BIDIRECTIONAL);
 	dma_unmap_sg(pcie_ep_dev->dev, sgl->sc_list,
 			sgl->n_num, DMA_BIDIRECTIONAL);
 	page_cache_release(*(sgl->mypage));
@@ -709,23 +738,33 @@ static int pcie_sg_destroy(struct mnh_sg_list *sgl)
 }
 
 static int pcie_ll_build(struct mnh_sg_entry *src_sg,
-			struct mnh_sg_entry *dst_sg, phys_addr_t **start_addr)
+			struct mnh_sg_entry *dst_sg, struct mnh_dma_ll *ll)
 {
 	struct mnh_dma_ll_element *ll_element, *tmp_element;
 	struct mnh_sg_entry sg_dst, sg_src;
+	dma_addr_t dma;
 	int i, s, u;
-
-	ll_element = kcalloc(DMA_LL_LENGTH,
-			sizeof(struct mnh_dma_ll_element), GFP_KERNEL);
-	*start_addr = virt_to_phys(ll_element);
-	if (!ll_element)
+	
+	ll_element = dma_alloc_coherent(pcie_ep_dev->dev,
+		DMA_LL_LENGTH *sizeof(struct mnh_dma_ll_element), &dma, GFP_KERNEL);
+	ll->size = 0;
+	ll->ll_element[0] = ll_element;
+	ll->dma[0] = dma;
+	if (!ll_element) {
+		dev_err(pcie_ep_dev->dev, "LL alloc failed \n");
 		return -EINVAL;
+		}
 	i = 0;
 	s = 0;
 	u = 0;
 	sg_src = src_sg[i];
 	sg_dst = dst_sg[s];
-	while ((sg_src.paddr != NULL) && (sg_dst.paddr != NULL)) {
+	dev_err(pcie_ep_dev->dev, "LL checkpoint 2\n");
+	if ((sg_src.paddr == 0x0) || (sg_dst.paddr == 0x0)) {
+		dev_err(pcie_ep_dev->dev, "Input lists invalid\n");
+		return -EINVAL;
+	}
+	while ((sg_src.paddr != 0x0) && (sg_dst.paddr != 0x0)) {
 		if (sg_src.size == sg_dst.size) {
 			ll_element[u].header = LL_DATA_ELEMENT;
 			ll_element[u].size = sg_src.size;
@@ -749,7 +788,7 @@ static int pcie_ll_build(struct mnh_sg_entry *src_sg,
 			s++;
 			sg_dst = dst_sg[s];
 		} else {
-
+			ll_element[u].header = LL_DATA_ELEMENT;
 			ll_element[u].size = sg_src.size;
 			ll_element[u].sar_low = LOWER(sg_src.paddr);
 			ll_element[u].sar_high = UPPER(sg_src.paddr);
@@ -761,67 +800,70 @@ static int pcie_ll_build(struct mnh_sg_entry *src_sg,
 			sg_src = src_sg[i];
 		}
 		u++;
-		if (u == DMA_LL_LENGTH) {
+		if (u == DMA_LL_LENGTH -1) {
 			ll_element[u].header = LL_LINK_ELEMENT;
-			if ((sg_src.paddr == NULL) || (sg_dst.paddr == NULL)) {
+			if ((sg_src.paddr == 0x0) || (sg_dst.paddr == 0x0)) {
 				ll_element[u-1].header = LL_IRQ_DATA_ELEMENT;
 				ll_element[u].header = LL_LAST_LINK_ELEMENT;
 				ll_element[u].sar_low =
-					LOWER((uint64_t) *start_addr);
+					LOWER((uint64_t) ll->dma[0]);
 				ll_element[u].sar_high =
-					UPPER((uint64_t) *start_addr);
+					UPPER((uint64_t) ll->dma[0]);
 				return 0;
 			}
-			tmp_element = kcalloc(DMA_LL_LENGTH,
-					sizeof(struct mnh_dma_ll_element),
-					GFP_KERNEL);
-			if (!tmp_element) {
+			if (ll->size >= (MNH_MAX_LL_ELEMENT-1)) {
+				dev_err(pcie_ep_dev->dev, "Out of dma elements\n");
 				ll_element[u-1].header = LL_IRQ_DATA_ELEMENT;
 				ll_element[u].header = LL_LAST_LINK_ELEMENT;
 				ll_element[u].sar_low =
-					LOWER((uint64_t) *start_addr);
+					LOWER((uint64_t) ll->dma[0]);
 				ll_element[u].sar_high =
-					UPPER((uint64_t) *start_addr);
-				pcie_ll_destroy(start_addr);
+					UPPER((uint64_t) ll->dma[0]);
+				pcie_ll_destroy(ll);
+				return -EINVAL;
+			}
+			tmp_element = dma_alloc_coherent(pcie_ep_dev->dev,
+			DMA_LL_LENGTH * sizeof(struct mnh_dma_ll_element),
+				&dma, GFP_KERNEL);
+			if (!tmp_element) {
+				dev_err(pcie_ep_dev->dev, "Element allcation failed\n");
+				ll_element[u-1].header = LL_IRQ_DATA_ELEMENT;
+				ll_element[u].header = LL_LAST_LINK_ELEMENT;
+				ll_element[u].sar_low =
+					LOWER((uint64_t) ll->dma[0]);
+				ll_element[u].sar_high =
+					UPPER((uint64_t) ll->dma[0]);
+				pcie_ll_destroy(ll);
 				return -EINVAL;
 			}
 			ll_element[u].sar_low =
-				LOWER((uint64_t)
-					virt_to_phys(tmp_element));
+				LOWER((uint64_t) dma);
 			ll_element[u].sar_high =
-				UPPER((uint64_t)
-					virt_to_phys(tmp_element));
+				UPPER((uint64_t) dma);
 			ll_element = tmp_element;
 			u = 0;
+			ll->size++;
+			ll->ll_element[ll->size] = ll_element;
+			ll->dma[ll->size] = dma;
 		}
 	}
 	ll_element[u-1].header = LL_IRQ_DATA_ELEMENT;
 	ll_element[u].header = LL_LAST_LINK_ELEMENT;
-	ll_element[u].sar_low = LOWER((uint64_t) start_addr);
-	ll_element[u].sar_high = UPPER((uint64_t) start_addr);
+	ll_element[u].sar_low = LOWER((uint64_t) ll->dma[0]);
+	ll_element[u].sar_high = UPPER((uint64_t) ll->dma[0]);
 	return 0;
 }
 
-static int pcie_ll_destroy(phys_addr_t *start_addr)
+static int pcie_ll_destroy(struct mnh_dma_ll *ll)
 {
 	int i;
-	struct mnh_dma_ll_element *ll_element, *tmp_element;
 
-	ll_element = phys_to_virt(start_addr);
 	i = 0;
-	while (1) {
-		if (ll_element[i].header == LL_LINK_ELEMENT) {
-			tmp_element = phys_to_virt(ll_element[i].sar_low
-				+ (((uint64_t) ll_element[i].sar_high) << 32));
-			kfree(ll_element);
-			ll_element = tmp_element;
-			i = 0;
-		} else if (ll_element[i].header == LL_LAST_LINK_ELEMENT) {
-			kfree(ll_element);
-			break;
-		} else {
-			i++;
-		}
+	while (i <= ll->size) {
+		mnh_free_coherent(DMA_LL_LENGTH
+			* sizeof(struct mnh_dma_ll_element),
+			ll->ll_element[i], ll->dma[i]);
+		i++;
 	}
 	return 0;
 }
@@ -899,6 +941,13 @@ int mnh_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
 }
 EXPORT_SYMBOL(mnh_sg_build);
 
+int mnh_sg_sync(struct mnh_sg_list *sgl)
+{
+	return pcie_sg_sync(sgl);
+}
+EXPORT_SYMBOL(mnh_sg_sync);
+
+
 int mnh_sg_destroy(struct mnh_sg_list *sgl)
 {
 	return pcie_sg_destroy(sgl);
@@ -906,17 +955,31 @@ int mnh_sg_destroy(struct mnh_sg_list *sgl)
 EXPORT_SYMBOL(mnh_sg_destroy);
 
 int mnh_ll_build(struct mnh_sg_entry *src_sg, struct mnh_sg_entry *dst_sg,
-				phys_addr_t **start_addr)
+				struct mnh_dma_ll *ll)
 {
-	return pcie_ll_build(src_sg, dst_sg, start_addr);
+	return pcie_ll_build(src_sg, dst_sg, ll);
 }
 EXPORT_SYMBOL(mnh_ll_build);
 
-int mnh_ll_destroy(phys_addr_t *start_addr)
+int mnh_ll_destroy(struct mnh_dma_ll *ll)
 {
-	return pcie_ll_destroy(start_addr);
+	return pcie_ll_destroy(ll);
 }
 EXPORT_SYMBOL(mnh_ll_destroy);
+
+void *mnh_alloc_coherent(size_t size, dma_addr_t *dma_adr)
+{
+	return dma_alloc_coherent(pcie_ep_dev->dev, size, dma_adr, GFP_KERNEL);
+}
+EXPORT_SYMBOL(mnh_alloc_coherent);
+
+void mnh_free_coherent(size_t size, void *cpu_addr, dma_addr_t dma_addr)
+{
+	dma_free_coherent(pcie_ep_dev->dev, size, cpu_addr, dma_addr);
+}
+EXPORT_SYMBOL(mnh_free_coherent);
+
+
 
 static int config_mem(struct platform_device *pdev)
 {
@@ -1618,6 +1681,26 @@ static int mnh_pcie_ep_probe(struct platform_device *pdev)
 	init_sysfs();
 #endif
 	pcie_link_init();
+	err = 0;
+	if (dma_set_mask(pcie_ep_dev->dev, DMA_BIT_MASK(64)) ||
+		dma_set_coherent_mask(pcie_ep_dev->dev, DMA_BIT_MASK(64))) {
+
+		err = dma_set_mask(pcie_ep_dev->dev, DMA_BIT_MASK(32));
+		if (err)
+			err = dma_set_coherent_mask(pcie_ep_dev->dev,
+							DMA_BIT_MASK(32));
+	}
+	if (err) {
+		dev_err(pcie_ep_dev->dev, "No usable DMA configuration, aborting\n");
+#if MNH_PCIE_DEBUG_ENABLE
+		clean_sysfs();
+#endif
+		clear_mem();
+		free_irq(pcie_ep_dev->sw_irq, pcie_ep_dev->dev);
+		free_irq(pcie_ep_dev->cluster_irq, pcie_ep_dev->dev);
+		return err;
+	}
+
 	return 0;
 }
 

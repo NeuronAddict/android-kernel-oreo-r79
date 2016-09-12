@@ -21,6 +21,8 @@
 #ifndef __LINUX_MNH_PCIE_EP_H
 #define __LINUX_MNH_PCIE_EP_H
 #define MNH_PCIE_DEBUG_ENABLE 1
+#define MNH_MAX_LL 256
+#define MNH_MAX_LL_ELEMENT 64
 /* TODO implement to mask sysfs and other code */
 
 /*****************************************************************************
@@ -118,6 +120,12 @@ struct mnh_dma_ll_element {
 	uint32_t dar_high;
 };
 
+struct mnh_dma_ll {
+	uint32_t size;
+	struct mnh_dma_ll_element *ll_element[MNH_MAX_LL_ELEMENT];
+	dma_addr_t dma[MNH_MAX_LL_ELEMENT];
+};
+
 
 /*******************************************************************************
  *
@@ -164,12 +172,18 @@ int mnh_pcie_write(uint8_t *buff, uint32_t size, uint64_t adr);
 int mnh_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
 				struct mnh_sg_list *sgl, uint32_t maxsg);
 
+int mnh_sg_sync(struct mnh_sg_list *sgl);
+
 int mnh_sg_destroy(struct mnh_sg_list *sgl);
 
 
 int mnh_ll_build(struct mnh_sg_entry *src_sg, struct mnh_sg_entry *dst_sg,
-					phys_addr_t **start_addr);
+					struct mnh_dma_ll *ll);
 
-int mnh_ll_destroy(phys_addr_t *start_addr);
+int mnh_ll_destroy(struct mnh_dma_ll *ll);
+
+void *mnh_alloc_coherent(size_t size, dma_addr_t *dma_adr);
+
+void mnh_free_coherent(size_t size, void *cpu_addr, dma_addr_t dma_addr);
 
 #endif

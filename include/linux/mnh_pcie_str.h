@@ -34,11 +34,13 @@
 #define REGION_1		1
 #define REGION_2		2
 
-#define DMA_LL_LENGTH			10 /*TODO Needs to be optimized */
+//#define DMA_LL_LENGTH			20 /*TODO Needs to be optimized */
+#define DMA_LL_LENGTH			5 /*TODO Needs to be optimized */
+
 #define LL_DATA_ELEMENT			0x1
-#define LL_IRQ_DATA_ELEMENT		0x9
-#define LL_LINK_ELEMENT			0x4
-#define LL_LAST_LINK_ELEMENT	0x6
+#define LL_IRQ_DATA_ELEMENT		0x19
+#define LL_LINK_ELEMENT			0x5
+#define LL_LAST_LINK_ELEMENT		0x7
 
 #define PCIE_SS_IRQ_MASK	0xF701FF
 

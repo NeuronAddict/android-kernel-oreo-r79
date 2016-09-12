@@ -41,7 +41,6 @@
 #include <linux/mnh_pcie_ep.h>
 #include <linux/mnh_pcie_reg.h>
 #include <linux/mnh_pcie_str.h>
-#include <linux/mnh_dma_adr.h>
 /* #include <asm-generic/page.h> */
 #include <linux/mm.h>
 #include <linux/rwsem.h>
@@ -62,26 +61,37 @@ static struct device *pcie_ep_tst_device;
 #define MAX_STR_COPY	32
 
 struct mnh_sg_entry *sg1, *sg2;
-uint32_t index, status;
-phys_addr_t *ll_adr;
+static dma_addr_t dma1, dma2;
+
+struct mnh_sg_list *sgl;
+
+uint32_t ll_index, status, dma_dir;
+struct mnh_dma_ll *ll_adr;
 
 static int buildll(void)
 {
-	mnh_ll_build(sg1, sg2, &ll_adr);
-	mnh_set_rb_base(FPGA_ADR(virt_to_phys(ll_adr)));
+	dev_err(pcie_ep_tst_device, "Start LL build \n");
+	if (dma_dir == 1) {
+		if (mnh_ll_build(sg2, sg1, ll_adr) == 0)
+			dev_err(pcie_ep_tst_device, "LL build succesfully %d  %x\n", ll_adr->size, ll_adr->dma[0]);
+	} else if (mnh_ll_build(sg1, sg2, ll_adr) == 0)
+			dev_err(pcie_ep_tst_device, "LL build succesfully %d  %x\n", ll_adr->size, ll_adr->dma[0]);
+	mnh_set_rb_base(ll_adr->dma[0]);
 	status = 2;
+	//status = 3;
 	return 0;
 }
 
 int test2_callback(struct mnh_pcie_irq *irq)
 {
 
+	dev_err(pcie_ep_tst_device, "IRQ received %d \n",irq);
 	if (irq->msi_irq == MSG_SEND_I) {
-		if (status == 0) {
+		/*if (status == 0) {
 			status =1;
-			if (index == 1)
+			if (ll_index == 1)
 				buildll();
-		}
+		} */
 	}
 	return 0;
 }
@@ -89,7 +99,12 @@ int test2_callback(struct mnh_pcie_irq *irq)
 int test2_dma_callback(struct mnh_dma_irq *irq)
 {
 	/*TODO do something */
-	if ((irq->status == MNH_DMA_DONE) && (status ==2))
+	dev_err(pcie_ep_tst_device, "DMA callback %x \n",irq->status);
+	if ((irq->status == MNH_DMA_DONE) && (status == 0)) {
+			status =1;
+			if (ll_index == 1)
+				buildll();
+	} else if ((irq->status == MNH_DMA_ABORT) && (status ==2))
 		status =3;
 	return 0;
 }
@@ -97,26 +112,33 @@ int test2_dma_callback(struct mnh_dma_irq *irq)
 static int mth_fs_pcie_open(struct inode *inode, struct file *file)
 {
 	dev_err(pcie_ep_tst_device, "File Open\n");
-	index = 0;
+	ll_index = 0;
 	status = 0;
-	sg1 = kcalloc(SGL_SIZE, sizeof(struct mnh_sg_entry), GFP_KERNEL);
+	//sg1 = dma_alloc_coherent(&pcie_ep_tst_device, SGL_SIZE * sizeof(struct mnh_sg_entry), &dma1, GFP_KERNEL);
+	sg1 = mnh_alloc_coherent(SGL_SIZE * sizeof(struct mnh_sg_entry), &dma1);
 	if (!sg1) {
-	dev_err(pcie_ep_tst_device, "failed to assign sgl\n");
+	dev_err(pcie_ep_tst_device, "failed to assign sgl 1  %p\n",dma1);
 	return -EINVAL;
 	}
-	sg2 = kcalloc(SGL_SIZE, sizeof(struct mnh_sg_entry), GFP_KERNEL);
+	sg2 = mnh_alloc_coherent(SGL_SIZE * sizeof(struct mnh_sg_entry), &dma2);
 	if (!sg2) {
+		dev_err(pcie_ep_tst_device, "failed to assign sgl 2\n");
+		kfree(sg1);
+		return -EINVAL;
+	}
+	sgl = kcalloc(SGL_SIZE, sizeof(struct mnh_sg_list), GFP_KERNEL);
+	if (!sgl) {
 		dev_err(pcie_ep_tst_device, "failed to assign sgl\n");
 		kfree(sg1);
 		return -EINVAL;
 	}
-	ll_adr = kmalloc(sizeof(phys_addr_t), GFP_KERNEL);
+	ll_adr = kmalloc(sizeof(struct mnh_dma_ll), GFP_KERNEL);
 	if (!ll_adr) {
 		dev_err(pcie_ep_tst_device, "failed to assign ll_adr \n");
 		return -EINVAL;
 	}
 	mnh_reg_irq_callback(&test2_callback, &test2_dma_callback);
-	mnh_set_rb_base(FPGA_ADR(virt_to_phys(sg2)));
+	mnh_set_rb_base(dma2);
 	return 0;
 }
 
@@ -125,9 +147,11 @@ static int mth_fs_pcie_close(struct inode *inode, struct file *file)
 	dev_err(pcie_ep_tst_device, "File Close\n");
 	mnh_reg_irq_callback(NULL, NULL);
 	mnh_ll_destroy(ll_adr);
+	mnh_sg_destroy(sgl);
 	kfree(ll_adr);
-	kfree(sg1);
-	kfree(sg2);
+	mnh_free_coherent(SGL_SIZE * sizeof(struct mnh_sg_entry), sg1, dma1);
+	mnh_free_coherent(SGL_SIZE * sizeof(struct mnh_sg_entry), sg2, dma2);
+	kfree(sgl);
 	return 0;
 }
 
@@ -135,10 +159,13 @@ static ssize_t  mth_fs_pcie_write(struct file *file, const char __user *buf, siz
 {
 
 	dev_err(pcie_ep_tst_device, "File write \n");
-	mnh_sg_build(buf, count, sg1, SGL_SIZE);
-	index =1;
+	mnh_sg_build(buf, count, sg1, sgl, SGL_SIZE);
+	dev_err(pcie_ep_tst_device, "SG list build  %d %d\n",ll_index, status);
+	ll_index =1;
 	if (status == 1)
 		buildll();
+	dev_err(pcie_ep_tst_device, "SG list build  %d %d\n",ll_index, status);
+	//status = 3;
 	return 0;
 }
 
@@ -146,19 +173,23 @@ static ssize_t  mth_fs_pcie_write(struct file *file, const char __user *buf, siz
 static ssize_t mth_fs_pcie_read (struct file *filp,char *buf, size_t length, loff_t * offset)
 {
 	static char msg[5];
-	
-	if (status == 4) {
+
+	if (status == 3) {
+		//mnh_sg_destroy(sgl);
+		mnh_sg_sync(sgl);
 		sprintf(msg, "DONE\n");
-		if (length < 5)
+		//sprintf(msg, "WAIT\n");
+		if (length < 6)
 			return 0;
-		copy_to_user(buf,&msg,6);
+		copy_to_user(buf,&msg,5);
+		return 6;
 	} else {
 		sprintf(msg, "WAIT\n");
 		if (length < 6)
 			return 0;
 		copy_to_user(buf,&msg,5);
+		return 6;
 	}
-	return 5;
 }
 
 
@@ -174,14 +205,14 @@ static struct file_operations pcie_ep_tst_fops = {
 
 /* SYS_FS for debugging and testing */
 
-static ssize_t show_sysfs_start_dma(struct device *dev,
+static ssize_t show_sysfs_dma(struct device *dev,
 				struct device_attribute *attr,
 				char *buf)
 {
-	return snprintf(buf, MAX_STR_COPY, "No support\n");
+	return snprintf(buf, MAX_STR_COPY, "dma direction %d\n",dma_dir);
 }
 
-static ssize_t sysfs_start_dma(struct device *dev,
+static ssize_t sysfs_dma(struct device *dev,
 				struct device_attribute *attr,
 				const char *buf,
 				size_t count)
@@ -190,14 +221,16 @@ static ssize_t sysfs_start_dma(struct device *dev,
 
 	if (kstrtoul(buf, 0, &val))
 		return -EINVAL;
-	if ((val < 0) | (val > 31))
-		return -EINVAL;
+	if (val == 1)
+		dma_dir = 1;
+	else
+		dma_dir =0;
 
 	return count;
 }
 
-static DEVICE_ATTR(start_dma, S_IRUGO | S_IWUSR | S_IWGRP,
-			show_sysfs_start_dma, sysfs_start_dma);
+static DEVICE_ATTR(dma_direct, S_IRUGO | S_IWUSR | S_IWGRP,
+			show_sysfs_dma, sysfs_dma);
 
 
 
@@ -206,19 +239,19 @@ static int init_sysfs(void)
 	int ret;
 
 	ret = device_create_file(pcie_ep_tst_device,
-			&dev_attr_start_dma);
+			&dev_attr_dma_direct);
 	if (ret) {
 		dev_err(pcie_ep_tst_device, "Failed to create sysfs: send_msi\n");
 		return -EINVAL;
 	}
-	
+
 	return 0;
 }
 
 static void clean_sysfs(void)
 {
 	device_remove_file(pcie_ep_tst_device,
-			&dev_attr_start_dma);
+			&dev_attr_dma_direct);
 }
 
 static int __init mth_pcie_tst_drv_init(void)
@@ -251,7 +284,7 @@ static int __init mth_pcie_tst_drv_init(void)
 		err = PTR_ERR(pcie_ep_tst_device);
 		return err;
 	}
-
+	dma_dir = 0;
 	init_sysfs();
 	return 0;
 }
