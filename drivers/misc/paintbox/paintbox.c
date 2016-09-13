@@ -90,35 +90,38 @@ static int paintbox_release(struct inode *ip, struct file *fp)
 
 	/* Unbind any interrupts bound to the session's dma channels. */
 	list_for_each_entry_safe(channel, channel_next, &session->dma_list,
-			entry) {
+			session_entry) {
 		unbind_dma_interrupt(pb, session, channel);
 	}
 
 	/* Disable any interrupts associated with the session */
-	list_for_each_entry_safe(irq, irq_next, &session->irq_list, entry)
+	list_for_each_entry_safe(irq, irq_next, &session->irq_list,
+			session_entry)
 		release_interrupt(pb, session, irq);
 
 	/* Disable any dma channels associated with the channel */
 	list_for_each_entry_safe(channel, channel_next, &session->dma_list,
-			entry)
+			session_entry)
 		release_dma_channel(pb, session, channel);
 
 	/* Release any STPs associated with the session */
-	list_for_each_entry_safe(stp, stp_next, &session->stp_list, entry)
+	list_for_each_entry_safe(stp, stp_next, &session->stp_list,
+			session_entry)
 		release_stp(pb, session, stp);
 
 	/* Release any Line Buffer Pools associated with the channel */
-	list_for_each_entry_safe(lbp, lbp_next, &session->lbp_list, entry)
+	list_for_each_entry_safe(lbp, lbp_next, &session->lbp_list,
+			session_entry)
 		release_lbp(pb, session, lbp);
 
 	/* Release any MIPI Input Streams associated with the channel */
 	list_for_each_entry_safe(stream, stream_next, &session->mipi_input_list,
-			entry)
+			session_entry)
 		release_mipi_stream(pb, session, stream);
 
 	/* Release any MIPI Output Streams associated with the channel */
-	list_for_each_entry_safe(stream, stream_next, &session->mipi_output_list,
-			entry)
+	list_for_each_entry_safe(stream, stream_next,
+			&session->mipi_output_list, session_entry)
 		release_mipi_stream(pb, session, stream);
 
 	mutex_unlock(&pb->lock);
@@ -154,10 +157,14 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 		return unbind_dma_interrupt_ioctl(pb, session, arg);
 	case PB_START_DMA_TRANSFER:
 		return start_dma_transfer_ioctl(pb, session, arg);
+	case PB_STOP_DMA_TRANSFER:
+		return stop_dma_transfer_ioctl(pb, session, arg);
 	case PB_RELEASE_DMA_CHANNEL:
 		return release_dma_channel_ioctl(pb, session, arg);
 	case PB_GET_COMPLETED_UNREAD_COUNT:
 		return get_completed_transfer_count_ioctl(pb, session, arg);
+	case PB_FLUSH_DMA_TRANSFERS:
+		return flush_dma_transfers_ioctl(pb, session, arg);
 	case PB_ALLOCATE_LINE_BUFFER_POOL:
 		return allocate_lbp_ioctl(pb, session, arg);
 	case PB_SETUP_LINE_BUFFER:

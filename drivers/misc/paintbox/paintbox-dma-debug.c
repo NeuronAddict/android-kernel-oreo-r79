@@ -84,12 +84,12 @@ static const char *dma_reg_names[DMA_NUM_REGS] = {
 	REG_NAME_ENTRY(DMA_CHAN_NOC_XFER_H_RO),
 	REG_NAME_ENTRY(DMA_CHAN_NODE_RO),
 	REG_NAME_ENTRY(DMA_CHAN_DEPENDENCY),
-	REG_NAME_ENTRY(DMA_STS_CTRL),
-	REG_NAME_ENTRY(DMA_STS_STATE),
-	REG_NAME_ENTRY(DMA_STS_PTR_L),
-	REG_NAME_ENTRY(DMA_STS_PTR_H),
-	REG_NAME_ENTRY(DMS_STS_ADDR_L),
-	REG_NAME_ENTRY(DMA_STS_ADDR_H),
+	REG_NAME_ENTRY(DMA_STAT_CTRL),
+	REG_NAME_ENTRY(DMA_STAT_STATE),
+	REG_NAME_ENTRY(DMA_STAT_PTR_L),
+	REG_NAME_ENTRY(DMA_STAT_PTR_H),
+	REG_NAME_ENTRY(DMS_STAT_ADDR_L),
+	REG_NAME_ENTRY(DMA_STAT_ADDR_H),
 	REG_NAME_ENTRY(DMA_SPARE)
 };
 
@@ -237,8 +237,8 @@ int dump_dma_registers(struct paintbox_debug *debug, char *buf, size_t len)
 		}
 	}
 
-	for (i = REG_INDEX(DMA_STS_BLOCK_START);
-			i < REG_INDEX(DMA_STS_BLOCK_END); i++) {
+	for (i = REG_INDEX(DMA_STAT_BLOCK_START);
+			i < REG_INDEX(DMA_STAT_BLOCK_END); i++) {
 		if (dma_reg_names[i] != NULL) {
 			ret = dump_dma_reg(pb, i * IPU_REG_WIDTH, buf,
 					&written, len);
@@ -538,7 +538,7 @@ void paintbox_dma_channel_debug_init(struct paintbox_data *pb,
 void paintbox_dma_debug_init(struct paintbox_data *pb)
 {
 	unsigned int i, reg_index;
-	size_t reg_count = DMA_CTRL_NUM_REGS + DMA_STS_NUM_REGS;
+	size_t reg_count = DMA_CTRL_NUM_REGS + DMA_STAT_NUM_REGS;
 
 	int ret;
 
@@ -563,8 +563,8 @@ void paintbox_dma_debug_init(struct paintbox_data *pb)
 		}
 	}
 
-	for (reg_index = REG_INDEX(DMA_STS_BLOCK_START); i < reg_count &&
-			reg_index < REG_INDEX(DMA_STS_BLOCK_END); reg_index++,
+	for (reg_index = REG_INDEX(DMA_STAT_BLOCK_START); i < reg_count &&
+			reg_index < REG_INDEX(DMA_STAT_BLOCK_END); reg_index++,
 			i++) {
 		if (!dma_reg_names[reg_index])
 			continue;

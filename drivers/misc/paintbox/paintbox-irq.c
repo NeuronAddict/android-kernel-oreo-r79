@@ -98,7 +98,7 @@ int allocate_interrupt_ioctl(struct paintbox_data *pb,
 	}
 
 	irq->session = session;
-	list_add_tail(&irq->entry, &session->irq_list);
+	list_add_tail(&irq->session_entry, &session->irq_list);
 
 	mutex_unlock(&pb->lock);
 
@@ -300,18 +300,18 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 	struct interrupt_wait wait;
 	struct paintbox_irq *irq;
 	unsigned long irq_flags;
-	long ret;
-	int err;
+	long wait_timeout;
+	int ret, wait_ret;
 
 	user_wait = (struct interrupt_wait __user *)arg;
 	if (copy_from_user(&wait, user_wait, sizeof(wait)))
 		return -EFAULT;
 
 	mutex_lock(&pb->lock);
-	irq = get_interrupt(pb, session, wait.interrupt_id, &err);
-	if (err < 0) {
+	irq = get_interrupt(pb, session, wait.interrupt_id, &ret);
+	if (ret < 0) {
 		mutex_unlock(&pb->lock);
-		return err;
+		return ret;
 	}
 
 	dev_dbg(&pb->pdev->dev, "%s: int%u: wait, timeout %llu" , __func__,
@@ -332,11 +332,11 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 		 * allow it to be switched from configuration mode to execution
 		 * mode.
 		 */
-		err = sim_execute(pb, irq, wait.timeout_ns);
-		if (err < 0) {
+		ret = sim_execute(pb, irq, wait.timeout_ns);
+		if (ret < 0) {
 			spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
 			mutex_unlock(&pb->lock);
-			return err;
+			return ret;
 		}
 	}
 #endif
@@ -348,17 +348,17 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 	mutex_unlock(&pb->lock);
 
 	if (wait.timeout_ns != INT_MAX) {
-		ret = wait_for_completion_interruptible_timeout(
+		wait_timeout = wait_for_completion_interruptible_timeout(
 				&irq->completion,
 				nsecs_to_jiffies64(wait.timeout_ns));
-		if (ret == 0)
-			return -ETIMEDOUT;
-		if (ret < 0)
-			return ret;
+		if (wait_timeout == 0)
+			wait_ret = -ETIMEDOUT;
+		else if (wait_timeout < 0)
+			wait_ret = wait_timeout;
+		else
+			wait_ret = 0;
 	} else {
-		err = wait_for_completion_interruptible(&irq->completion);
-		if (err < 0)
-			return err;
+		wait_ret = wait_for_completion_interruptible(&irq->completion);
 	}
 
 	mutex_lock(&pb->lock);
@@ -366,40 +366,52 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 	/* Attempt to reacquire the interrupt resource to make sure it did not
 	 * get released out from under us while waiting.
 	 */
-	irq = get_interrupt(pb, session, wait.interrupt_id, &err);
-	if (err < 0) {
+	irq = get_interrupt(pb, session, wait.interrupt_id, &ret);
+	if (ret < 0) {
 		mutex_unlock(&pb->lock);
-		return err;
+		return ret;
 	}
 
 	spin_lock_irqsave(&pb->irq_lock, irq_flags);
 
 	irq->wait_count--;
 
+	if (wait_ret < 0) {
+		spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
+		mutex_unlock(&pb->lock);
+		return wait_ret;
+	}
+
 	if (irq->error) {
-		err = irq->error;
+		ret = irq->error;
 		irq->error = 0;
 		spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
 		mutex_unlock(&pb->lock);
-		return err;
+		return ret;
 	}
 
 	spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
 
 	mutex_unlock(&pb->lock);
 
-	return err;
+	return ret;
 }
 
-/* Must be called with interrupts disabled or with pb->irq_lock held */
-void signal_waiters(struct paintbox_irq *irq, int err)
+/* Must be called with interrupts disabled */
+void signal_waiters(struct paintbox_data *pb, struct paintbox_irq *irq, int err)
 {
-	if (!irq)
+	spin_lock(&pb->irq_lock);
+
+	if (!irq) {
+		spin_unlock(&pb->irq_lock);
 		return;
+	}
 
 	irq->error = err;
 
 	complete(&irq->completion);
+
+	spin_unlock(&pb->irq_lock);
 }
 
 /* The caller to this function must hold pb->lock */
@@ -444,7 +456,7 @@ int release_interrupt(struct paintbox_data *pb,
 		return -EINVAL;
 	};
 
-	list_del(&irq->entry);
+	list_del(&irq->session_entry);
 	irq->session = NULL;
 	irq->source = IRQ_SRC_NONE;
 

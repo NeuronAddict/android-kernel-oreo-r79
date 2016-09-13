@@ -16,7 +16,7 @@
 #ifndef __PAINTBOX_COMMON_H__
 #define __PAINTBOX_COMMON_H__
 
-#include <linux/atomic.h>
+
 #include <linux/dma-mapping.h>
 #include <linux/miscdevice.h>
 #include <linux/paintbox.h>
@@ -120,7 +120,13 @@ struct paintbox_mipi_interface {
 };
 
 struct paintbox_mipi_stream {
-	struct list_head entry;
+	/* Session list entry, A MIPI stream may be allocated to a session or
+	 * released using the PB_ALLOCATE_MIPI_IN_STREAM,
+	 * PB_RELEASE_MIPI_IN_STREAM, PB_ALLOCATE_MIPI_OUT_STREAM, and
+	 * PB_RELEASE_MIPI_OUT_STREAM ioctls.
+	 */
+	struct list_head session_entry;
+
 	struct paintbox_debug debug;
 	struct paintbox_session *session;
 	struct paintbox_mipi_interface *interface;
@@ -167,7 +173,12 @@ enum paintbox_irq_src {
  * entry, session - protected by pb->lock
  */
 struct paintbox_irq {
-	struct list_head entry;
+	/* Session list entry, An IRQ waiter may be allocated to a session or
+	 * released using the PB_ALLOCATE_INTERRUPT and PB_RELEASE_INTERRUPT
+	 * ioctls.
+	 */
+	struct list_head session_entry;
+
 	struct completion completion;
 	struct paintbox_session *session;
 	enum paintbox_irq_src source;
@@ -181,11 +192,8 @@ struct paintbox_irq {
 	int wait_count;
 };
 
-/* TODO(ahampson):  There will eventually be a queue of transfers for each
- * channel.  Per transfer information will be stored in this structure.  In the
- * interim there will be a single transfer structure assocated with each
- * channel.  After the interrupt refactor the proper queuing can be
- * implemented.
+/* Per transfer information is stored in this structure. Transfers are stored in
+ * either the pending, active, completed, or discard queues.
  */
 struct paintbox_dma_transfer {
 	struct list_head entry;
@@ -211,7 +219,10 @@ struct paintbox_dma_transfer {
 	uint32_t chan_va_bdry_high;
 	uint32_t chan_noc_xfer_low;
 	uint32_t chan_node;
+	int error;
 	enum dma_data_direction dir;
+	bool notify_on_completion;
+	bool auto_load_transfer;
 };
 
 /* Data structure for information specific to a DMA channel.
@@ -222,19 +233,31 @@ struct paintbox_dma_transfer {
  * function only has the paintbox_dma object.
  */
 struct paintbox_dma_channel {
-	struct list_head entry;
+	/* Session list entry, A DMA channel may be allocated to a session or
+	 * released using the PB_ALLOCATE_DMA_CHANNEL and PB_RELEASE_DMA_CHANNEL
+	 * ioctls.
+	 */
+	struct list_head session_entry;
+
 	struct paintbox_debug debug;
 	struct paintbox_session *session;
-
-	/* TODO(ahampson):  Initially only a single transfer will be supported.
-	 * a transfer queue will be implemented in the future.
-	 */
-	struct paintbox_dma_transfer transfer;
-
+	struct completion stop_completion;
 	unsigned int channel_id;
 	struct paintbox_irq *irq;
-	atomic_t completed_unread;
-	bool read_transfer;
+
+	/* Access to the pending, active, and completed queues is controlled by
+	 * pb->dma.dma_lock.
+	 */
+	struct list_head pending_list;
+	struct list_head active_list;
+	struct list_head completed_list;
+
+	/* Access to the count and stop fields is controlled by pb->dma.dma_lock
+	 */
+	int pending_count;
+	int active_count;
+	int completed_count;
+	bool stop_request;
 };
 
 struct paintbox_dma {
@@ -242,6 +265,15 @@ struct paintbox_dma {
 	struct paintbox_dma_channel *channels;
 	unsigned int num_channels;
 	void __iomem *dma_base;
+
+	/* Access to the discard queue and discard count is controlled by
+	 * pb->dma.dma_lock.
+	 */
+	struct list_head discard_list;
+	unsigned int discard_count;
+
+	/* dma_lock protects access to DMA transfer queues and registers. */
+	spinlock_t dma_lock;
 };
 
 /* Data structure for information specific to a Stencil Processor.
@@ -252,7 +284,12 @@ struct paintbox_dma {
  * function only has the paintbox_stp object.
  */
 struct paintbox_stp {
-	struct list_head entry;
+	/* Session list entry, A stencil processor may be allocated to a session
+	 * or released using the PB_ALLOCATE_PROCESSOR and PB_RELEASE_PROCESSOR
+	 * ioctls.
+	 */
+	struct list_head session_entry;
+
 	struct paintbox_debug debug;
 	struct paintbox_session *session;
 	struct paintbox_irq *irq;
@@ -291,7 +328,12 @@ struct paintbox_lb {
  * function only has the paintbox_lbp object.
  */
 struct paintbox_lbp {
-	struct list_head entry;
+	/* Session list entry, A line buffer pool may be allocated to a session
+	 * or released using the PB_ALLOCATE_LINE_BUFFER_POOL and
+	 * PB_RELEASE_LINE_BUFFER_POOL ioctls.
+	 */
+	struct list_head session_entry;
+
 	struct paintbox_debug debug;
 	struct paintbox_session *session;
 	struct paintbox_lb *lbs;

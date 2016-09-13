@@ -55,6 +55,8 @@ struct paintbox_lb *get_lb(struct paintbox_data *pb,
 		unsigned int lb_id, int *err);
 void release_lbp(struct paintbox_data *pb, struct paintbox_session *session,
 		struct paintbox_lbp *lbp);
+void reset_lb(struct paintbox_data *pb, unsigned int lbp_id,
+		unsigned int lb_id);
 
 #if defined(CONFIG_DEBUG_FS) || defined(VERBOSE_DEBUG)
 int dump_lbp_registers(struct paintbox_debug *debug, char *buf, size_t len);

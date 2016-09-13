@@ -128,7 +128,8 @@ int sim_wait_for_idle_ioctl(struct paintbox_data *pb,
 
 	mutex_lock(&pb->lock);
 
-	list_for_each_entry_safe(stp, stp_next, &session->stp_list, entry) {
+	list_for_each_entry_safe(stp, stp_next, &session->stp_list,
+			session_entry) {
 		ret = sim_wait_for_idle(pb, stp);
 		if (ret < 0) {
 			mutex_unlock(&pb->lock);

@@ -383,20 +383,20 @@
 #define DMA_CHAN_BLOCK_LEN    (DMA_CHAN_BLOCK_END - DMA_CHAN_BLOCK_START)
 #define DMA_CHAN_NUM_REGS     (DMA_CHAN_BLOCK_LEN / IPU_REG_WIDTH)
 
-#define DMA_STS_BLOCK_START   0x248
-#define DMA_STS_CTRL          0x248
-#define DMA_STS_STATE         0x250
-#define DMA_STS_PTR_L         0x258
-#define DMA_STS_PTR_H         0x25C
-#define DMS_STS_ADDR_L        0x260
-#define DMA_STS_ADDR_H        0x264
+#define DMA_STAT_BLOCK_START  0x248
+#define DMA_STAT_CTRL         0x248
+#define DMA_STAT_STATE        0x250
+#define DMA_STAT_PTR_L        0x258
+#define DMA_STAT_PTR_H        0x25C
+#define DMS_STAT_ADDR_L       0x260
+#define DMA_STAT_ADDR_H       0x264
 #define DMA_SPARE             0x268
-#define DMA_STS_BLOCK_END     0x270
+#define DMA_STAT_BLOCK_END    0x270
 
-#define DMA_STS_BLOCK_LEN     (DMA_STS_BLOCK_END - DMA_STS_BLOCK_START)
-#define DMA_STS_NUM_REGS      (DMA_STS_BLOCK_LEN / IPU_REG_WIDTH)
+#define DMA_STAT_BLOCK_LEN    (DMA_STAT_BLOCK_END - DMA_STAT_BLOCK_START)
+#define DMA_STAT_NUM_REGS     (DMA_STAT_BLOCK_LEN / IPU_REG_WIDTH)
 
-#define DMA_BLOCK_LEN         DMA_STS_BLOCK_END
+#define DMA_BLOCK_LEN         DMA_STAT_BLOCK_END
 #define DMA_NUM_REGS          (DMA_BLOCK_LEN / IPU_REG_WIDTH)
 
 /* DMA_CTRL Register Bits */
@@ -599,39 +599,44 @@
 #define DMA_CHAN_INT_EOF      (1 << 0)
 #define DMA_CHAN_INT_VA_ERR   (1 << 2)
 
-/* DMA_STS_CTRL Register Bits */
-#define DMA_STS_ENABLE        (1 << 0)
-#define DMA_STS_CHAN_SEL_SHIFT 1
-#define DMA_STS_CHAN_SEL_M     0xF
-#define DMA_STS_CHAN_SEL_MASK  (DMA_STS_CHAN_SEL_M << DMA_STS_CHAN_SEL_SHIFT)
-#define DMA_STS_DST_BIF_SEL_SSP (1 << 5)
-#define DMA_STS_ADDR_DIR      (1 << 6)
+/* DMA_STAT_CTRL Register Bits */
+#define DMA_STAT_ENABLE        (1 << 0)
+#define DMA_STAT_CHAN_SEL_SHIFT 1
+#define DMA_STAT_CHAN_SEL_M    0xF
+#define DMA_STAT_CHAN_SEL_MASK DMA_STAT_CHAN_SEL_M << DMA_STAT_CHAN_SEL_SHIFT)
+#define DMA_STAT_DST_BIF_SEL_SSP (1 << 5)
+#define DMA_STAT_ADDR_MODE     (1 << 6)
 
-/* DMA_STS_STATE Register Bits */
-#define DMA_STS_SRC_MASK       0xF
-#define DMA_STS_DST_SHIFT      4
-#define DMA_STS_DST_M          0xF
-#define DMA_STS_DST_MASK       (DMA_STS_DST_M << DMA_STS_DST_SHIFT)
-#define DMA_STS_NOC_CREDITS_SHIFT 8
-#define DMA_STS_NOC_CREDITS_M  0x0F
-#define DMA_STS_NOC_CREDITS_MASK (DMA_STS_NOC_CREDITS_M <<                     \
-		DMA_STS_NOC_CREDITS_SHIFT
-#define DMA_STS_SRC_MODE       (1 << 12)
-#define DMA_STS_DST_MODE       (1 << 13)
-#define DMA_STS_NOC_CREDITS_MODE (1 << 14)
+/* DMA_STAT_STATE Register Bits */
+#define DMA_STAT_WR_MNGR_CHAN_MODE (1 << 19)
+#define DMA_STAT_RD_MNGR_CHAN_MODE (1 << 18)
+#define DMA_STAT_DST_MODE      (1 << 17)
+#define DMA_STAT_SRC_MODE      (1 << 16)
+#define DMA_STAT_WR_MNGR_CHAN_M 0xF
+#define DMA_STAT_WR_MNGR_CHAN_SHIFT 12
+#define DMA_STAT_WR_MNGR_CHAN_MASK (DMA_STAT_WR_MNGR_CHAN_M <<                 \
+        DMA_STAT_WR_MNGR_CHAN_SHIFT)
+#define DMA_STAT_RD_MNGR_CHAN_M 0xF
+#define DMA_STAT_RD_MNGR_CHAN_SHIFT 8
+#define DMA_STAT_RD_MNGR_CHAN_MASK (DMA_STAT_RD_MNGR_CHAN_M <<                 \
+        DMA_STAT_RD_MNGR_CHAN_SHIFT)
+#define DMA_STAT_DST_SHIFT     4
+#define DMA_STAT_DST_M         0xF
+#define DMA_STAT_DST_MASK      (DMA_STAT_DST_M << DMA_STAT_DST_SHIFT)
+#define DMA_STAT_SRC_MASK      0xF
 
-/* DMA_STS_PTR_L */
-#define DMA_STS_X_MASK         0xFFFF
-#define DMA_STS_Y_M            0xFFFF
-#define DMA_STS_Y_SHIFT        16
-#define DMA_STS_Y_MASK         (DMA_STS_Y_M << DMA_STS_Y_SHIFT)
+/* DMA_STAT_PTR_L */
+#define DMA_STAT_Y_M           0xFFFF
+#define DMA_STAT_Y_SHIFT       16
+#define DMA_STAT_Y_MASK        (DMA_STAT_Y_M << DMA_STAT_Y_SHIFT)
+#define DMA_STAT_X_MASK        0xFFFF
 
-/* DMS_STS_PTR_H */
-#define DMA_STS_WIDTH_MASK     0x1FF
-#define DMA_STS_HEIGHT_SHIFT   12
-#define DMA_STS_HEIGHT_M       0x1F
-#define DMA_STS_HEIGHT_MASK    (DMA_STS_HEIGHT_M << DMA_STS_HEIGHT_SHIFT)
-#define DMA_STS_PTR_DIR        (1 << 31)
+/* DMA_STAT_PTR_H */
+#define DMA_STAT_MODE          (1 << 31)
+#define DMA_STAT_HEIGHT_SHIFT  12
+#define DMA_STAT_HEIGHT_M      0x1F
+#define DMA_STAT_HEIGHT_MASK   (DMA_STAT_HEIGHT_M << DMA_STAT_HEIGHT_SHIFT)
+#define DMA_STAT_WIDTH_MASK    0x1FF
 
 /* LBP Register Group Offsets */
 

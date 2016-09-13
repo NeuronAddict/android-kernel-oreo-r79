@@ -629,6 +629,13 @@ static void reset_line_buffer(struct paintbox_data *pb, struct paintbox_lb *lb)
 }
 
 /* The caller to this function must hold pb->lock */
+void reset_lb(struct paintbox_data *pb, unsigned int lbp_id, unsigned int lb_id)
+{
+	writel(lbp_id| lb_id << LBP_LB_SEL_SHIFT, pb->lbp_base + LBP_SEL);
+	reset_line_buffer(pb, &pb->lbps[lbp_id].lbs[lb_id]);
+}
+
+/* The caller to this function must hold pb->lock */
 void release_lbp(struct paintbox_data *pb,
 		struct paintbox_session *session, struct paintbox_lbp *lbp)
 {
@@ -638,7 +645,8 @@ void release_lbp(struct paintbox_data *pb,
 	writel(lbp->pool_id, pb->lbp_base + LBP_SEL);
 	writel(0, pb->lbp_base + LBP_CTRL_L);
 
-	list_del(&lbp->entry);
+	/* Remove the line buffer pool from the session. */
+	list_del(&lbp->session_entry);
 	lbp->session = NULL;
 }
 
@@ -665,7 +673,7 @@ int allocate_lbp_ioctl(struct paintbox_data *pb,
 	}
 
 	lbp->session = session;
-	list_add_tail(&lbp->entry, &session->lbp_list);
+	list_add_tail(&lbp->session_entry, &session->lbp_list);
 
 	writel(pool_id, pb->lbp_base + LBP_SEL);
 	writel(LBP_LBP_RESET, pb->lbp_base + LBP_CTRL_L);

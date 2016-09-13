@@ -21,6 +21,9 @@
 
 #include "paintbox-common.h"
 
+/* MAX_ACTIVE_TRANSFERS is number of transfers that can be queued in hardware.
+ */
+#define MAX_ACTIVE_TRANSFERS 2
 
 /* The caller to this function must hold pb->lock */
 void dma_select_channel(struct paintbox_data *pb, uint32_t channel_id);
@@ -47,7 +50,13 @@ int read_dma_transfer_ioctl(struct paintbox_data *pb,
 int start_dma_transfer_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 
+int stop_dma_transfer_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg);
+
 int get_completed_transfer_count_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg);
+
+int flush_dma_transfers_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 
 int paintbox_dma_init(struct paintbox_data *pb);
@@ -62,14 +71,14 @@ int validate_dma_channel(struct paintbox_data *pb,
 struct paintbox_dma_channel *get_dma_channel(struct paintbox_data *pb,
 		struct paintbox_session *session, uint8_t channel_id, int *err);
 
-int release_dma_channel(struct paintbox_data *pb,
+void release_dma_channel(struct paintbox_data *pb,
 		struct paintbox_session *session,
 		struct paintbox_dma_channel *dma);
 
 int dma_start_transfer(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel);
 
-int dma_stop_transfer(struct paintbox_data *pb,
+void dma_stop_transfer(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel);
 
 #endif  /* __PAINTBOX_DMA_H__ */

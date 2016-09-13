@@ -138,6 +138,17 @@ struct dma_transfer_config {
 	uint32_t sheet_height;
 	uint32_t stripe_height;
 	uint32_t noc_outstanding;
+
+	/* Set to true when the runtime will be waiting for a completion
+	 * notification.
+	 */
+	bool notify_on_completion;
+
+	/* Set to true when the transfer should be auto-loaded once the
+	 * preceding transfer has completed without invoking the
+	 * PB_START_DMA_TRANSFER ioctl.
+	 */
+	bool auto_load_transfer;
 };
 
 /* TODO(ahampson):  We can remove this when the IOMMU based transfers are
@@ -147,6 +158,13 @@ struct dma_transfer_read {
 	uint32_t channel_id;
 	void __user *host_vaddr;
 	size_t len_bytes;
+};
+
+struct dma_transfer_flush {
+	uint32_t channel_id;
+	bool flush_pending;
+	bool flush_active;
+	bool flush_completed;
 };
 
 struct padding_params {
@@ -380,5 +398,7 @@ struct mipi_interrupt_config {
 #define PB_DISABLE_STP_INTERRUPT      _IOW('p', 61, unsigned int)
 #define PB_BIND_STP_INTERRUPT         _IOW('p', 62, struct stp_interrupt_config)
 #define PB_UNBIND_STP_INTERRUPT       _IOW('p', 63, unsigned int)
+#define PB_STOP_DMA_TRANSFER          _IOW('p', 64, unsigned int)
+#define PB_FLUSH_DMA_TRANSFERS        _IOW('p', 65, struct dma_transfer_flush)
 
 #endif /* __PAINTBOX_H__ */

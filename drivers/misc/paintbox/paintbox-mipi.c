@@ -143,7 +143,7 @@ int allocate_mipi_input_stream_ioctl(struct paintbox_data *pb,
 	}
 
 	stream->session = session;
-	list_add_tail(&stream->entry, &session->mipi_input_list);
+	list_add_tail(&stream->session_entry, &session->mipi_input_list);
 
 	/* TODO(ahampson):  Determine allocation actions */
 
@@ -174,7 +174,7 @@ int allocate_mipi_output_stream_ioctl(struct paintbox_data *pb,
 	}
 
 	stream->session = session;
-	list_add_tail(&stream->entry, &session->mipi_output_list);
+	list_add_tail(&stream->session_entry, &session->mipi_output_list);
 
 	/* TODO(ahampson):  Determine allocation actions */
 
@@ -192,7 +192,8 @@ void release_mipi_stream(struct paintbox_data *pb,
 {
 	writel(0, pb->io_ipu.ipu_base + stream->ctrl_offset);
 
-	list_del(&stream->entry);
+	/* Remove the MIPI stream from the session. */
+	list_del(&stream->session_entry);
 	stream->session = NULL;
 }
 
@@ -747,7 +748,7 @@ int unbind_mipi_interrupt_ioctl(struct paintbox_data *pb,
 void mipi_report_completion(struct paintbox_data *pb,
 		struct paintbox_mipi_stream *stream, int err)
 {
-	signal_waiters(stream->irq, err);
+	signal_waiters(pb, stream->irq, err);
 }
 
 irqreturn_t paintbox_mipi_input_interrupt(struct paintbox_data *pb,

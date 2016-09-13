@@ -27,18 +27,7 @@ int dma_map_buffer_cma(struct paintbox_data *pb,
 		struct paintbox_dma_transfer *transfer, void __user *buf,
 		size_t len_bytes, enum dma_data_direction dir)
 {
-	/* TODO(ahampson):  We are temporarily going to have one transfer
-	 * hardcoded with the channel.  The CMA memory associated with the
-	 * transfer is freed lazily.  If there is a buffer associated with the
-	 * channel then free it here.  This will get cleaned up once the
-	 * interrupt code is refactored.
-	 */
-	if (transfer->buf_vaddr) {
-		dma_free_coherent(&pb->pdev->dev,
-				transfer->len_bytes,
-				transfer->buf_vaddr,
-				transfer->buf_paddr);
-	}
+	WARN_ON(transfer->buf_vaddr);
 
 	transfer->buf_vaddr = dma_alloc_coherent(&pb->pdev->dev, len_bytes,
 			&transfer->buf_paddr, GFP_KERNEL);
@@ -58,11 +47,6 @@ int dma_map_buffer_cma(struct paintbox_data *pb,
 	if (copy_from_user(transfer->buf_vaddr, buf, len_bytes)) {
 		dma_free_coherent(&pb->pdev->dev, len_bytes,
 				transfer->buf_vaddr, transfer->buf_paddr);
-
-		transfer->len_bytes = 0;
-		transfer->buf_vaddr = NULL;
-		transfer->buf_paddr = 0;
-
 		return -EFAULT;
 	}
 
@@ -87,6 +71,8 @@ int dma_unmap_buffer_cma(struct paintbox_data *pb,
 {
 	int ret = 0;
 
+	WARN_ON(transfer->buf_vaddr == NULL);
+
 	if (transfer->dir == DMA_FROM_DEVICE && buf != NULL) {
 		dma_sync_single_for_cpu(&pb->pdev->dev,
 			transfer->buf_paddr, transfer->len_bytes,
@@ -104,14 +90,6 @@ int dma_unmap_buffer_cma(struct paintbox_data *pb,
 
 	dma_free_coherent(&pb->pdev->dev, transfer->len_bytes,
 			transfer->buf_vaddr, transfer->buf_paddr);
-
-	/* TODO(ahampson):  We are going to temporarily have one hardcoded
-	 * transfer associated with each channel.  NULL out the transfer instead
-	 * of freeing it.
-	 */
-	transfer->len_bytes = 0;
-	transfer->buf_vaddr = NULL;
-	transfer->buf_paddr = 0;
 
 	return ret;
 }

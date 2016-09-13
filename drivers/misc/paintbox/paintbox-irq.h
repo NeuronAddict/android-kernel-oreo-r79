@@ -60,9 +60,8 @@ int unbind_mipi_interrupt(struct paintbox_data *pb,
 		struct paintbox_mipi_stream *stream);
 void init_waiters(struct paintbox_data *pb, struct paintbox_irq *irq);
 
-/* The following functions must be called with interrupts disabled or
- * pb->irq_lock held.
- */
-void signal_waiters(struct paintbox_irq *irq, int err);
+/* The following functions must be called with interrupts disabled. */
+void signal_waiters(struct paintbox_data *pb, struct paintbox_irq *irq,
+		int err);
 
 #endif /* __PAINTBOX_IRQ_H__ */

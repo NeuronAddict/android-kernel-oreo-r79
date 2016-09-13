@@ -307,7 +307,7 @@ int allocate_stp_ioctl(struct paintbox_data *pb,
 	}
 
 	stp->session = session;
-	list_add_tail(&stp->entry, &session->stp_list);
+	list_add_tail(&stp->session_entry, &session->stp_list);
 
 	spin_lock_irqsave(&pb->stp_lock, irq_flags);
 
@@ -315,7 +315,8 @@ int allocate_stp_ioctl(struct paintbox_data *pb,
 
 	/* Grant access to all LBPs associated with this session */
 	lbp_mask = 0;
-	list_for_each_entry_safe(lbp, lbp_next, &session->lbp_list, entry)
+	list_for_each_entry_safe(lbp, lbp_next, &session->lbp_list,
+			session_entry)
 		lbp_mask |= 1 << (lbp->pool_id + STP_LBP_MASK_SHIFT);
 
 	ctrl = readl(pb->stp_base + STP_CTRL);
@@ -358,7 +359,8 @@ void release_stp(struct paintbox_data *pb, struct paintbox_session *session,
 	 * for the cancel to take effect.
 	 */
 
-	list_del(&stp->entry);
+	/* Remove the processor from the session. */
+	list_del(&stp->session_entry);
 	stp->session = NULL;
 }
 
@@ -389,7 +391,8 @@ void enable_stp_access_to_lbp(struct paintbox_data *pb,
 	uint32_t ctrl;
 
 	/* Grant access to the LBP to all STPs in the session. */
-	list_for_each_entry_safe(stp, stp_next, &session->stp_list, entry) {
+	list_for_each_entry_safe(stp, stp_next, &session->stp_list,
+			session_entry) {
 		unsigned long irq_flags;
 
 		spin_lock_irqsave(&pb->stp_lock, irq_flags);
@@ -414,7 +417,8 @@ void disable_stp_access_to_lbp(struct paintbox_data *pb,
 	uint32_t ctrl;
 
 	/* Disable access to the LBP for all STPs in the session. */
-	list_for_each_entry_safe(stp, stp_next, &session->stp_list, entry) {
+	list_for_each_entry_safe(stp, stp_next, &session->stp_list,
+			session_entry) {
 		unsigned long irq_flags;
 
 		spin_lock_irqsave(&pb->stp_lock, irq_flags);
@@ -426,6 +430,37 @@ void disable_stp_access_to_lbp(struct paintbox_data *pb,
 
 		spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
 	}
+}
+
+int stp_ctrl_set(struct paintbox_data *pb,
+		 struct paintbox_session *session, unsigned int stp_id,
+		 uint32_t set_mask)
+{
+	struct paintbox_stp *stp;
+	unsigned long irq_flags;
+	uint32_t ctrl;
+	int ret;
+
+	mutex_lock(&pb->lock);
+	stp = get_stp(pb, session, stp_id, &ret);
+	if (ret < 0) {
+		mutex_unlock(&pb->lock);
+		return ret;
+	}
+
+	spin_lock_irqsave(&pb->stp_lock, irq_flags);
+
+	writel(stp->stp_id, pb->stp_base + STP_SEL);
+
+	ctrl = readl(pb->stp_base + STP_CTRL);
+	ctrl |= set_mask;
+	writel(ctrl, pb->stp_base + STP_CTRL);
+
+	spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+
+	mutex_unlock(&pb->lock);
+
+	return 0;
 }
 
 int stp_ctrl_set_and_clear(struct paintbox_data *pb,
@@ -559,7 +594,8 @@ int resume_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 {
 	unsigned int stp_id = (unsigned int)arg;
 	dev_dbg(&pb->pdev->dev, "%s: stp%u\n",  __func__, stp_id);
-	return stp_ctrl_set_and_clear(pb, session, stp_id, STP_RESUME);
+        /* Resume bit is self-clearing */
+	return stp_ctrl_set(pb, session, stp_id, STP_RESUME);
 }
 
 int reset_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
@@ -873,7 +909,7 @@ irqreturn_t paintbox_stp_interrupt(struct paintbox_data *pb, uint32_t stp_mask)
 
 		writel(val & ~STP_INT, pb->stp_base + STP_CTRL);
 
-		signal_waiters(stp->irq, int_code);
+		signal_waiters(pb, stp->irq, int_code);
 
 		spin_unlock(&pb->stp_lock);
 	}
