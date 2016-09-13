@@ -88,7 +88,6 @@ struct id_buffer {
   int id;
   void __iomem * buffer;
   unsigned long phys_addr;
-  struct resource * region;
   struct list_head list;
 };
 
@@ -243,34 +242,21 @@ ssize_t create_buffer(struct file *filp, const char __user *buff,size_t len, lof
   unsigned long memsize=0;
   char line[20];
   void *next;
-  struct resource * mem_region;
   printk(KERN_INFO "write info");
   length = copy_from_user((void *)line, (void *) buff,20);
-  sscanf(line, "%lx %lx", &phys_addr, &memsize);
+  sscanf(line, "%lx", &memsize);
   memsize = memsize < PAGE_SIZE ? PAGE_SIZE : memsize;
-  if (!phys_addr){
-    printk(KERN_WARNING "failed to get address start, please write address to sys file\n");
-    return EINVAL;
-  }
   if (!memsize){
     printk(KERN_WARNING "failed to get buffer size , please write size to sys file\n");
     return EINVAL;
   }
-  //phys_addr &= PAGE_MASK;
-  printk(KERN_INFO "map memory at  is %lx\n", phys_addr);
-  mem_region = request_mem_region(phys_addr, memsize, "pcie_test_dma_buffer");
-  if (!mem_region){
-    printk(KERN_WARNING "failed to get region\n");
-    return EINVAL;
-  }
-  next = ioremap(phys_addr, memsize);
+  next = kmalloc(memsize, GFP_KERNEL);
+
   if (!next){
-    printk(KERN_WARNING "io remap failed\n");
+    printk(KERN_WARNING "mem alloc failed\n");
     return EINVAL;
   }
-  else{
-    printk(KERN_WARNING "%lu mapped at %lx\n", memsize, (long) next);
-  }
+  phys_addr = virt_to_phys(next);
 
   if (next){
     struct id_buffer *id_buffer_entry;
@@ -283,7 +269,6 @@ ssize_t create_buffer(struct file *filp, const char __user *buff,size_t len, lof
     id_buffer_entry->buffer = next;
     id_buffer_entry->id = next_buffer_id;
     id_buffer_entry->length = (int) memsize;
-    id_buffer_entry->region = mem_region;
     INIT_LIST_HEAD(&(id_buffer_entry->list));
     buffer_id = next_buffer_id;
     printk(KERN_INFO "memory allocation size %d id %d\n", (int) memsize, next_buffer_id++);
@@ -350,10 +335,8 @@ ssize_t write_delete(struct file *filp, const char __user *buff,size_t len, loff
   }
   else{
     printk(KERN_INFO "deleting chunk id to %d\n", id);
-    release_mem_region(buffer_entry->phys_addr, buffer_entry->length);
     list_del(&(buffer_entry->list));
-    //kfree(buffer_entry->buffer);
-    iounmap(buffer_entry->buffer);
+    kfree(buffer_entry->buffer);
     kfree(buffer_entry);
   }
   return len;
@@ -366,9 +349,8 @@ ssize_t write_delete_all(struct file *filp, const char __user *buff,size_t len, 
   list_for_each_safe(node,tmp, &id_buffer_list){
     temp_entry = list_entry(node, struct id_buffer, list);
     printk(KERN_INFO "delete buffer for id %d\n", temp_entry->id);
-    release_mem_region(temp_entry->phys_addr, temp_entry->length);
     list_del(node);
-    iounmap(temp_entry->buffer);
+    kfree(temp_entry->buffer);
     kfree(temp_entry);
   }
 
@@ -485,7 +467,6 @@ ssize_t read_buffer(struct file *filp, char *buffer, size_t length, loff_t *offs
 ssize_t read_address(struct file *filp, char *buffer, size_t length, loff_t *offset){
 
   int val_length;
-  //char *p;
   char line [80];
   struct id_buffer *buffer_entry = (struct id_buffer *) 0;
   char *test_buffer;
@@ -535,7 +516,6 @@ ssize_t read_id(struct file *filp, char *buffer, size_t length, loff_t *offset){
 
   int val_length;
   long bytes_copied;
-  //char *p;
   char line [20];
   printk(KERN_INFO "read id\n");
   sprintf(line, "%d\n", buffer_id);
