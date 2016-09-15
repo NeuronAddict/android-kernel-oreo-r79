@@ -42,6 +42,7 @@ config ION_EASEL
 config ION_HISI
 	tristate "Ion for Hisilicon"
 	depends on ARCH_HISI && ION
+	select ION_OF
 	help
 	  Choose this option if you wish to use ion on Hisilicon Platform.
 
