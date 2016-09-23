@@ -304,14 +304,32 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 	 * BIASEXTR internal resistor control
 	 * LPTX bias current control
 	 */
-	val = 0x04;
+	val = 0x04 | (1<<7) | (0x3<<11) | (0x6<<15);
 	if (config->mbps > 1000)
 		val |= (1<<10);
 
 	mipicsi_dev_dphy_write_set(dev, R_CSI2_DCPHY_AFE_BYPASS_BANDGAP,
-				   ((val >> 0) & 0x3F), 0, 2);
+				   ((val >> 12) & 0x3F), 2, 2);
 	mipicsi_dev_dphy_write_set(dev, R_CSI2_DCPHY_AFE_BYPASS_BANDGAP,
 				   ((val >> 6) & 0x3F), 1, 2);
+	mipicsi_dev_dphy_write_set(dev, R_CSI2_DCPHY_AFE_BYPASS_BANDGAP,
+				   ((val >> 0) & 0x3F), 0, 2);
+
+	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_LP_TX_PWR_CTRL_CLK, 0x0F);
+
+	/* Configure clock and data lane timings */
+	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_CLK_TLP, 0x83);
+	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_CLK_TCLK_PREP, 0x85);
+	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_CLK_TCLK_ZERO, 0x93);
+	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_CLK_TCLK_TRAIL, 0x86);
+	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_CLK_THS_EXIT, 0x2B);
+	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_CLK_TCLK_POST, 0x2C);
+	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_DATA_TLP, 0x83);
+	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_DATA_THS_PREP, 0x84);
+	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_DATA_THS_ZERO, 0x89);
+	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_DATA_THS_TRAIL, 0x85);
+	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_DATA_THS_EXIT, 0x3F);
+
 
 	TX_OUT(PHY_RSTZ, 0x07);
 	udelay(1);

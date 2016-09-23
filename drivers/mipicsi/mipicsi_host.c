@@ -254,6 +254,8 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 	mipicsi_host_dphy_write_set(dev, R_CSI2_DCPHY_AFE_BYPASS_BANDGAP,
 				   ((val >> 6) & 0x3F), 1, 2);
 
+	mipicsi_host_dphy_write (dev, R_CSI2_DCPHY_HS_RX_DATA_THS_SETL, 0xA5);
+
 	/* Set SHUTDOWNZ=1'b1 */
 	RX_OUTf(PHY_SHUTDOWNZ, PHY_SHUTDOWNZ, 1);
 
