@@ -1585,6 +1585,21 @@ int dw_dma_probe(struct dw_dma_chip *chip, struct dw_dma_platform_data *pdata)
 	if (err)
 		goto err_pdata;
 
+	err = request_irq(chip->irq1, dw_dma_interrupt, IRQF_SHARED,
+			  "dw_dmac", dw);
+	if (err)
+		goto err_pdata;
+
+	err = request_irq(chip->irq2, dw_dma_interrupt, IRQF_SHARED,
+			  "dw_dmac", dw);
+	if (err)
+		goto err_pdata;
+
+	err = request_irq(chip->irq3, dw_dma_interrupt, IRQF_SHARED,
+			  "dw_dmac", dw);
+	if (err)
+		goto err_pdata;
+
 	INIT_LIST_HEAD(&dw->dma.channels);
 	for (i = 0; i < pdata->nr_channels; i++) {
 		struct dw_dma_chan	*dwc = &dw->chan[i];
@@ -1696,6 +1711,9 @@ int dw_dma_probe(struct dw_dma_chip *chip, struct dw_dma_platform_data *pdata)
 
 err_dma_register:
 	free_irq(chip->irq, dw);
+	free_irq(chip->irq1, dw);
+	free_irq(chip->irq2, dw);
+	free_irq(chip->irq3, dw);
 err_pdata:
 	pm_runtime_put_sync_suspend(chip->dev);
 	return err;
@@ -1713,6 +1731,10 @@ int dw_dma_remove(struct dw_dma_chip *chip)
 	dma_async_device_unregister(&dw->dma);
 
 	free_irq(chip->irq, dw);
+	free_irq(chip->irq1, dw);
+	free_irq(chip->irq2, dw);
+	free_irq(chip->irq3, dw);
+
 	tasklet_kill(&dw->tasklet);
 
 	list_for_each_entry_safe(dwc, _dwc, &dw->dma.channels,

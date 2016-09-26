@@ -175,6 +175,18 @@ static int dw_probe(struct platform_device *pdev)
 	if (chip->irq < 0)
 		return chip->irq;
 
+	chip->irq1 = platform_get_irq(pdev, 1);
+	if (chip->irq1 < 0)
+		return chip->irq1;
+
+	chip->irq2 = platform_get_irq(pdev, 2);
+	if (chip->irq2 < 0)
+		return chip->irq2;
+
+	chip->irq3 = platform_get_irq(pdev, 3);
+	if (chip->irq3 < 0)
+		return chip->irq3;
+
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	chip->regs = devm_ioremap_resource(dev, mem);
 	if (IS_ERR(chip->regs))

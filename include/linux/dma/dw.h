@@ -34,6 +34,9 @@ struct dw_dma_chip {
 	void __iomem	*regs;
 	struct clk	*clk;
 	struct dw_dma	*dw;
+	int irq1;
+	int irq2;
+	int irq3;
 };
 
 /* Export to the platform drivers */
