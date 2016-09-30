@@ -18,6 +18,8 @@
 #define MIPI_TOP_H_
 
 #include <linux/mutex.h>
+
+/*NOTE: This include file has structures used in MIPI Top APIs */
 #include <linux/mipibridge.h>
  
 #include "mipicsi_dc_dphy.h"
@@ -46,8 +48,6 @@
 #define TX_CMODE_RX0_BYP_EN_MASK   BIT4_MASK
 #define TX_CMODE_RX1_BYP_EN_MASK   BIT5_MASK
 
-#define MIPICSI_TOP_MAX_LINKS 5
-#define MIPICSI_VC_DT_MAX_PAIRS 8
 
 
 enum TX_BYP_SEL_VALUES {
@@ -60,88 +60,15 @@ enum TX_BYP_SEL_VALUES {
 /* ENABLE EMULATION SUPPORT */
 #define MNH_EMULATION
 
-enum csi_data_type {
-	CSI2_INVALID          = -1,
-	CSI2_YUV420_8         = 0x18,
-	CSI2_YUV420_10        = 0x19,
-	CSI2_YUV420_8_LEG     = 0x1A,
-	CSI2_YUV420_8_CSPS    = 0x1C,
-	CSI2_YUV420_10_CSPS   = 0x1D,
-	CSI2_YUV422_8         = 0x1E,
-	CSI2_YUV422_10        = 0x1F,
-	CSI2_RGB444           = 0x20,
-	CSI2_RGB555           = 0x21,
-	CSI2_RGB565           = 0x22,
-	CSI2_RGB666           = 0x23,
-	CSI2_RGB888           = 0x24,
-	CSI2_RAW6             = 0x28,
-	CSI2_RAW7             = 0x29,
-	CSI2_RAW8             = 0x2A,
-	CSI2_RAW10            = 0x2B,
-	CSI2_RAW12            = 0x2C,
-	CSI2_RAW14            = 0x2D
-};
-
-enum virt_chan {
-	VC1 = 1,
-	VC2,
-	VC3,
-	VC4,
-	VC_MAX = VC4
-};
-
-struct csi2_vc_dt_pair {
-	enum virt_chan      vc;
-	enum csi_data_type  dt;
-};
-
-struct mipicsi_top_cfg {
-	enum mipicsi_top_dev dev;         /* device */
-	uint32_t       num_lanes;         /* number of lanes */
-	uint32_t       mbps;              /* bitrate (per lane) */
-	struct csi2_vc_dt_pair vc_dt[MIPICSI_VC_DT_MAX_PAIRS];  /* vc/dt pairs */
-};
-
-struct mipicsi_top_mux {
-	enum mipicsi_top_dev source;
-	enum mipicsi_top_dev sink;
-	bool active;
-};
-
-struct mipicsi_top_mux_data {
-	uint8_t count;
-	struct mipicsi_top_mux links[MIPICSI_TOP_MAX_LINKS];
-};
-
-struct mipicsi_top_reg {
-	enum mipicsi_top_dev dev;
-	uint32_t    offset;
-	uint32_t    value;
-};
-
-
-struct mipicsi_top_vpg {
-	enum mipicsi_top_dev dev; /* device */
-	uint32_t    mode_cfg;     /* orientation/mode */
-	uint32_t    pkt_cfg;      /* packet configuration */
-	uint32_t    pkt_size;     /* test packet size */
-	uint32_t    hsa_time;     /* hsync active */
-	uint32_t    hbp_time;     /* horiz back porch */
-	uint32_t    hline_time;   /* horiz line */
-	uint32_t    vsa_lines;    /* vsync active */
-	uint32_t    vbp_lines;    /* vert back porch */
-	uint32_t    vfp_lines;    /* vert front porch */
-	uint32_t    act_lines;    /* vert active */
-	uint32_t    max_frame;    /* max frame num */
-	uint32_t    start_line;   /* start line num */
-	uint32_t    step_line;    /* step line num */
-};
 
 int mipicsi_top_start(struct mipicsi_top_cfg *config);
 int mipicsi_top_stop(enum mipicsi_top_dev dev);
 int mipicsi_top_set_mux(struct mipicsi_top_mux *mux);
+int mipicsi_top_disable_mux(struct mipicsi_top_mux *mux);
 void mipicsi_top_get_mux(struct mipicsi_top_mux_data *mux_data);
 int mipicsi_top_get_mux_status(struct mipicsi_top_mux *mux);
+int mipicsi_top_reset(enum mipicsi_top_dev dev);
+int mipicsi_top_reset_all(void);
 int mipicsi_top_set_irq_mask(uint8_t mask);
 int mipicsi_top_read(struct mipicsi_top_reg *reg);
 int mipicsi_top_write(struct mipicsi_top_reg *reg);

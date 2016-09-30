@@ -50,7 +50,7 @@ struct devs{
 	enum mipicsi_top_dev device;
 };
 
-struct devs dev_tbl[MIPI_MAX] = {
+struct devs dev_tbl[MIPI_MAX+1] = {
 	{"Rx0", MIPI_RX0},
 	{"Rx1", MIPI_RX1},
 	{"Rx2", MIPI_RX2},
@@ -141,6 +141,30 @@ static ssize_t stop_dev_store(struct device *dev,
 static DEVICE_ATTR(stop_dev, S_IRUGO | S_IWUSR | S_IWGRP,
 		   stop_dev_show, stop_dev_store);
 
+SHOW_FMT_NA(reset_dev);
+
+static ssize_t reset_dev_store(struct device *dev,
+			       struct device_attribute *attr,
+			       const char *buf,
+			       size_t count)
+{
+	enum mipicsi_top_dev device;
+
+	if (!strncmp(buf,"ALL",3)) {
+		mipicsi_top_reset_all();
+		return count;
+	} else if (find_device (buf, &device) >= 0) {
+		mipicsi_top_reset(device);
+		return count;
+	}
+	pr_err ("Usage: echo\"<dev>\">reset_dev\n");
+	pr_err ("dev=ALL,Rx0,Rx1,Rx2,Tx0,Tx1\n");
+	return -EINVAL;
+}
+
+static DEVICE_ATTR(reset_dev, S_IRUGO | S_IWUSR | S_IWGRP,
+		   reset_dev_show, reset_dev_store);
+
 SHOW_FMT_NA(set_mux);
 
 static ssize_t set_mux_store(struct device *dev,
@@ -152,14 +176,15 @@ static ssize_t set_mux_store(struct device *dev,
         uint8_t *token;
         const char *delim = ";";
 	struct mipicsi_top_mux mux;
-	
 
         token = strsep((char **)&buf, delim);
-        if ( (token) && (find_device (token, &device) >= 0) ) { 
+        if ( (token) && (find_device (token, &device) >= 0) ) {
 		mux.source = device;
 		token = strsep((char **)&buf, delim);
 		if ( (token) && (find_device (token, &device) >= 0) ) {
 			mux.sink = device;
+			mux.ss_vc_mask = 0x0F;
+			mux.ss_stream_off = true;
 			mipicsi_top_set_mux(&mux);
 			return count;
 		}
@@ -171,6 +196,37 @@ static ssize_t set_mux_store(struct device *dev,
 
 static DEVICE_ATTR(set_mux, S_IRUGO | S_IWUSR | S_IWGRP,
 		   set_mux_show, set_mux_store);
+
+SHOW_FMT_NA(disable_mux);
+
+static ssize_t disable_mux_store(struct device *dev,
+				 struct device_attribute *attr,
+				 const char *buf,
+				 size_t count)
+{
+	enum mipicsi_top_dev device;
+        uint8_t *token;
+        const char *delim = ";";
+	struct mipicsi_top_mux mux;
+
+        token = strsep((char **)&buf, delim);
+        if ( (token) && (find_device (token, &device) >= 0) ) {
+		mux.source = device;
+		token = strsep((char **)&buf, delim);
+		if ( (token) && (find_device (token, &device) >= 0) ) {
+			mux.sink = device;
+			mux.ss_stream_off = true;
+			mipicsi_top_disable_mux(&mux);
+			return count;
+		}
+	}
+	pr_err ("Usage: echo\"<source>;<sink>\">disable_mux\n");
+	pr_err ("source=Rx0,Rx1,Rx2,IPU sink=Tx0,Tx1,IPU\n");
+	return -EINVAL;
+}
+
+static DEVICE_ATTR(disable_mux, S_IRUGO | S_IWUSR | S_IWGRP,
+		   disable_mux_show, disable_mux_store);
 
 static ssize_t get_mux_status_show(struct device *dev,
 				   struct device_attribute *attr,
@@ -194,7 +250,7 @@ static ssize_t get_mux_status_store(struct device *dev,
 	struct mipicsi_top_mux mux;
 	
         token = strsep((char **)&buf, delim);
-        if ( (token) && (find_device (token, &device) >= 0) ) { 
+        if ( (token) && (find_device (token, &device) >= 0) ) {
 		mux.source = device;
 		token = strsep((char **)&buf, delim);
 		if ( (token) && (find_device (token, &device) >= 0) ) {
@@ -231,7 +287,7 @@ static ssize_t vpg_preset_store(struct device *dev,
 	struct mipicsi_top_vpg vpg;
 	
         token = strsep((char **)&buf, delim);
-        if ( (token) && (find_device (token, &device) >= 0) ) { 
+        if ( (token) && (find_device (token, &device) >= 0) ) {
 		vpg.dev = device;
 		token = strsep((char **)&buf, delim);
 		if (token) {
@@ -310,7 +366,7 @@ static ssize_t reg_write_store(struct device *dev,
 	struct mipicsi_top_reg reg;
 
         token = strsep((char **)&buf, delim);
-        if ( (token) && (find_device (token, &device) >= 0) ) { 
+        if ( (token) && (find_device (token, &device) >= 0) ) {
 		reg.dev = device;
 		token = strsep((char **)&buf, delim);
 
@@ -355,10 +411,26 @@ int mipicsi_sysfs_init(struct device *mipicsi_top_device)
 	}
 
 	ret = device_create_file(mipicsi_top_device,
+				 &dev_attr_reset_dev);
+	if (ret) {
+		dev_err(mipicsi_top_device, "Failed to create sysfs: \
+                        reset_dev\n");
+		return -EINVAL;
+	}
+
+	ret = device_create_file(mipicsi_top_device,
 				 &dev_attr_set_mux);
 	if (ret) {
 		dev_err(mipicsi_top_device, "Failed to create sysfs: \
                         set_mux\n");
+		return -EINVAL;
+	}
+
+	ret = device_create_file(mipicsi_top_device,
+				 &dev_attr_disable_mux);
+	if (ret) {
+		dev_err(mipicsi_top_device, "Failed to create sysfs: \
+                        disable_mux\n");
 		return -EINVAL;
 	}
 
@@ -406,7 +478,13 @@ void mipicsi_sysfs_clean(struct device *mipicsi_top_device)
 			   &dev_attr_stop_dev);
 
 	device_remove_file(mipicsi_top_device,
+			   &dev_attr_reset_dev);
+
+	device_remove_file(mipicsi_top_device,
 			   &dev_attr_set_mux);
+
+	device_remove_file(mipicsi_top_device,
+			   &dev_attr_disable_mux);
 
 	device_remove_file(mipicsi_top_device,
 			   &dev_attr_get_mux_status);

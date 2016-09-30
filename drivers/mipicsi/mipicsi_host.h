@@ -19,6 +19,7 @@ struct mipicsi_host_dev {
 
 
 void mipicsi_host_dphy_reset(enum mipicsi_top_dev dev);
+void mipicsi_host_reset(enum mipicsi_top_dev dev);
 int  mipicsi_host_start(struct mipicsi_top_cfg *config);
 int mipicsi_host_stop(enum mipicsi_top_dev dev);
 int mipicsi_host_hw_init(enum mipicsi_top_dev dev);

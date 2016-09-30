@@ -39,6 +39,10 @@ static unsigned int char_minor_device = 1;
 static struct mipi_chardev *mipi_char_devices[MAX_CHAR_DEVICES];
 static DEFINE_MUTEX(chardev_lock);
 
+struct mipi_ioctl {
+	unsigned int cmd;
+	int (*func)(unsigned long arg, struct mipi_chardev* chardev);
+};
 
 static int get_available_index(struct mipi_chardev **mipi_char_devices)
 {
@@ -170,6 +174,24 @@ int mipi_chardev_set_mux_ioctl( unsigned long arg, struct mipi_chardev* chardev 
 	return err;
 }
 
+int mipi_chardev_disable_mux_ioctl( unsigned long arg,
+				    struct mipi_chardev* chardev )
+{
+	int err = 0;
+	struct mipicsi_top_mux mux;
+	/* copy from user */
+	err = copy_from_user(&mux, (void __user *)arg, sizeof(mux));
+
+	pr_debug("mipi_chardev_ioctl: disabling mux %d to %d", mux.source, mux.sink);
+
+	if (err == 0)
+		chardev->topOps.disable_mux(&mux);
+	else
+		pr_err("Could not copy data from user. err=%d", err);
+
+	return err;
+}
+
 int mipi_chardev_get_mux_ioctl( unsigned long arg, struct mipi_chardev* chardev )
 {
 	int err = 0;
@@ -233,9 +255,53 @@ int mipi_chardev_vpg_ioctl( unsigned long arg, struct mipi_chardev* chardev )
 	return err;
 }
 
-long mipi_chardev_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+int mipi_chardev_reset_ioctl( unsigned long arg, struct mipi_chardev* chardev )
 {
 	int err = 0;
+	enum mipicsi_top_dev dev;
+	/* copy from user */
+	err = copy_from_user(&dev, (void __user *)arg, sizeof(dev));
+
+	pr_debug("mipi_chardev_ioctl: resetting dev %d", dev);
+
+	if (err == 0)
+		chardev->topOps.reset(dev);
+	else
+		pr_err("Could not copy data from user. err=%d", err);
+
+	return err;
+}
+
+
+int mipi_chardev_reset_all_ioctl (unsigned long arg,
+				  struct mipi_chardev* chardev)
+{
+	pr_debug("mipi_chardev_ioctl: resetting all devices");
+
+	chardev->topOps.reset_all();
+
+	return 0;
+}
+
+const struct mipi_ioctl mipi_ioctl_tbl[] = {
+	{MIPI_TOP_START, mipi_chardev_start_ioctl},
+	{MIPI_TOP_STOP, mipi_chardev_stop_ioctl},
+	{MIPI_TOP_S_MUX, mipi_chardev_set_mux_ioctl},
+	{MIPI_TOP_DIS_MUX, mipi_chardev_disable_mux_ioctl},
+	{MIPI_TOP_G_MUX, mipi_chardev_get_mux_ioctl},
+	{MIPI_TOP_G_MUX_STATUS, mipi_chardev_get_mux_status_ioctl},
+	{MIPI_TOP_VPG, mipi_chardev_vpg_ioctl},
+	{MIPI_TOP_S_REG, mipi_chardev_write_reg_ioctl},
+	{MIPI_TOP_G_REG, mipi_chardev_read_reg_ioctl},
+	{MIPI_TOP_RESET, mipi_chardev_reset_ioctl},
+	{MIPI_TOP_RESET_ALL, mipi_chardev_reset_all_ioctl}
+};
+
+
+long mipi_chardev_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	int err = 0, i;
+	bool found = false;
 	struct mipi_chardev* chardev;
 	
 	pr_debug("Inside mipi_chardev_ioctl\n");
@@ -260,53 +326,20 @@ long mipi_chardev_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	 * extract the type and number bitfields, and don't decode
 	 * wrong cmds: return ENOTTY (inappropriate ioctl) before access_ok(  )
 	 */
-	if (_IOC_TYPE(cmd) == MIPIBRIDGE_IOC_HOST_MAGIC &&
-	    _IOC_NR(cmd) < MIPI_HOST_MAX) {
-		pr_debug("mipi_chardev_ioctl host call\n");
-
-	} else if (_IOC_TYPE(cmd) == MIPIBRIDGE_IOC_DEV_MAGIC &&
-		   _IOC_NR(cmd) < MIPI_DEV_MAX) {
-		pr_debug("mipi_chardev_ioctl device call\n");
-
-	} else if (_IOC_TYPE(cmd) == MIPIBRIDGE_IOC_TOP_MAGIC &&
-		   _IOC_NR(cmd) < MIPI_TOP_MAX) {
+	if (_IOC_TYPE(cmd) == MIPIBRIDGE_IOC_TOP_MAGIC &&
+	    _IOC_NR(cmd) <= MIPI_TOP_MAX) {
 		pr_debug("mipi_chardev_ioctl top call\n");
 		chardev = mipi_char_devices[0];
-		switch (cmd) {
-			case MIPI_TOP_START:
-				err = mipi_chardev_start_ioctl(arg, chardev);
+		for (i = 0;
+		     i < sizeof(mipi_ioctl_tbl)/sizeof(struct mipi_ioctl); i++){
+			if (mipi_ioctl_tbl[i].cmd == cmd) {
+				err = mipi_ioctl_tbl[i].func(arg, chardev);
+				found = true;
 				break;
-
-			case MIPI_TOP_STOP:
-				err = mipi_chardev_stop_ioctl(arg, chardev);
-				break;
-
-			case MIPI_TOP_S_MUX:
-				err = mipi_chardev_set_mux_ioctl(arg, chardev);
-				break;
-
-			case MIPI_TOP_G_MUX:
-				err = mipi_chardev_get_mux_ioctl(arg, chardev);
-				break;
-
-			case MIPI_TOP_G_MUX_STATUS:
-				err = mipi_chardev_get_mux_status_ioctl(arg, chardev);
-				break;
-
-			case MIPI_TOP_VPG:
-				err = mipi_chardev_vpg_ioctl(arg, chardev);
-				break;
-
-			case MIPI_TOP_S_REG:
-				err = mipi_chardev_write_reg_ioctl(arg, chardev);
-				break;
-			case MIPI_TOP_G_REG:
-				err = mipi_chardev_read_reg_ioctl(arg, chardev);
-
-				break;
-			default:
-				pr_warn("Unrecognized mipi ioctl");
+			}
 		}
+		if (!found)
+			pr_warn("Unrecognized mipi ioctl");
 	} else {
 		pr_warn("mipibridge_ioctl: unknown ioctl %c, dir=%d, #%d (0x%08x)\n",
 			_IOC_TYPE(cmd), _IOC_DIR(cmd), _IOC_NR(cmd), cmd);

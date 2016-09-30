@@ -133,7 +133,6 @@ int mipicsi_host_dphy_write_set(enum mipicsi_top_dev dev, uint32_t offset,
 	return 0;
 }
 
-#if 0
 void mipicsi_host_reset(enum mipicsi_top_dev dev)
 {
 	void * baddr = dev_addr_map[dev];
@@ -145,9 +144,7 @@ void mipicsi_host_reset(enum mipicsi_top_dev dev)
 	RX_OUTf(CSI2_RESETN, CSI2_RESETN, 0);
 	udelay(1000);
 	RX_OUTf(CSI2_RESETN, CSI2_RESETN, 1);
-
 }
-#endif
 
 void mipicsi_host_dphy_reset(enum mipicsi_top_dev dev)
 {

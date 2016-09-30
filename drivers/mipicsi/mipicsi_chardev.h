@@ -28,8 +28,11 @@ struct mipi_top_operations {
 	int (*start)(struct mipicsi_top_cfg*);
 	int (*stop)(enum mipicsi_top_dev);
 	int (*set_mux)(struct mipicsi_top_mux*);
+	int (*disable_mux)(struct mipicsi_top_mux*);
 	void (*get_mux)(struct mipicsi_top_mux_data*);
 	int (*get_mux_status)(struct mipicsi_top_mux*);
+	int (*reset)(enum mipicsi_top_dev);
+	int (*reset_all)(void);
 	int (*writereg)(struct mipicsi_top_reg*);
 	int (*readreg)(struct mipicsi_top_reg*);
 	int (*vpg)(struct mipicsi_top_vpg*);

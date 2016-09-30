@@ -2,6 +2,7 @@
  * Copyright (c) 2014--2016 Intel Corporation.
  *
  * Author: Teemu Rytkonen <teemu.s.rytkonen@intel.com>
+ *         Archana Vohra <archana.vohra@intel.com>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License version
@@ -87,61 +88,22 @@ enum mipicsi_top_dev {
 	MIPI_IPU,
 	MIPI_MAX = MIPI_IPU
 };
-#if 0
-enum csi_data_type {
-	CSI2_INVALID          = -1,
-	CSI2_YUV420_8         = 0x18,
-	CSI2_YUV420_10        = 0x19,
-	CSI2_YUV420_8_LEG     = 0x1A,
-	CSI2_YUV420_8_CSPS    = 0x1C,
-	CSI2_YUV420_10_CSPS   = 0x1D,
-	CSI2_YUV422_8         = 0x1E,
-	CSI2_YUV422_10        = 0x1F,
-	CSI2_RGB444           = 0x20,
-	CSI2_RGB555           = 0x21,
-	CSI2_RGB565           = 0x22,
-	CSI2_RGB666           = 0x23,
-	CSI2_RGB888           = 0x24,
-	CSI2_RAW6             = 0x28,
-	CSI2_RAW7             = 0x29,
-	CSI2_RAW8             = 0x2A,
-	CSI2_RAW10            = 0x2B,
-	CSI2_RAW12            = 0x2C,
-	CSI2_RAW14            = 0x2D
-};
 
-enum virt_chan {
-	VC1 = 1,
-	VC2,
-	VC3,
-	VC4,
-	VC_MAX = VC4
-};
-
-struct csi2_vc_dt_pair {
-	enum virt_chan      ch;
-	enum csi_data_type  dt;
-};
-#endif
-
-struct register_io {
-	enum mipicsi_top_dev dev;
-	unsigned int reg;
-	unsigned int data;
-};
-#if 0
 struct mipicsi_top_cfg {
-	enum mipicsi_top_dev dev;         /* device */
-	uint32_t       num_lanes;         /* number of lanes */
-	uint32_t       mbps;              /* bitrate (per lane) */
-	struct csi2_vc_dt_pair vc_dt[8];  /* virtchan/data type pairs */
+	enum mipicsi_top_dev dev;    /* device */
+	uint32_t       num_lanes;    /* number of lanes */
+	uint32_t       mbps;         /* bitrate (per lane) */
 };
 
 struct mipicsi_top_mux {
-	enum mipicsi_top_dev source;
-	enum mipicsi_top_dev sink;
-	bool active;
+	enum mipicsi_top_dev source;  /* Rx0, Rx1, Rx2, IPU */
+	enum mipicsi_top_dev sink;    /* IPU, Tx0, Tx1 */
+	uint8_t ss_vc_mask;           /* Safe switch for stream on (VC 3:0) */
+	bool ss_stream_off;           /* Safe switch for stream off */
+	bool active;                  /* If mux path is active */
 };
+
+#define MIPICSI_TOP_MAX_LINKS 5
 
 struct mipicsi_top_mux_data {
 	uint8_t count;
@@ -149,10 +111,10 @@ struct mipicsi_top_mux_data {
 };
 
 struct mipicsi_top_reg {
+	enum mipicsi_top_dev dev;
 	uint32_t    offset;
 	uint32_t    value;
 };
-
 
 struct mipicsi_top_vpg {
 	enum mipicsi_top_dev dev; /* device */
@@ -170,14 +132,11 @@ struct mipicsi_top_vpg {
 	uint32_t    start_line;   /* start line num */
 	uint32_t    step_line;    /* step line num */
 };
-#endif
 
 #define MIPIBRIDGE_IOC_HOST_MAGIC 'H'
 #define MIPIBRIDGE_IOC_DEV_MAGIC  'D'
 #define MIPIBRIDGE_IOC_TOP_MAGIC  'T'
-#define MIPI_HOST_MAX              8
-#define MIPI_DEV_MAX               8
-#define MIPI_TOP_MAX               8
+#define MIPI_TOP_MAX               12
 
 
 #define MIPI_TOP_START     \
@@ -190,13 +149,19 @@ struct mipicsi_top_vpg {
 	_IOWR(MIPIBRIDGE_IOC_TOP_MAGIC,  4, struct mipicsi_top_mux_data)
 #define MIPI_TOP_G_MUX_STATUS     \
 	_IOWR(MIPIBRIDGE_IOC_TOP_MAGIC,  5, struct mipicsi_top_mux)
+#define MIPI_TOP_DIS_MUX     \
+	_IOWR(MIPIBRIDGE_IOC_TOP_MAGIC,  6, struct mipicsi_top_mux)
 #define MIPI_TOP_S_REG        \
-	_IOW(MIPIBRIDGE_IOC_TOP_MAGIC,  6, struct register_io)
+	_IOW(MIPIBRIDGE_IOC_TOP_MAGIC,  7, struct mipicsi_top_reg)
 #define MIPI_TOP_G_REG        \
-	_IOWR(MIPIBRIDGE_IOC_TOP_MAGIC,  7, struct register_io)
+	_IOWR(MIPIBRIDGE_IOC_TOP_MAGIC,  8, struct mipicsi_top_reg)
 #define MIPI_TOP_VPG        \
-	_IOWR(MIPIBRIDGE_IOC_TOP_MAGIC,  8, struct mipicsi_top_vpg)
+	_IOWR(MIPIBRIDGE_IOC_TOP_MAGIC,  9, struct mipicsi_top_vpg)
 #define MIPI_DEV_G_NOTIF     \
-	_IOR(MIPIBRIDGE_IOC_TOP_MAGIC,  9, struct mipi_top_notification)
+	_IOR(MIPIBRIDGE_IOC_TOP_MAGIC,  10, struct mipi_top_notification)
+#define MIPI_TOP_RESET     \
+	_IOW(MIPIBRIDGE_IOC_TOP_MAGIC,  11, enum mipicsi_top_dev)
+#define MIPI_TOP_RESET_ALL     \
+	_IO(MIPIBRIDGE_IOC_TOP_MAGIC,  12)
 
 #endif
