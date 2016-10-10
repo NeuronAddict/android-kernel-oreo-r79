@@ -181,6 +181,11 @@
 		interrupts = <GIC_SPI 12 IRQ_TYPE_EDGE_RISING>;
 	};
 
+	soc_thermal: thermal@40030000 {
+	    compatible = "intel, mnh_thermal";
+	    reg = <0x0 0x4003000 0x0 0x1000>;
+	};
+
 	pcie@041C2000 {
 		compatible = "snps, dw_pcie_ep";
 		reg = <0x0 0x00200000 0x0 0x2000>,
@@ -193,4 +198,73 @@
 	memory@40000000 {
 		device_type = "memory";
 		reg = <0x00000000 0x40000000 0x0 0x20000000>;
+	};
+
+	thermal-zones {
+		ipu1 {
+			polling-delay-passive = <250>;/* milliseconds */
+			polling-delay = <1000>;/* milliseconds */
+			thermal-sensors = <&soc_thermal 0>;
+
+			trips {
+				trip@0 {
+					temperature = <101000>; /* milliCelsius  - TBD need to be adjusted*/
+					hysteresis = <0>; /* milliCelsius  - TBD need to be adjusted*/
+					type = "critical";
+                };
+			};
+			cooling-maps {
+			/* TBD : cooling device needs to be defined to bind this this thermal zone */
+			};
+
+
+		};
+
+		ipu2 {
+			polling-delay-passive = <250>;/* milliseconds */
+			polling-delay = <1000>;/* milliseconds */
+			thermal-sensors = <&soc_thermal 1>;
+			trips {
+				trip@0 {
+					temperature = <101000>; /* milliCelsius  - TBD need to be adjusted*/
+					hysteresis = <0>; /* milliCelsius  - TBD need to be adjusted*/
+					type = "critical";
+                };
+			};
+			cooling-maps {
+			/* TBD : cooling device needs to be defined to bind this this thermal zone */
+			};
+		};
+
+		cpu {
+			polling-delay-passive = <250>;/* milliseconds */
+			polling-delay = <1000>;/* milliseconds */
+			thermal-sensors = <&soc_thermal 2>;
+			trips {
+				trip@0 {
+					temperature = <101000>; /* milliCelsius  - TBD need to be adjusted*/
+					hysteresis = <0>; /* milliCelsius  - TBD need to be adjusted*/
+					type = "critical";
+                };
+			};
+			cooling-maps {
+			/* TBD : cooling device needs to be defined to bind this this thermal zone */
+			};
+		};
+
+		lpddr {
+			polling-delay-passive = <250>;/* milliseconds */
+			polling-delay = <1000>;/* milliseconds */
+			thermal-sensors = <&soc_thermal 3>;
+			trips {
+				trip@0 {
+					temperature = <101000>; /* milliCelsius  - TBD need to be adjusted*/
+					hysteresis = <0>; /* milliCelsius  - TBD need to be adjusted*/
+					type = "critical";
+                };
+			};
+			cooling-maps {
+			/* TBD : cooling device needs to be defined to bind this this thermal zone */
+			};
+		};
 	};

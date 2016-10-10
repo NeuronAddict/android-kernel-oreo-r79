@@ -400,3 +400,9 @@ config GENERIC_ADC_THERMAL
 	  channel and converts it to temperature based on lookup table.
 
 endif
+
+config MNH_THERMAL
+        tristate "MNH_THERMAL"
+        default y
+        help
+	   This enables mnh thermal sensor driver into Linux thermal framework
