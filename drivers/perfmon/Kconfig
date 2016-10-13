@@ -1,0 +1,8 @@
+#
+# Performance MonitorConfiguration
+#
+
+config MNH_PERF_MON
+	def_bool n
+	help
+	  Enables the Performance Monitor driver

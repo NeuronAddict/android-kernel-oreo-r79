@@ -1,0 +1,5 @@
+config MNH_TIMER
+	tristate "MNH Timer driver"
+	default y
+	help
+	  MNH Timer 

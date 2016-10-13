@@ -202,4 +202,12 @@ source "drivers/hwtracing/intel_th/Kconfig"
 
 source "drivers/fpga/Kconfig"
 
+source "drivers/pcie_ep/Kconfig"
+
+source "drivers/mipicsi/Kconfig"
+
+source "drivers/perfmon/Kconfig"
+
+source "drivers/timer/Kconfig"
+
 endmenu

@@ -129,6 +129,12 @@ dw_dma_parse_dt(struct platform_device *pdev)
 	if (of_property_read_bool(np, "is_private"))
 		pdata->is_private = true;
 
+	if (of_property_read_bool(np, "is_memcpy"))
+		pdata->is_memcpy = true;
+
+	if (of_property_read_bool(np, "is_nollp"))
+		pdata->is_nollp = true;
+
 	if (!of_property_read_u32(np, "chan_allocation_order", &tmp))
 		pdata->chan_allocation_order = (unsigned char)tmp;
 
@@ -172,6 +178,18 @@ static int dw_probe(struct platform_device *pdev)
 	if (chip->irq < 0)
 		return chip->irq;
 
+	chip->irq1 = platform_get_irq(pdev, 1);
+	if (chip->irq1 < 0)
+		return chip->irq1;
+
+	chip->irq2 = platform_get_irq(pdev, 2);
+	if (chip->irq2 < 0)
+		return chip->irq2;
+
+	chip->irq3 = platform_get_irq(pdev, 3);
+	if (chip->irq3 < 0)
+		return chip->irq3;
+
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	chip->regs = devm_ioremap_resource(dev, mem);
 	if (IS_ERR(chip->regs))
@@ -188,7 +206,8 @@ static int dw_probe(struct platform_device *pdev)
 	chip->dev = dev;
 	chip->pdata = pdata;
 
-	chip->clk = devm_clk_get(chip->dev, "hclk");
+	//chip->clk = devm_clk_get(chip->dev, "hclk");
+	chip->clk = devm_clk_get(chip->dev, NULL);
 	if (IS_ERR(chip->clk))
 		return PTR_ERR(chip->clk);
 	err = clk_prepare_enable(chip->clk);

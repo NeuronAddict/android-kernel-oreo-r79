@@ -75,28 +75,6 @@
 		};
 	};
 
-	pcie_ctlr: pcie-controller@40000000 {
-		compatible = "arm,juno-r1-pcie", "plda,xpressrich3-axi", "pci-host-ecam-generic";
-		device_type = "pci";
-		reg = <0 0x40000000 0 0x10000000>;	/* ECAM config space */
-		bus-range = <0 255>;
-		linux,pci-domain = <0>;
-		#address-cells = <3>;
-		#size-cells = <2>;
-		dma-coherent;
-		ranges = <0x01000000 0x00 0x5f800000 0x00 0x5f800000 0x0 0x00800000>,
-			 <0x02000000 0x00 0x50000000 0x00 0x50000000 0x0 0x08000000>,
-			 <0x42000000 0x40 0x00000000 0x40 0x00000000 0x1 0x00000000>;
-		#interrupt-cells = <1>;
-		interrupt-map-mask = <0 0 0 7>;
-		interrupt-map = <0 0 0 1 &gic 0 0 0 136 4>,
-				<0 0 0 2 &gic 0 0 0 137 4>,
-				<0 0 0 3 &gic 0 0 0 138 4>,
-				<0 0 0 4 &gic 0 0 0 139 4>;
-		msi-parent = <&v2m_0>;
-		status = "disabled";
-	};
-
 	scpi {
 		compatible = "arm,scpi";
 		mboxes = <&mailbox 1>;
@@ -105,17 +83,17 @@
 		clocks {
 			compatible = "arm,scpi-clocks";
 
-			scpi_dvfs: scpi-dvfs {
+			scpi_dvfs: scpi_clocks@0 {
 				compatible = "arm,scpi-dvfs-clocks";
 				#clock-cells = <1>;
 				clock-indices = <0>, <1>, <2>;
-				clock-output-names = "atlclk", "aplclk","gpuclk";
+				clock-output-names = "atlclk", "aplclk","clk_mali";
 			};
-			scpi_clk: scpi-clk {
+			scpi_clk: scpi_clocks@3 {
 				compatible = "arm,scpi-variable-clocks";
 				#clock-cells = <1>;
-				clock-indices = <3>;
-				clock-output-names = "pxlclk";
+				clock-indices = <3>, <4>, <5>;
+				clock-output-names = "pxlclk", "pxlclk1", "i2sclk";
 			};
 		};
 
@@ -126,8 +104,8 @@
 	};
 
 	/include/ "juno-clocks.dtsi"
-
-	dma@7ff00000 {
+	/*
+	dma0: dma@7ff00000 {
 		compatible = "arm,pl330", "arm,primecell";
 		reg = <0x0 0x7ff00000 0 0x1000>;
 		#dma-cells = <1>;
@@ -145,7 +123,24 @@
 		clocks = <&soc_faxiclk>;
 		clock-names = "apb_pclk";
 	};
+	*/
+	dma0: dma@60042000 {
+		compatible = "snps,dma-spear1340";
+		reg = <0 0x60042000 0 0x1000>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
+		is_memcpy;
+		dma-channels = <4>;
+		dma-requests = <16>;
+		dma-masters = <1>;
+		#dma-cells = <3>;
+		chan_allocation_order = <1>;
+		chan_priority = <1>;
+		block_size = <0xfff>;
+		data_width = <2>;
+		clocks = <&soc_mnh25mhz>;
+	};
 
+/*
 	hdlcd@7ff50000 {
 		compatible = "arm,hdlcd";
 		reg = <0 0x7ff50000 0 0x1000>;
@@ -154,12 +149,12 @@
 		clock-names = "pxlclk";
 
 		port {
-			hdlcd1_output: hdlcd1-endpoint {
+			hdlcd1_output: endpoint@0 {
 				remote-endpoint = <&tda998x_1_input>;
 			};
 		};
 	};
-
+*/
 	hdlcd@7ff60000 {
 		compatible = "arm,hdlcd";
 		reg = <0 0x7ff60000 0 0x1000>;
@@ -168,7 +163,7 @@
 		clock-names = "pxlclk";
 
 		port {
-			hdlcd0_output: hdlcd0-endpoint {
+			hdlcd0_output: endpoint@0 {
 				remote-endpoint = <&tda998x_0_input>;
 			};
 		};
@@ -182,6 +177,39 @@
 		clock-names = "uartclk", "apb_pclk";
 	};
 
+	spi@60085000 {
+		compatible = "snps,dw-apb-ssi";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg = <0x0 0x60085000 0x0 0x1000>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
+		num-cs = <4>;
+		clocks = <&soc_mnh25mhz>;
+		bus-num = <0>;
+		status = "okay";
+		spidev@0 {
+			 compatible = "spidev";
+			 spi-max-frequency = <5000000>;
+			 reg = <0>;
+		};
+	};
+
+	pcie@60102000 {
+		compatible = "snps, dw_pcie_ep";
+		reg = <0x0 0x60040000 0x0 0x2000>,
+			  <0x0 0x60102000 0x0 0x1000>,
+			  <0x0 0x6F600000 0x0 0xA00000>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>,
+					 <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
+	};
+
+	perfmon@6008e000 {
+		compatible = "intel, perf_mon";
+		reg = <0x0 0x6008e000 0x0 0x1000>,
+			  <0x0 0x60045000 0x0 0x1000>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
+	};
+
 	i2c@7ffa0000 {
 		compatible = "snps,designware-i2c";
 		reg = <0x0 0x7ffa0000 0x0 0x1000>;
@@ -192,27 +220,162 @@
 		i2c-sda-hold-time-ns = <500>;
 		clocks = <&soc_smc50mhz>;
 
-		hdmi-transmitter@70 {
+		hdmi_transmitter0: hdmi-transmitter@70 {
 			compatible = "nxp,tda998x";
 			reg = <0x70>;
+			audio-ports = <0x03>, <0x04>;
+			audio-port-names = "i2s", "spdif";
+			#sound-dai-cells = <1>;
 			port {
-				tda998x_0_input: tda998x-0-endpoint {
+				tda998x_0_input: endpoint@0 {
 					remote-endpoint = <&hdlcd0_output>;
 				};
 			};
 		};
-
+/*
 		hdmi-transmitter@71 {
 			compatible = "nxp,tda998x";
 			reg = <0x71>;
 			port {
-				tda998x_1_input: tda998x-1-endpoint {
+				tda998x_1_input: endpoint@0 {
 					remote-endpoint = <&hdlcd1_output>;
 				};
 			};
 		};
+*/	};
+
+
+	axi@60000000 {
+		compatible = "arm, mth-interrupt";
+		reg = <0x0 0x60000000 0x0 0x10000000>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
+		
+	};	
+
+    /* i2c devices on mnh */
+    /* need to revisit the clocks line after more info from FPGA team */
+	i2c0@60087000 {
+		compatible = "snps,designware-i2c";
+		reg = <0x0 0x60087000 0x0 0x1000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
+		clock-frequency = <400000>;
+		i2c-sda-hold-time-ns = <500>;
+		clocks = <&soc_mnh25mhz>;  
 	};
 
+	i2c1@60088000 {
+		compatible = "snps,designware-i2c";
+		reg = <0x0 0x60088000 0x0 0x1000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
+		clock-frequency = <400000>;
+		i2c-sda-hold-time-ns = <500>;
+		clocks = <&soc_mnh25mhz>;  
+		
+		ds1341: rtc@D0 {
+			compatible = "rtc-ds1307";
+			reg = <0x68>;        
+ 		};
+	};
+
+	i2c2@60089000 {
+		compatible = "snps,designware-i2c";
+		reg = <0x0 0x60089000 0x0 0x1000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
+		clock-frequency = <400000>;
+		i2c-sda-hold-time-ns = <500>;
+		clocks = <&soc_mnh25mhz>;  
+	};
+
+	i2c3@6008A000 {
+		compatible = "snps,designware-i2c";
+		reg = <0x0 0x6008A000 0x0 0x1000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
+		clock-frequency = <400000>;
+		i2c-sda-hold-time-ns = <500>;
+		clocks = <&soc_mnh25mhz>;  
+	};
+	gpio@60086000 {
+		compatible = "snps,dw-apb-gpio";
+		reg = <0x0 0x60086000 0x0 0x1000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
+
+		porta:  gpio-controller@0 {
+                 compatible = "snps,dw-apb-gpio-port";
+                 gpio-controller;
+                 #gpio-cells = <2>;
+                 snps,nr-gpios = <16>;
+                 reg = <0>;
+         };
+ /* 
+        portb:  gpio-controller@1 {
+				compatible = "snps,dw-apb-gpio-port";
+				gpio-controller;
+				#gpio-cells = <2>;
+				snps,nr-gpios = <8>;
+				reg = <1>;
+          };
+        portc:  gpio-controller@2 {
+				compatible = "snps,dw-apb-gpio-port";
+				gpio-controller;
+				#gpio-cells = <2>;
+				snps,nr-gpios = <8>;
+				reg = <2>;
+          };
+        portd:  gpio-controller@3 {
+				compatible = "snps,dw-apb-gpio-port";
+				gpio-controller;
+				#gpio-cells = <2>;
+				snps,nr-gpios = <8>;
+				reg = <3>;
+          };
+*/
+	};
+	uart_0@6008B000 {
+		compatible = "snps,dw-apb-uart";
+		reg = <0x0 0x6008B000 0x0 0x1000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
+		clock-frequency = <25000000>;
+		reg-shift = <2>;
+		reg-io-width = <4>;
+		dcd-override;
+		ri-override;
+		
+	};
+	uart_1@6008C000 {
+		compatible = "snps,dw-apb-uart";
+		reg = <0x0 0x6008C000 0x0 0x1000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
+		clock-frequency = <25000000>;
+		reg-shift = <2>;
+		reg-io-width = <4>;
+		dcd-override;
+		ri-override;
+	};
+
+/*
+	wdt@60082000 {
+		compatible = "snps,dw-wdt";
+		reg = <0x0 0x60082000 0x0 0x1000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <25000000>;
+	};
+*/
 	ohci@7ffb0000 {
 		compatible = "generic-ohci";
 		reg = <0x0 0x7ffb0000 0x0 0x10000>;
@@ -243,7 +406,50 @@
 		      <0x00000008 0x80000000 0x1 0x80000000>;
 	};
 
-	smb@08000000 {
+	soc_i2s: i2s@7ff90000 {
+		compatible = "snps,designware-i2s";
+		reg = <0x0 0x7ff90000 0x0 0x1000>;
+		clocks = <&scpi_clk 5>, <&soc_refclk100mhz>;
+		clock-names = "i2sclk", "apb_pclk";
+		#sound-dai-cells = <0>;
+		dmas = <&dma0 5>;
+		dma-names = "tx";
+	};
+
+	mipitop: mipitop@60057000 {
+		compatible = "intel,mipicsi_top";
+		reg = <0x0 0x60057000 0x0 0x0FFF>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
+	};
+
+	mipi_rx0: mipihost@60054000 {
+		compatible = "snps,mipicsi_host";
+		reg = <0x0 0x60054000 0x0 0xFFF>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
+	};
+/*
+	mipi_rx1: mipihost@60013000 {
+		compatible = "snps,mipicsi_host";
+		reg = <0x0 0x60013000 0x0 0xFFF>;
+	};
+	mipi_rx2: mipihost@64014000 {
+		compatible = "snps,mipicsi_host";
+		reg = <0x0 0x64014000 0x0 0xFFF>;
+	};
+*/
+	mipi_tx0: mipidevice@60052000 {
+		compatible = "snps,mipicsi_device";
+		reg = <0x0 0x60052000 0x0 0xFFF>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
+	};
+/*
+	mipi_tx1: mipidevice@64011000 {
+		compatible = "snps,mipicsi_device";
+		reg = <0x0 0x64011000 0x0 0xFFF>;
+	};
+*/
+
+	smb {
 		compatible = "simple-bus";
 		#address-cells = <2>;
 		#size-cells = <1>;
@@ -273,12 +479,13 @@
 		/include/ "juno-motherboard.dtsi"
 	};
 
-	site2: tlx@60000000 {
-		compatible = "simple-bus";
-		#address-cells = <1>;
-		#size-cells = <1>;
-		ranges = <0 0 0x60000000 0x10000000>;
-		#interrupt-cells = <1>;
-		interrupt-map-mask = <0 0>;
-		interrupt-map = <0 0 &gic 0 0 0 168 IRQ_TYPE_LEVEL_HIGH>;
+	apb_reg@0x6004E000 {
+		compatible = "uio_pdrv_genirq", "google,paintbox";
+		reg = <0x0 0x6004E000 0x0 0x3FFF>;
+		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
+	};
+	
+        mnh-timer {
+		  compatible = "mnh-timer";
+                  reg = <0x0 0x60083000 0x0 0x1000>;  
 	};

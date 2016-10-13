@@ -37,6 +37,9 @@ struct dw_dma_chip {
 	struct dw_dma	*dw;
 
 	const struct dw_dma_platform_data	*pdata;
+	int irq1;
+	int irq2;
+	int irq3;
 };
 
 /* Export to the platform drivers */

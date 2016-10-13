@@ -81,3 +81,9 @@ config PROC_CHILDREN
 
 	  Say Y if you are running any user-space software which takes benefit from
 	  this interface. For example, rkt is such a piece of software.
+
+config PROC_PCI_TEST_HELPER
+       bool "create sysfs apis for easel pci testing"
+       default n
+       help
+	Say y if you want to create this module
