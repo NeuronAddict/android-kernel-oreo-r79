@@ -59,6 +59,7 @@ obj-$(CONFIG_CXL_BASE)		+= cxl/
 obj-$(CONFIG_PANEL)             += panel.o
 obj-$(CONFIG_UID_CPUTIME) += uid_cputime.o
 obj-y				+= paintbox/
+obj-y				+= paintbox_cma/
 obj-$(CONFIG_GOOGLE_EASEL)	+= google-easel.o
 google-easel-objs		+= google-easel-comm.o google-easel-comm-dma.o google-easel-comm-hw.o
 obj-$(CONFIG_ARCH_MNH)          += mnh_pm.o

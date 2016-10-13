@@ -296,6 +296,11 @@
 		};
 	};
 
+	/* TODO(b/32513841): This is a fake cma device just for register trace testing purpose. */
+	paintbox_cma {
+		compatible = "google,paintbox_cma";
+	};
+
 	mnh_pm@40030000 {
 		compatible = "intel, mnh_pm";
 		reg = <0x0 0x04044000 0x0 0x1000>;

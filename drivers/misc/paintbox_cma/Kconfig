@@ -1,0 +1,7 @@
+#
+# PAINTBOX CMA
+#
+
+config PAINTBOX_TEST_CMA
+tristate "Paintbox CMA buffer management driver for register trace test purpose"
+default n
