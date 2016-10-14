@@ -123,8 +123,6 @@ static LIST_HEAD(devlist_global);
 
 void top_dphy_reset(enum mipicsi_top_dev dev)
 {
-
-#ifdef MNH_EMULATION
 	switch (dev) {
 	case MIPI_RX0:
 	case MIPI_RX1:
@@ -140,36 +138,8 @@ void top_dphy_reset(enum mipicsi_top_dev dev)
 	default:
 		break;
 	}
-#endif
-	/* TO DO -  Reset via TOP Registers */
 }
 
-void top_dphy_write(enum mipicsi_top_dev dev,
-		    uint8_t offset, uint8_t data)
-{
-	/* TO DO - Write for TOP Registers */
-}
-
-int top_set_pll(struct mipicsi_top_cfg *config)
-{
-
-	/* TO DO - Execute Gen 3 PLL write sequence on TOP registers */
-#if 0
-	struct mipi_pll pll;
-	uint32_t pll_conf0 = 0;
-
-	/* calculate_pll(&pll, config->mbps); */
-
-	pll_conf0 = CPBIAS_CNTRL_SET(pll.vco_cntrol) |
-		VCO_CNTRL_SET(pll.vco_cntrl) |
-		N_SET(pll.n) |
-		M_SET(pll.m);
-
-	mipicsi_write(MIPI_TOP, top_reg_tbl[config->dev].pll_config0,
-		       pll_conf0);
-#endif
-	return 0;
-}
 
 int top_start_rx(struct mipicsi_top_cfg *config)
 {
@@ -195,9 +165,6 @@ int top_start_rx(struct mipicsi_top_cfg *config)
 
 	if (config->lanes >= CSI2_HOST_NUM_OF_LANES)
 		return -EINVAL;
-
-	/* TO DO Gen 3 sequence using TOP registers */
-	/* TO DO Update MUX */
 
 #endif /* MNH_EMULATION */
 
@@ -230,9 +197,6 @@ int top_start_tx(struct mipicsi_top_cfg *config)
 		return -EINVAL;
 
 	top_dphy_reset(config->dev);
-
-	/* TO DO - Complete Phy and PLL Configuration with TOP registers */
-	/* TO DO - Update MUX */
 
 #endif /* MNH_EMULATION */
 
@@ -286,7 +250,6 @@ int mipicsi_top_start(struct mipicsi_top_cfg *config)
 	default:
 		ret = -ENODEV;
 	}
-	/* TO DO - keep a list of configured devices */
 
 	pr_info("%s: X\n", __func__);
 	return ret;

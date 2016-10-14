@@ -194,8 +194,46 @@ int32_t mipicsi_device_set_pll(struct mipicsi_top_cfg *config)
 	mipicsi_dev_dphy_write_set(dev, R_CSI2_DCPHY_PLL_LOOP_DIV_RAT,
 				   (((pll.loop_div-2) >> 5) & 0x1F), 1, 1);
 
+#else
+
+	if (config->mbps <= 800) {
+		pr_info("%s: Setting bitrate to 800mbps",__func__);
+		mipicsi_dev_dphy_write (dev, 0x179, 0x9E);
+		mipicsi_dev_dphy_write (dev, 0x17A, 0x00);
+		mipicsi_dev_dphy_write (dev, 0x17B, 0x9F);
+		mipicsi_dev_dphy_write (dev, 0x178, 0xC8);
+		mipicsi_dev_dphy_write (dev, 0x15E, 0x10);
+		mipicsi_dev_dphy_write (dev, 0x162, 0x04);
+		mipicsi_dev_dphy_write (dev, 0x16E, 0x0C);
+	} else if (config->mbps <= 1000) {
+		pr_info("%s: Setting bitrate to 1000mbps",__func__);
+		mipicsi_dev_dphy_write (dev, 0x179, 0x4E);
+		mipicsi_dev_dphy_write (dev, 0x17A, 0x00);
+		mipicsi_dev_dphy_write (dev, 0x17B, 0x93);
+		mipicsi_dev_dphy_write (dev, 0x178, 0x98);
+		mipicsi_dev_dphy_write (dev, 0x15E, 0x10);
+		mipicsi_dev_dphy_write (dev, 0x162, 0x04);
+		mipicsi_dev_dphy_write (dev, 0x16E, 0x0C);
+	} else if (config->mbps <= 1500) {
+		pr_info("%s: Setting bitrate to 1500mbps",__func__);
+		mipicsi_dev_dphy_write (dev, 0x179, 0x2A);
+		mipicsi_dev_dphy_write (dev, 0x17A, 0x01);
+		mipicsi_dev_dphy_write (dev, 0x17B, 0x87);
+		mipicsi_dev_dphy_write (dev, 0x178, 0xC8);
+		mipicsi_dev_dphy_write (dev, 0x15E, 0x10);
+		mipicsi_dev_dphy_write (dev, 0x162, 0x04);
+		mipicsi_dev_dphy_write (dev, 0x16E, 0x0C);
+	} else if (config->mbps <= 2500) {
+		pr_info("%s: Setting bitrate to 2500mbps",__func__);
+		mipicsi_dev_dphy_write (dev, 0x179, 0xF2);
+		mipicsi_dev_dphy_write (dev, 0x17A, 0x01);
+		mipicsi_dev_dphy_write (dev, 0x17B, 0x83);
+		mipicsi_dev_dphy_write (dev, 0x178, 0xC8);
+		mipicsi_dev_dphy_write (dev, 0x15E, 0x10);
+		mipicsi_dev_dphy_write (dev, 0x162, 0x04);
+		mipicsi_dev_dphy_write (dev, 0x16E, 0x0C);
+	}
 #endif
-	/* TO DO - Gen 3 Support */
 	return 0;
 }
 
@@ -229,8 +267,6 @@ int mipicsi_device_vpg(struct mipicsi_top_vpg *vpg)
 
 int mipicsi_device_start(struct mipicsi_top_cfg *config)
 {
-
-#ifdef MNH_EMULATION
 	uint32_t data = 0, val = 0;
 	uint8_t counter = 0;
 	enum mipicsi_top_dev dev = config->dev;
@@ -241,6 +277,7 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 		TX_MASK(PHY_STATUS, TXSTOPSTATE_L1) | 
 		TX_MASK(PHY_STATUS, TXSTOPSTATE_L2) |
 		TX_MASK(PHY_STATUS, TXSTOPSTATE_L3);
+
 	if (!baddr) {
 		pr_err("%s: no address for %d\n", __func__, dev);
 		return -ENXIO;
@@ -251,6 +288,8 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 		return -EINVAL;
 	}
 	pr_info("%s: dev: %d\n", __func__, dev);
+
+#ifdef MNH_EMULATION
 	TX_OUTf(CSI2_RESETN,    CSI2_RESETN_RW, 1);
 	TX_OUT(PHY_RSTZ,        0);
 	TX_OUTf(PHY_RSTZ,       PHY_ENABLECLK,  1);
@@ -267,15 +306,13 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 	 */
 	/* Hardware controlled */
 
-	/* Set MASTERSLAVEZ = 1 for Master mode selection (1'b0 for Slave mode
-	 * selection).
-	 */
+       /* Set MASTERSLAVEZ = 1 for Master mode selection (1'b0 for Slave mode
+        * selection).
+        */
 	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_MASTER_SLAVEZ, 0x0E);
 
-	/* need PHY_STOP_WAIT_TIME in PHY_IF_CFG ?
-	   original code overwrote the entire register with 0x03
-	*/
-	TX_OUTf(PHY_IF_CFG, LANE_EN_NUM, 0x03);
+	/* Enable lanes */
+	TX_OUTf(PHY_IF_CFG, LANE_EN_NUM, config->num_lanes-1);
 
 	/* Set BASEDIR_N to the desired values */
 	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L0, DC_TX_BASEDIR_VAL);
@@ -315,7 +352,7 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 	mipicsi_dev_dphy_write_set(dev, R_CSI2_DCPHY_AFE_BYPASS_BANDGAP,
 				   ((val >> 0) & 0x3F), 0, 2);
 
-	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_LP_TX_PWR_CTRL_CLK, 0x0F);
+	//mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_LP_TX_PWR_CTRL_CLK, 0x0F);
 
 	/* Configure clock and data lane timings */
 	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_CLK_TLP, 0x83);
@@ -330,9 +367,65 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_DATA_THS_TRAIL, 0x85);
 	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_DATA_THS_EXIT, 0x3F);
 
-
 	TX_OUT(PHY_RSTZ, 0x07);
 	udelay(1);
+
+#else
+	TX_OUTf(CSI2_RESETN,    CSI2_RESETN_RW, 1);
+	/* Set rstz = 1'b0 */
+	/* Set shutdownz= 1'b0 */
+	TX_OUT(PHY_RSTZ,        0);
+	TX_OUTf(PHY_RSTZ,       PHY_ENABLECLK,  1);
+	/* Set testclr = 1'b1 */
+	TX_OUT(PHY0_TST_CTRL0,  1);
+
+	/* Wait for 15 ns */
+	udelay(1);
+
+	/* Set testclr to low; */
+	TX_OUT(PHY0_TST_CTRL0, 0);
+
+	/* Set hsfreqrange[6:0] = 7'b0001010 */
+	/* Refer to table "Slew rate vs DDL oscilation target" on page 117 and
+	 * configure test control registers with appropriate values for the
+	 * specified rise/fall time. */
+	mipicsi_dev_dphy_write (dev, 0x270, 0xE2);
+	mipicsi_dev_dphy_write (dev, 0x271, 0x04);
+	mipicsi_dev_dphy_write (dev, 0x272, 0x11);
+
+	/* Set cfgclkfreqrange[7:0] = round[ (Fcfg_clk(MHz)-17)*4] = 8'b10000100
+	   assuming cfg_clk = 50MHz; */
+
+	/* Apply cfg_clk signal with 50Mhz frequency */
+	/* Hardware controlled */
+
+	/* Configure PLL operating frequency through D-PHY test control registers or through PLL
+	 * SoC shadow registers interface as described in section "Initialization" on page 53
+	 */
+	mipicsi_device_set_pll(config);
+
+	/* Set basedir_0 = 1'b0 */
+	/* Hardware controlled */
+
+	/* Set all requests inputs to zero; The purpose is to ensure that the following signals
+	 * are set to low logic level: txrequesthsclk, txrequestdatahs_0/1/2/3,
+	 * txrequestesc_0/1/2/3 and turnrequest_0;
+	 */
+	/* Hardware controlled */
+	udelay(1);
+
+	/* Wait for 15ns */
+	/* Enable lanes */
+	TX_OUTf(PHY_IF_CFG, LANE_EN_NUM, config->num_lanes-1);
+
+	/* Enableclk=1'b1; Wait 5ns; Set shutdownz=1'b1;  Wait 5ns; Set rstz=1'b1; */
+	TX_OUTf(PHY_RSTZ, PHY_ENABLECLK, 0x01);
+	udelay(1);
+	TX_OUTf(PHY_RSTZ, PHY_SHUTDOWNZ, 0x01);
+	udelay(1);
+	TX_OUTf(PHY_RSTZ, PHY_RSTZ, 0x01);
+
+#endif
 	/* Wait until the STOPSTATEDATA_N and STOPSTATECLK outputs are asserted.
 	 * At this point, the PLL has already locked (for the Master) and the
 	 * initialization of the analog drivers has completed. From this point,
@@ -353,8 +446,6 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 		__func__, counter, data);
 
 	return 0;
-#endif
-	/* TO DO - initialize controller parameters only here for Gen 3 */
 }
 
 int mipicsi_device_stop(enum mipicsi_top_dev dev)

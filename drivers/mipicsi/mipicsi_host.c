@@ -162,7 +162,6 @@ void mipicsi_host_dphy_reset(enum mipicsi_top_dev dev)
 int mipicsi_host_start(struct mipicsi_top_cfg *config)
 {
 
-#ifdef MNH_EMULATION
 	uint8_t counter = 0;
 	uint32_t data, val;
 	uint8_t hsfreq;
@@ -194,6 +193,7 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 	//RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLR, 1);
 	RX_OUT(PHY_TEST_CTRL0, 1);
 
+#ifdef MNH_EMULATION
 	/* Apply CFG_CLK signal with the appropriate frequency; for
 	 * correct values, refer to Table 12-5
 	 */
@@ -255,6 +255,45 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 				   ((val >> 6) & 0x3F), 1, 2);
 
 	mipicsi_host_dphy_write (dev, R_CSI2_DCPHY_HS_RX_DATA_THS_SETL, 0xA5);
+#else
+	/* Set TESTCLR to logic low */
+	udelay (1);
+	RX_OUT(PHY_TEST_CTRL0, 0);
+
+	/* Set hsfreqrange[6:0] = 7'b0001010 */
+	/* Refer to "Frequency Ranges and Default" on page 141 and configure
+	 * registers 0xe2, 0xe3 with the appropriate DDL target oscillation
+	 * frequency. Enable override to configure the DDL target oscillation
+	 * frequency on bit 0 of register 0xe4.
+	 */
+	mipicsi_host_dphy_write (dev, 0xE2, 0xB6);
+	mipicsi_host_dphy_write (dev, 0xE3, 0x01);
+	mipicsi_host_dphy_write (dev, 0xE4, 0x01);
+
+	/*  Configure register 0x8 to set deskew_polarity_rw signal
+	 * (bit 5) to 1'b1
+	 */
+	mipicsi_host_dphy_write (dev, 0x08, 0x20);
+
+	/* Set cfgclkfreqrange[7:0] = round[ (Fcfg_clk(MHz)-17)*4]
+	 * = 8'b10000100, assuming cfg_clk = 50MHz */
+	/* Hardware controlled */
+
+	/* Apply cfg_clk signal with 50Mhz frequency */
+	/* Hardware controlled */
+
+	/* Set basedir_0 = 1'b1; 12. Set all requests inputs to zero; The 
+	 * purpose is to ensure that the following signals are set to low 
+	 * logic level: txrequestesc_0 and turnrequest_0; */
+	/* Hardware controlled */
+
+	/*  Wait for 15 ns */
+	udelay (1);
+
+	/* Set enable_0/1/2/3, and enableclk=1'b1; 15. Wait 5ns */
+	RX_OUTf(N_LANES, N_LANES, (config->num_lanes-1));
+	udelay(1);
+#endif
 
 	/* Set SHUTDOWNZ=1'b1 */
 	RX_OUTf(PHY_SHUTDOWNZ, PHY_SHUTDOWNZ, 1);
@@ -279,8 +318,6 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 		counter++;
 	} while (counter < 20);
 	pr_info("%s: Host not configured in 200us\n", __func__);
-#endif
-	/* TO DO - initialize controller parameters only here for Gen 3 */
 
 	return 0;
 }
