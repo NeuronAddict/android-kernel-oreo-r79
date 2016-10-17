@@ -42,6 +42,7 @@
 #include <linux/list.h>
 #include <linux/kthread.h>
 #include <linux/string.h>
+#include "mipi_dev.h"
 #include "mipicsi_device.h"
 #include "mipicsi_util.h"
 #include "mipicsi_dc_dphy.h"
@@ -483,48 +484,131 @@ int mipicsi_device_hw_init(enum mipicsi_top_dev dev)
 	return 0;
 }
 
-static irqreturn_t mipicsi_device_irq(int irq, void *dev_id)
+static irqreturn_t mipicsi_device_irq(int irq, void *device)
 {
 
-	struct mipicsi_device_dev *dev = dev_id;
-	u32 int_status, ind_status;
-	void *baddr = dev->base_address;
+	struct mipi_dev *mipidev = device;
+	void *baddr = mipidev->base_address;
 	int ret = IRQ_NONE;
+	/* latest read of interrupt status registers */
+	struct mipi_device_irq_st *int_status =
+		(struct mipi_device_irq_st *) mipidev->data;
 
-	spin_lock(&dev->slock);
+	spin_lock(&mipidev->slock);
 
-	int_status = TX_IN(INT_ST_MAIN);
+	int_status->main = TX_IN(INT_ST_MAIN);
 
-	if (int_status & TX_MASK(INT_ST_MAIN, INT_ST_VPG)) {
-		ind_status = TX_IN(INT_ST_VPG);
-		dev_info(dev->dev, "CSI INT_ST_VPG: %x\n", ind_status);
+	if (int_status->main & TX_MASK(INT_ST_MAIN, INT_ST_VPG)) {
+		int_status->vpg = TX_IN(INT_ST_VPG);
+		dev_info(mipidev->dev, "CSI INT_ST_VPG: %x\n", int_status->vpg);
 		ret = IRQ_HANDLED;
 	}
 
-	if (int_status & TX_MASK(INT_ST_MAIN, INT_ST_IDI)) {
-		ind_status = TX_IN(INT_ST_IDI);
-		dev_info(dev->dev, "CSI INT_ST_IDI: %x\n", ind_status);
+	if (int_status->main & TX_MASK(INT_ST_MAIN, INT_ST_IDI)) {
+		int_status->idi = TX_IN(INT_ST_IDI);
+		dev_info(mipidev->dev, "CSI INT_ST_IDI: %x\n", int_status->idi);
 		ret = IRQ_HANDLED;
 	}
 
-	if (int_status & TX_MASK(INT_ST_MAIN, INT_ST_PHY)) {
-		ind_status = TX_IN(INT_ST_PHY);
-		dev_info(dev->dev, "CSI INT_ST_PHY: %x\n", ind_status);
+	if (int_status->main & TX_MASK(INT_ST_MAIN, INT_ST_PHY)) {
+		int_status->phy = TX_IN(INT_ST_PHY);
+		dev_info(mipidev->dev, "CSI INT_ST_PHY: %x\n", int_status->phy);
 		ret = IRQ_HANDLED;
 	}
 
-	spin_unlock(&dev->slock);
+	spin_unlock(&mipidev->slock);
 
 	return ret;
+}
+
+int mipicsi_device_get_interrupt_status(enum mipicsi_top_dev devid,
+				      struct mipi_device_irq_st *int_status)
+{
+	int ret;
+	struct mipi_dev *mipidev;
+	struct mipi_device_irq_st *cur_status;
+
+	pr_debug("%s: dev %d\n", __func__, devid);
+	if ((devid == MIPI_RX0) || (devid == MIPI_RX1) || (devid == MIPI_RX1)) {
+		mipidev = mipicsi_get_device(devid);
+		if (mipidev != NULL) {
+			cur_status = (struct mipi_device_irq_st *)mipidev->data;
+			dev_dbg(mipidev->dev, "mipidev 0x%x, int_status 0x%x\n",
+				mipidev, cur_status);
+			/* copy the values from current status
+			* and reset the current status.
+			*/
+			int_status->main = cur_status->main;
+			int_status->vpg = cur_status->vpg;
+			int_status->idi = cur_status->idi;
+			int_status->phy = cur_status->phy;
+			memset(cur_status, 0, sizeof(*cur_status));
+			return ret;
+		}
+		pr_debug("%s: No mipi device found for dev %d\n",
+			__func__, devid);
+	}
+	return -EINVAL;
+}
+
+int mipicsi_device_set_interrupt_mask(enum mipicsi_top_dev devid,
+				     struct mipi_device_irq_mask *mask)
+{
+	int ret;
+	struct mipi_dev *mipidev;
+	void *baddr;
+
+	pr_debug("%s: dev %d\n", __func__, devid);
+	if ((devid == MIPI_TX0) || (devid == MIPI_TX1)) {
+		mipidev = mipicsi_get_device(devid);
+		if (mipidev != NULL) {
+			baddr = mipidev->base_address;
+			dev_dbg("%s Set masks\n", __func__);
+			TX_OUT(INT_MASK_N_VPG, mask->vpg);
+			TX_OUT(INT_MASK_N_IDI, mask->idi);
+			TX_OUT(INT_MASK_N_PHY, mask->phy);
+			return ret;
+		}
+		pr_debug("%s: No mipi device found for dev %d\n",
+			__func__, devid);
+	}
+	return -EINVAL;
+}
+
+int mipicsi_device_force_interrupt(enum mipicsi_top_dev devid,
+				  struct mipi_device_irq_mask *mask)
+{
+	int ret;
+	struct mipi_dev *mipidev;
+	void *baddr;
+
+	pr_debug("%s: dev %d\n", __func__, devid);
+	if ((devid == MIPI_TX0) || (devid == MIPI_TX1)) {
+		mipidev = mipicsi_get_device(devid);
+		if (mipidev != NULL) {
+			baddr = mipidev->base_address;
+			dev_dbg("%s Force interrupts\n", __func__);
+			TX_OUT(INT_FORCE_VPG, mask->vpg);
+			TX_OUT(INT_FORCE_IDI, mask->idi);
+			TX_OUT(INT_FORCE_PHY, mask->phy);
+			return ret;
+		}
+		pr_debug("%s: No mipi device found for dev %d\n",
+			__func__, devid);
+	}
+	return -EINVAL;
 }
 
 int mipicsi_device_probe(struct platform_device *pdev)
 {
 	int ret = 0;
 	int error = 0;
-	struct mipicsi_device_dev *dev;
+	struct mipi_dev *dev;
 	int irq_number = 0;
 	struct resource *mem = NULL;
+	char *device_id_name;
+	struct device_node *np = NULL;
+	struct mipi_device_irq_st *int_status;
 
 	dev_info(&pdev->dev, "Installing MIPI CSI-2 DEVICE module...\n");
 
@@ -534,9 +618,16 @@ int mipicsi_device_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Could not allocated mipicsi_device\n");
 		return -ENOMEM;
 	}
+	int_status = kzalloc(sizeof(struct mipi_device_irq_st), GFP_KERNEL);
+	if (!int_status)
+		return -ENOMEM;
+	dev->data = int_status;
 
 	/* Update the device node */
 	dev->dev = &pdev->dev;
+	np = pdev->dev.of_node;
+	if (np == NULL)
+		dev_err(&pdev->dev, "Could not find of device node!\n");
 
 	/* Device tree information: Base addresses & mapping */
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -572,16 +663,23 @@ int mipicsi_device_probe(struct platform_device *pdev)
 	/* Device tree information: Get interrupts numbers */
 	irq_number = platform_get_irq(pdev, 0);
 	if (irq_number > 0) {
-		dev->device_irq_number = irq_number;
+		dev->irq_number = irq_number;
 
 		/* Register interrupt */
-		ret = request_irq(dev->device_irq_number, mipicsi_device_irq,
+		ret = request_irq(dev->irq_number, mipicsi_device_irq,
 				IRQF_SHARED, dev_name(&pdev->dev), dev);
 		if (ret)
-			dev_err(&pdev->dev, "Could not register controller interrupt\n");
+			dev_err(&pdev->dev,
+				"Could not register controller interrupt\n");
 	} else
 		dev_err(&pdev->dev, "IRQ num not set. See device tree.\n");
 
+	if (of_property_read_string(np, "device-id", &device_id_name)) {
+		dev_err(&pdev->dev, "Could not read device id!\n");
+	} else {
+		dev->device_id = get_device_id(device_id_name);
+		mipicsi_set_device(dev->device_id, dev);
+	}
 	/* Now that everything is fine, let's add it to device list */
 	list_add_tail(&dev->devlist, &devlist_global);
 
@@ -599,17 +697,16 @@ int mipicsi_device_probe(struct platform_device *pdev)
  */
 static int mipicsi_device_remove(struct platform_device *pdev)
 {
-	struct mipicsi_device_dev *dev;
+	struct mipi_dev *dev;
 	struct list_head *list;
 
 	dev_dbg(&pdev->dev, "Removing MIPI CSI-2 module\n");
 	while (!list_empty(&devlist_global)) {
 		list = devlist_global.next;
 		list_del(list);
-		dev = list_entry(list, struct mipicsi_device_dev, devlist);
+		dev = list_entry(list, struct mipi_dev, devlist);
 
-		devm_free_irq(&pdev->dev, dev->device_irq_number, dev);
-		devm_free_irq(&pdev->dev, dev->device_irq, dev);
+		devm_free_irq(&pdev->dev, dev->irq_number, dev);
 
 		iounmap(dev->base_address);
 	}

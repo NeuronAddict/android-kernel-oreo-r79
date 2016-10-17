@@ -283,6 +283,130 @@ int mipi_chardev_reset_all_ioctl (unsigned long arg,
 	return 0;
 }
 
+int mipi_chardev_get_irq_st_ioctl(unsigned long arg,
+				  struct mipi_chardev *chardev)
+{
+	int err = 0;
+	struct mipi_device_irq_st *pdev_status;
+	struct mipi_device_irq_st dev_status;
+	struct mipi_host_irq_st *phost_status;
+	struct mipi_host_irq_st host_status;
+
+	err = copy_from_user(&dev_status, (void __user *)arg,
+			     sizeof(dev_status));
+	err = copy_from_user(&host_status, (void __user *)arg,
+			     sizeof(host_status));
+
+	pr_debug("mipi_chardev_ioctl: %s dev_status=%d\n", __func__,
+		dev_status.dev);
+	pr_debug("mipi_chardev_ioctl: %s host_status=%d\n", __func__,
+		host_status.dev);
+	if (err == 0) {
+		switch (dev_status.dev) {
+		case MIPI_TX0:
+		case MIPI_TX1:
+			err = chardev->topOps.get_device_irq_status(
+				dev_status.dev,
+				&dev_status);
+			if (err != 0)
+				err = copy_to_user((void __user *)arg,
+						   &dev_status,
+						   sizeof(dev_status));
+			break;
+		case MIPI_RX0:
+		case MIPI_RX1:
+		case MIPI_RX2:
+			err = chardev->topOps.get_host_irq_status(
+				dev_status.dev,
+				&host_status);
+			if (err != 0)
+				err = copy_to_user((void __user *)arg,
+						   &host_status,
+						   sizeof(host_status));
+			break;
+		default:
+			pr_err("Invalid mipi device given for irq status\n");
+			return -EINVAL;
+		}
+	} else
+		pr_err("Could not copy data from user. err=%d", err);
+	return err;
+}
+
+int mipi_chardev_set_irq_mask_ioctl(unsigned long arg,
+					 struct mipi_chardev *chardev)
+{
+	int err = 0;
+	struct mipi_device_irq_mask dev_mask;
+	struct mipi_host_irq_mask host_mask;
+	/* copy from user */
+	err = copy_from_user(&dev_mask, (void __user *)arg,
+			     sizeof(dev_mask));
+	err = copy_from_user(&host_mask, (void __user *)arg,
+			     sizeof(host_mask));
+
+	pr_debug("mipi_chardev_ioctl: %s dev=%d", __func__, dev_mask.dev);
+	if (err == 0) {
+		switch (dev_mask.dev) {
+		case MIPI_TX0:
+		case MIPI_TX1:
+			err = chardev->topOps.set_device_irq_mask(
+				dev_mask.dev,
+				&dev_mask);
+			break;
+		case MIPI_RX0:
+		case MIPI_RX1:
+		case MIPI_RX2:
+			err = chardev->topOps.set_host_irq_mask(
+				host_mask.dev,
+				&host_mask);
+			break;
+		default:
+			pr_err("Invalid mipi device given for irq status\n");
+			return -EINVAL;
+		}
+	} else
+		pr_err("Could not copy data from user. err=%d", err);
+	return err;
+}
+
+int mipi_chardev_force_irq_ioctl(unsigned long arg,
+				 struct mipi_chardev *chardev)
+{
+	int err = 0;
+	struct mipi_device_irq_mask dev_mask;
+	struct mipi_host_irq_mask host_mask;
+	/* copy from user */
+	err = copy_from_user(&dev_mask, (void __user *)arg,
+			     sizeof(dev_mask));
+	err = copy_from_user(&host_mask, (void __user *)arg,
+			     sizeof(host_mask));
+
+	pr_debug("mipi_chardev_ioctl: %s dev=%d", __func__, dev_mask.dev);
+	if (err == 0) {
+		switch (dev_mask.dev) {
+		case MIPI_TX0:
+		case MIPI_TX1:
+			err = chardev->topOps.force_device_irq(
+				dev_mask.dev,
+				&dev_mask);
+			break;
+		case MIPI_RX0:
+		case MIPI_RX1:
+		case MIPI_RX2:
+			err = chardev->topOps.force_host_irq(
+				host_mask.dev,
+				&host_mask);
+			break;
+		default:
+			pr_err("Invalid mipi device given for irq status\n");
+			return -EINVAL;
+		}
+	} else
+		pr_err("Could not copy data from user. err=%d", err);
+	return err;
+}
+
 const struct mipi_ioctl mipi_ioctl_tbl[] = {
 	{MIPI_TOP_START, mipi_chardev_start_ioctl},
 	{MIPI_TOP_STOP, mipi_chardev_stop_ioctl},
@@ -294,7 +418,13 @@ const struct mipi_ioctl mipi_ioctl_tbl[] = {
 	{MIPI_TOP_S_REG, mipi_chardev_write_reg_ioctl},
 	{MIPI_TOP_G_REG, mipi_chardev_read_reg_ioctl},
 	{MIPI_TOP_RESET, mipi_chardev_reset_ioctl},
-	{MIPI_TOP_RESET_ALL, mipi_chardev_reset_all_ioctl}
+	{MIPI_TOP_RESET_ALL, mipi_chardev_reset_all_ioctl},
+	{MIPI_DEV_G_INT_ST, mipi_chardev_get_irq_st_ioctl},
+	{MIPI_DEV_S_INT_MASK, mipi_chardev_set_irq_mask_ioctl},
+	{MIPI_DEV_S_INT_FORCE, mipi_chardev_force_irq_ioctl},
+	{MIPI_HOST_G_INT_ST, mipi_chardev_get_irq_st_ioctl},
+	{MIPI_HOST_S_INT_MASK, mipi_chardev_set_irq_mask_ioctl},
+	{MIPI_HOST_S_INT_FORCE, mipi_chardev_force_irq_ioctl},
 };
 
 

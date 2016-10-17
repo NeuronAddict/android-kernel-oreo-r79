@@ -20,9 +20,21 @@
 
 #define MIPICSI_TOP_MAX_LINKS 5
 
+enum mipicsi_top_dev {
+	MIPI_RX0,
+	MIPI_RX1,
+	MIPI_RX2,
+	MIPI_TX0,
+	MIPI_TX1,
+	MIPI_TOP,
+	MIPI_IPU,
+	MIPI_MAX = MIPI_IPU
+};
+
 /* Interrupts */
 /* Host int */
 struct mipi_host_irq_st {
+	enum mipicsi_top_dev dev;
 	unsigned int main;
 	unsigned int phy_fatal;
 	unsigned int pkt_fatal;
@@ -30,17 +42,16 @@ struct mipi_host_irq_st {
 	unsigned int phy;
 	unsigned int pkt;
 	unsigned int line;
-	unsigned int ipi;
 };
 
 struct mipi_host_irq_mask {
+	enum mipicsi_top_dev dev;
 	unsigned int   phy_fatal;
 	unsigned int   pkt_fatal;
 	unsigned int   frame_fatal;
 	unsigned int   phy;
 	unsigned int   pkt;
 	unsigned int   line;
-	unsigned int   ipi;
 };
 
 /* Device int */
@@ -49,16 +60,18 @@ struct device_int_mem {
 };
 
 struct mipi_device_irq_st {
+	enum mipicsi_top_dev dev;
 	unsigned int main;
 	unsigned int vpg;
 	unsigned int idi;
-	unsigned int mem;
+	unsigned int phy;
 };
 
 struct mipi_device_irq_mask {
+	enum mipicsi_top_dev dev;
 	unsigned int vpg;
 	unsigned int idi;
-	unsigned int mem;
+	unsigned int phy;
 };
 
 struct mipi_top_notification {
@@ -78,17 +91,6 @@ enum CLK_SEL_VALUES {
 	CLK_FORBIDDEN = 3
 };
 
-enum mipicsi_top_dev {
-	MIPI_RX0,
-	MIPI_RX1,
-	MIPI_RX2,
-	MIPI_TX0,
-	MIPI_TX1,
-	MIPI_TOP,
-	MIPI_IPU,
-	MIPI_MAX = MIPI_IPU
-};
-
 struct mipicsi_top_cfg {
 	enum mipicsi_top_dev dev;    /* device */
 	uint32_t       num_lanes;    /* number of lanes */
@@ -102,8 +104,6 @@ struct mipicsi_top_mux {
 	bool ss_stream_off;           /* Safe switch for stream off */
 	bool active;                  /* If mux path is active */
 };
-
-#define MIPICSI_TOP_MAX_LINKS 5
 
 struct mipicsi_top_mux_data {
 	uint8_t count;
@@ -133,10 +133,8 @@ struct mipicsi_top_vpg {
 	uint32_t    step_line;    /* step line num */
 };
 
-#define MIPIBRIDGE_IOC_HOST_MAGIC 'H'
-#define MIPIBRIDGE_IOC_DEV_MAGIC  'D'
 #define MIPIBRIDGE_IOC_TOP_MAGIC  'T'
-#define MIPI_TOP_MAX               12
+#define MIPI_TOP_MAX               18
 
 
 #define MIPI_TOP_START     \
@@ -163,5 +161,18 @@ struct mipicsi_top_vpg {
 	_IOW(MIPIBRIDGE_IOC_TOP_MAGIC,  11, enum mipicsi_top_dev)
 #define MIPI_TOP_RESET_ALL     \
 	_IO(MIPIBRIDGE_IOC_TOP_MAGIC,  12)
+#define MIPI_DEV_G_INT_ST     \
+	_IOR(MIPIBRIDGE_IOC_TOP_MAGIC,  13, struct mipi_device_irq_st)
+#define MIPI_DEV_S_INT_MASK   \
+	_IOW(MIPIBRIDGE_IOC_TOP_MAGIC,  14, struct mipi_device_irq_mask)
+#define MIPI_DEV_S_INT_FORCE  \
+	_IOW(MIPIBRIDGE_IOC_TOP_MAGIC,  15, struct mipi_device_irq_mask)
+#define MIPI_HOST_G_INT_ST    \
+	_IOR(MIPIBRIDGE_IOC_TOP_MAGIC,  16, struct mipi_host_irq_st)
+#define MIPI_HOST_S_INT_MASK  \
+	_IOW(MIPIBRIDGE_IOC_TOP_MAGIC,  17, struct mipi_host_irq_mask)
+#define MIPI_HOST_S_INT_FORCE \
+	_IOW(MIPIBRIDGE_IOC_TOP_MAGIC,  18, struct mipi_host_irq_mask)
+
 
 #endif

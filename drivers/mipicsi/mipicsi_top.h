@@ -23,6 +23,7 @@
 #include <linux/mipibridge.h>
  
 #include "mipicsi_dc_dphy.h"
+#include "mipi_dev.h"
 
 #define BIT0_MASK 0x0001
 #define BIT1_MASK 0x0002
@@ -49,7 +50,6 @@
 #define TX_CMODE_RX1_BYP_EN_MASK   BIT5_MASK
 
 
-
 enum TX_BYP_SEL_VALUES {
 	TX_POWER_OFF = 0,
 	TX_BYPASS_RX0 = 1,
@@ -59,7 +59,6 @@ enum TX_BYP_SEL_VALUES {
 
 /* ENABLE EMULATION SUPPORT */
 #define MNH_EMULATION
-
 
 int mipicsi_top_start(struct mipicsi_top_cfg *config);
 int mipicsi_top_stop(enum mipicsi_top_dev dev);
@@ -75,5 +74,9 @@ int mipicsi_top_write(struct mipicsi_top_reg *reg);
 int mipicsi_top_debug_bist_start(enum mipicsi_top_dev dev);
 int mipicsi_top_debug_bist_status(enum mipicsi_top_dev dev);
 int mipicsi_top_debug_vpg(struct mipicsi_top_vpg *vpg);
+
+void mipicsi_set_device(enum mipicsi_top_dev devid, struct mipi_dev *dev);
+struct mipi_dev *mipicsi_get_device(enum mipicsi_top_dev devid);
+enum mipicsi_top_dev get_device_id(const char *device_name);
 
 #endif /* MIPI_TOP_H_ */

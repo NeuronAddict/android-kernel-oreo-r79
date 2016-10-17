@@ -17,38 +17,28 @@
 #ifndef __MIPI_DEV__
 #define __MIPI_DEV__
 
+#include <linux/cdev.h>
+#include <linux/mipibridge.h>
+#include "mipicsi_chardev.h"
+
 struct mipi_dev {
 	/** Platform device node */
-	struct platform_device	*pdev;
+	struct platform_device		*pdev;
 	/** Device node */
 	struct device			*dev;
 	/** Device list */
 	struct list_head		devlist;
 	/** Spinlock */
-	spinlock_t				slock;
+	spinlock_t			slock;
 	/** Mutex */
 	struct mutex			mutex;
-
-	void __iomem			*base_address;
-	uint32_t				mem_size;
-	uint32_t				irq_number;
-	struct mipi_chardev		chardev;
-};
-
-
-struct mipicsi_top_device {
-	struct device	    *dev;     /* Device node */
-	struct list_head    devlist;  /* Device list */
-	spinlock_t          slock;    /* Spinlock */
-	struct mutex        mutex;    /* Mutex */
-
 	/** Device Tree Information */
-	void __iomem      *base_address;
-	uint32_t           mem_size;
-	uint32_t           top_irq_number;
-	uint32_t           top_irq;
+	void __iomem			*base_address;
+	uint32_t			mem_size;
+	uint32_t			irq_number;
+	enum mipicsi_top_dev		device_id;
 	struct mipi_chardev		chardev;
-	
+	void				*data;
 };
 
 #endif

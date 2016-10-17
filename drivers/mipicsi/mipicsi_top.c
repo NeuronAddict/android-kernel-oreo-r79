@@ -63,7 +63,42 @@ void mipicsi_util_save_virt_addr(enum mipicsi_top_dev dev, void *base_addr)
   dev_addr_map[dev] = base_addr;
 }
 
-static struct device *mipicsi_top_device;
+static struct device *mipi_dev;
+
+struct mipi_dev *dev_map[MIPI_MAX] = { NULL };
+
+void mipicsi_set_device(enum mipicsi_top_dev devid, struct mipi_dev *dev)
+{
+	pr_info("%s: devid %d, 0x%x\n", __func__, devid, dev);
+	dev_map[devid] = dev;
+}
+
+struct mipi_dev *mipicsi_get_device(enum mipicsi_top_dev devid)
+{
+	return dev_map[devid];
+}
+
+enum mipicsi_top_dev get_device_id(const char *device_name)
+{
+	if (strcmp(device_name, "TOP") == 0)
+		return MIPI_TOP;
+	else if (strcmp(device_name, "RX0") == 0)
+		return MIPI_RX0;
+	else if (strcmp(device_name, "RX1") == 0)
+		return MIPI_RX1;
+	else if (strcmp(device_name, "RX2") == 0)
+		return MIPI_RX2;
+	else if (strcmp(device_name, "TX0") == 0)
+		return MIPI_TX0;
+	else if (strcmp(device_name, "TX1") == 0)
+		return MIPI_TX1;
+	else if (strcmp(device_name, "IPU") == 0)
+		return MIPI_IPU;
+
+	pr_err("Invalid MIPI device name %s\ņ", device_name);
+	return -EINVAL;
+}
+
 
 /* these macros assume a void * in scope named baddr */
 #define TOP_IN(reg)             HW_IN(baddr,   MIPI_TOP, reg)
@@ -826,9 +861,16 @@ struct mipi_top_operations mipi_top_ioctl = {
 	.reset_all = mipicsi_top_reset_all,
 	.writereg = mipicsi_top_write,
 	.readreg = mipicsi_top_read,
-	.vpg = mipicsi_top_debug_vpg};
+	.vpg = mipicsi_top_debug_vpg,
+	.get_device_irq_status = mipicsi_device_get_interrupt_status,
+	.set_device_irq_mask = mipicsi_device_set_interrupt_mask,
+	.force_device_irq = mipicsi_device_force_interrupt,
+	.get_host_irq_status = mipicsi_host_get_interrupt_status,
+	.set_host_irq_mask = mipicsi_host_set_interrupt_mask,
+	.force_host_irq = mipicsi_host_force_interrupt
+};
 
-int mipicsi_top_init_chardev(struct mipicsi_top_device *mipidev)
+int mipicsi_top_init_chardev(struct mipi_dev *mipidev)
 {
         int ret;
 
@@ -847,7 +889,7 @@ int mipicsi_top_init_chardev(struct mipicsi_top_device *mipidev)
 static irqreturn_t mipicsi_top_irq(int irq, void *dev_id)
 {
 
-	struct mipicsi_top_device *dev = dev_id;
+	struct mipi_dev *dev = dev_id;
 	u32 status, ind_status;
 	void *baddr = dev->base_address;
 	int ret = IRQ_NONE;
@@ -877,9 +919,11 @@ int mipicsi_top_probe(struct platform_device *pdev)
 {
 	int ret = 0;
 	int error = 0;
-	struct mipicsi_top_device *dev;
+	struct mipi_dev *dev;
 	int irq_number = 0;
 	struct resource *mem = NULL;
+	char *device_id_name;
+	struct device_node *np = NULL;
 
 	dev_info(&pdev->dev, "Installing MIPI CSI-2 TOP module...\n");
 
@@ -894,7 +938,10 @@ int mipicsi_top_probe(struct platform_device *pdev)
 	dev->dev = &pdev->dev;
 
 	/* Initialize dev */
-	mipicsi_top_device = dev->dev;
+	mipi_dev = dev->dev;
+	np = pdev->dev.of_node;
+	if (np == NULL)
+		dev_err(&pdev->dev, "Could not find of device node!\n");
 
 	/* Device tree information: Base addresses & mapping */
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -937,15 +984,22 @@ int mipicsi_top_probe(struct platform_device *pdev)
 	irq_number = platform_get_irq(pdev, 0);
 	if (irq_number > 0) {
 		/* Register interrupt */
-		ret = request_irq(dev->top_irq_number, mipicsi_top_irq,
+		ret = request_irq(irq_number, mipicsi_top_irq,
 				IRQF_SHARED, dev_name(&pdev->dev), dev);
 		if (ret)
-			dev_err(&pdev->dev, "Could not register top interrupt\n");
+			dev_err(&pdev->dev,
+				"Could not register top interrupt\n");
 	} else
 		dev_err(&pdev->dev, "IRQ num not set. See device tree.\n");
 
-	dev->top_irq_number = irq_number;
+	dev->irq_number = irq_number;
 
+	if (of_property_read_string(np, "device-id", &device_id_name)) {
+		dev_err(&pdev->dev, "Could not read device id!\n");
+	} else {
+		dev->device_id = get_device_id(device_id_name);
+		mipicsi_set_device(dev->device_id, dev);
+	}
 
 	/* Now that everything is fine, let's add it to device list */
 	list_add_tail(&dev->devlist, &devlist_global);
@@ -953,7 +1007,7 @@ int mipicsi_top_probe(struct platform_device *pdev)
 	/* HW init */
 	ret = mipicsi_top_hw_init();
 
-	mipicsi_sysfs_init(mipicsi_top_device);
+	mipicsi_sysfs_init(mipi_dev);
 
 	return ret;
  free_mem:
@@ -969,18 +1023,17 @@ int mipicsi_top_probe(struct platform_device *pdev)
  */
 static int mipicsi_top_remove(struct platform_device *pdev)
 {
-	struct mipicsi_top_device *dev;
+	struct mipi_dev *dev;
 	struct list_head *list;
 
 	dev_dbg(&pdev->dev, "Removing MIPI CSI-2 module\n");
-	mipicsi_sysfs_clean(mipicsi_top_device);
+	mipicsi_sysfs_clean(mipi_dev);
 	while (!list_empty(&devlist_global)) {
 		list = devlist_global.next;
 		list_del(list);
-		dev = list_entry(list, struct mipicsi_top_device, devlist);
+		dev = list_entry(list, struct mipi_dev, devlist);
 
-		devm_free_irq(&pdev->dev, dev->top_irq_number, dev);
-		devm_free_irq(&pdev->dev, dev->top_irq, dev);
+		devm_free_irq(&pdev->dev, dev->irq_number, dev);
 
 		iounmap(dev->base_address);
 	}

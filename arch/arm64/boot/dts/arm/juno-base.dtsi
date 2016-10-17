@@ -419,12 +419,14 @@
 	mipitop: mipitop@60057000 {
 		compatible = "intel,mipicsi_top";
 		reg = <0x0 0x60057000 0x0 0x0FFF>;
+		device-id = "TOP";
 		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
 	};
 
 	mipi_rx0: mipihost@60054000 {
 		compatible = "snps,mipicsi_host";
 		reg = <0x0 0x60054000 0x0 0xFFF>;
+		device-id = "RX0";
 		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
 	};
 /*
@@ -440,6 +442,7 @@
 	mipi_tx0: mipidevice@60052000 {
 		compatible = "snps,mipicsi_device";
 		reg = <0x0 0x60052000 0x0 0xFFF>;
+		device-id = "TX0";
 		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
 	};
 /*

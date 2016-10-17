@@ -18,7 +18,6 @@
 #define __MIPICSI_CHARDEV__
 
 #include <linux/cdev.h>
-#include "mipicsi_top.h"
 
 /*
  * Character device handling
@@ -36,6 +35,18 @@ struct mipi_top_operations {
 	int (*writereg)(struct mipicsi_top_reg*);
 	int (*readreg)(struct mipicsi_top_reg*);
 	int (*vpg)(struct mipicsi_top_vpg*);
+	int (*get_device_irq_status)(enum mipicsi_top_dev devid,
+				     struct mipi_device_irq_st**);
+	int (*set_device_irq_mask)(enum mipicsi_top_dev devid,
+				 struct mipi_device_irq_mask*);
+	int (*force_device_irq)(enum mipicsi_top_dev devid,
+				struct mipi_device_irq_mask*);
+	int (*get_host_irq_status)(enum mipicsi_top_dev devid,
+				   struct mipi_host_irq_st**);
+	int (*set_host_irq_mask)(enum mipicsi_top_dev devid,
+				 struct mipi_host_irq_mask*);
+	int (*force_host_irq)(enum mipicsi_top_dev devid,
+			      struct mipi_host_irq_mask*);
 };
 
 struct mipi_chardev {
@@ -45,7 +56,7 @@ struct mipi_chardev {
 	struct cdev cdev;
 	struct class *chardevClass;
 	struct device *chardev;
-	struct mipicsi_top_device *mipidev;
+	struct mipi_dev *mipidev;
 	struct mipi_top_operations topOps;
 };
 
