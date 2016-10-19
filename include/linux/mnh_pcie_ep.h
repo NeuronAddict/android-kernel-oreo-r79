@@ -34,11 +34,13 @@
 /** enum value used for msi msg type for mnh_send_msi() API */
 enum  mnh_msi_msg_t {
 	INVAL_MSI = 0,
-	MSG_SEND_M,
+	MSI_START = 1,
+	MSG_SEND_M = MSI_START,
 	PET_WATCHDOG,
 	CRASH_DUMP,
 	BOOTSTRAP_SET,
 	APPDEFINED_1_M,
+	MSI_END = APPDEFINED_1_M
 };
 
 /** enum value used for irq structure passed IRQ callback function */

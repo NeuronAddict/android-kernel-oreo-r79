@@ -146,7 +146,8 @@ static int mth_fs_pcie_close(struct inode *inode, struct file *file)
 {
 	dev_err(pcie_ep_tst_device, "File Close\n");
 	mnh_reg_irq_callback(NULL, NULL);
-	mnh_ll_destroy(ll_adr);
+	if (status)
+		mnh_ll_destroy(ll_adr);
 	mnh_sg_destroy(sgl);
 	kfree(ll_adr);
 	mnh_free_coherent(SGL_SIZE * sizeof(struct mnh_sg_entry), sg1, dma1);

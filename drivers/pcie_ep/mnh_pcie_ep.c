@@ -322,7 +322,7 @@ static int pcie_send_msi(uint32_t msi)
 
 	if (pcie_ep_dev->msimode == 0)
 		pcie_set_msi_mode();
-	if ((msi < 1) || (msi > 32))
+	if ((msi < MSI_START) || (msi > MSI_END))
 		return -EINVAL;
 	force_link_up();
 	if (pcie_check_msi_mask(msi))
@@ -418,6 +418,7 @@ static void dma_rx_handler(void)
 				};
 			dma_event.channel = i;
 			dma_callback(&dma_event);
+			CSR_OUTx(PCIE_GP, 2, (data & ~DMA_READ_DONE_MASK));
 		}
 		data = data1;
 		if (data & DMA_READ_ABORT_MASK) {
@@ -431,6 +432,7 @@ static void dma_rx_handler(void)
 				};
 			dma_event.channel = i;
 			dma_callback(&dma_event);
+			CSR_OUTx(PCIE_GP, 2, (data & ~DMA_READ_ABORT_MASK));
 		}
 		data = data1;
 		if (data & DMA_WRITE_DONE_MASK) {
@@ -444,6 +446,7 @@ static void dma_rx_handler(void)
 				};
 			dma_event.channel = i;
 			dma_callback(&dma_event);
+			CSR_OUTx(PCIE_GP, 2, (data & ~DMA_WRITE_DONE_MASK));
 		}
 		data = data1;
 		if (data & DMA_WRITE_ABORT_MASK) {
@@ -457,8 +460,8 @@ static void dma_rx_handler(void)
 				};
 			dma_event.channel = i;
 			dma_callback(&dma_event);
+			CSR_OUTx(PCIE_GP, 2, (data & ~DMA_WRITE_ABORT_MASK));
 		}
-		CSR_OUTx(PCIE_GP, 2, 0x0);
 	}
 }
 static void msi_rx_worker(struct work_struct *work)
@@ -479,18 +482,22 @@ static void msi_rx_worker(struct work_struct *work)
 				inc.msi_irq =  MSG_SEND_I;
 				irq_callback(&inc);
 			}
+			CSR_OUT(PCIE_SW_INTR_TRIGG, (MNH_PCIE_SW_IRQ_CLEAR
+				& (0x1 << MSG_SEND_I)));
 		}
-		if (apirq & (0x1 << DMA_STATUS))
+		if (apirq & (0x1 << DMA_STATUS)) {
 			dma_rx_handler();
-
+			CSR_OUT(PCIE_SW_INTR_TRIGG, (MNH_PCIE_SW_IRQ_CLEAR
+				& (0x1 << DMA_STATUS)));
+		}
 		if (apirq & (0x1 << APPDEFINED_1_I)) {
 			if (irq_callback != NULL) {
 				inc.msi_irq =  APPDEFINED_1_I;
 				irq_callback(&inc);
 			}
+			CSR_OUT(PCIE_SW_INTR_TRIGG, (MNH_PCIE_SW_IRQ_CLEAR
+				& (0x1 << APPDEFINED_1_I)));
 		}
-		/* Clear all interrupts */
-		CSR_OUT(PCIE_SW_INTR_TRIGG, MNH_PCIE_SW_IRQ_CLEAR);
 	}
 }
 
@@ -503,55 +510,89 @@ static void pcie_irq_worker(struct work_struct *work)
 		if (pcieirq & MNH_PCIE_MSI_SENT) {
 			dev_err(pcie_ep_dev->dev, "MSI Sent\n");
 			release_link();
+			CSR_OUT(PCIE_SS_INTR_STS,
+				(pcieirq & ~MNH_PCIE_MSI_SENT));
 		}
 		if (pcieirq & MNH_PCIE_VMSG_SENT) {
 			dev_err(pcie_ep_dev->dev, "VM Sent\n");
 			release_link();
+			CSR_OUT(PCIE_SS_INTR_STS,
+				(pcieirq & ~MNH_PCIE_VMSG_SENT));
 		}
 		if ((pcieirq & MNH_PCIE_VMSG1_RXD)
 			& (irq_callback != NULL)) {
 			dev_err(pcie_ep_dev->dev, "VM1 received\n");
 			handle_vm(1);
+			CSR_OUT(PCIE_SS_INTR_STS,
+				(pcieirq & ~MNH_PCIE_VMSG1_RXD));
 		}
 		if ((pcieirq & MNH_PCIE_VMSG0_RXD)
 			& (irq_callback != NULL)) {
 			dev_err(pcie_ep_dev->dev, "VM2 received\n");
 			handle_vm(0);
+			CSR_OUT(PCIE_SS_INTR_STS,
+				(pcieirq & ~MNH_PCIE_VMSG0_RXD));
 		}
-		if (pcieirq & MNH_PCIE_LINK_EQ_REQ_INT)
+		if (pcieirq & MNH_PCIE_LINK_EQ_REQ_INT) {
 			dev_err(pcie_ep_dev->dev,
 			"MNH_PCIE_LINK_EQ_REQ_INT received\n");
-		if (pcieirq & MNH_PCIE_LINK_REQ_RST_NOT)
+			CSR_OUT(PCIE_SS_INTR_STS,
+				(pcieirq & ~MNH_PCIE_LINK_EQ_REQ_INT));
+		}
+		if (pcieirq & MNH_PCIE_LINK_REQ_RST_NOT) {
 			dev_err(pcie_ep_dev->dev,
 			"MNH_PCIE_LINK_REQ_RST_NOT received\n");
-		if (pcieirq & MNH_PCIE_LTR_SENT)
+			CSR_OUT(PCIE_SS_INTR_STS,
+				(pcieirq & ~MNH_PCIE_LINK_REQ_RST_NOT));
+		}
+		if (pcieirq & MNH_PCIE_LTR_SENT) {
 			release_link();
-		if (pcieirq & MNH_PCIE_COR_ERR)
+			CSR_OUT(PCIE_SS_INTR_STS,
+				(pcieirq & ~MNH_PCIE_LTR_SENT));
+			}
+		if (pcieirq & MNH_PCIE_COR_ERR) {
 			dev_err(pcie_ep_dev->dev,
 			"MNH_PCIE_COR_ERR received\n");
-		if (pcieirq & MNH_PCIE_NONFATAL_ERR)
+			CSR_OUT(PCIE_SS_INTR_STS,
+				(pcieirq & ~MNH_PCIE_COR_ERR));
+		}
+		if (pcieirq & MNH_PCIE_NONFATAL_ERR) {
 			dev_err(pcie_ep_dev->dev,
 			"MNH_PCIE_NONFATAL_ERR received\n");
-		if (pcieirq & MNH_PCIE_FATAL_ERR)
+			CSR_OUT(PCIE_SS_INTR_STS,
+				(pcieirq & ~MNH_PCIE_NONFATAL_ERR));
+		}
+		if (pcieirq & MNH_PCIE_FATAL_ERR) {
 			dev_err(pcie_ep_dev->dev,
 			"MNH_PCIE_FATAL_ERR received\n");
-		if (pcieirq & MNH_PCIE_RADM_MSG_UNLOCK)
+			CSR_OUT(PCIE_SS_INTR_STS,
+				(pcieirq & ~MNH_PCIE_FATAL_ERR));
+			}
+		if (pcieirq & MNH_PCIE_RADM_MSG_UNLOCK) {
 			dev_err(pcie_ep_dev->dev,
 			"MNH_PCIE_RADM_MSG_UNLOCK received\n");
-		if (pcieirq & MNH_PCIE_PM_TURNOFF)
+			CSR_OUT(PCIE_SS_INTR_STS,
+				(pcieirq & ~MNH_PCIE_RADM_MSG_UNLOCK));
+		}
+		if (pcieirq & MNH_PCIE_PM_TURNOFF) {
 			dev_err(pcie_ep_dev->dev,
 			"MNH_PCIE_PM_TURNOFF received\n");
-		if (pcieirq & MNH_PCIE_RADM_CPL_TIMEOUT)
+			CSR_OUT(PCIE_SS_INTR_STS,
+				(pcieirq & ~MNH_PCIE_PM_TURNOFF));
+		}
+		if (pcieirq & MNH_PCIE_RADM_CPL_TIMEOUT) {
 			dev_err(pcie_ep_dev->dev,
 			"MNH_PCIE_RADM_CPL_TIMEOUT received\n");
-		if (pcieirq & MNH_PCIE_TRGT_CPL_TIMEOUT)
+			CSR_OUT(PCIE_SS_INTR_STS,
+				(pcieirq & ~MNH_PCIE_RADM_CPL_TIMEOUT));
+		}
+		if (pcieirq & MNH_PCIE_TRGT_CPL_TIMEOUT) {
 			dev_err(pcie_ep_dev->dev,
 			"MNH_PCIE_TRGT_CPL_TIMEOUT received\n");
+			CSR_OUT(PCIE_SS_INTR_STS,
+				(pcieirq & ~MNH_PCIE_TRGT_CPL_TIMEOUT));
+			}
 	}
-
-	/* Clear all interrupts */
-	CSR_OUT(PCIE_SS_INTR_STS, PCIE_SS_IRQ_MASK);
-
 }
 
 static irqreturn_t pcie_handle_cluster_irq(int irq, void *dev_id)
@@ -659,7 +700,7 @@ int pcie_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
 		return -EINVAL;
 	}
 	if (n_num < maxsg) {
-		sg_init_table(sgl->sc_list, n_num);
+		sg_init_table(sgl->sc_list, n_num + 1);
 		sg_set_page(sgl->sc_list, *(sgl->mypage),
 					PAGE_SIZE - fp_offset, fp_offset);
 		for (i = 1; i <= n_num-1; i++)
