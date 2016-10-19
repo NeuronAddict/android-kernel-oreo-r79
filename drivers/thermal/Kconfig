@@ -403,6 +403,13 @@ endif
 
 config MNH_THERMAL
         tristate "MNH_THERMAL"
-        default y
+        default n
         help
 	   This enables mnh thermal sensor driver into Linux thermal framework
+
+config MNH_FREQ_COOLING
+	tristate "MNH_FREQ_COOLING"
+	default n
+	help
+	   This provides apis/sysfs for clients to change the CPU/IPU/LPDDR
+	   frequencies dyanmically.

@@ -29,6 +29,7 @@ struct mnh_thermal_device {
 	struct mnh_thermal_sensor *sensors[MNH_NUM_PVT_SENSORS];
 };
 
+
 /*
  * Caculate PVT_DATA output to millicelsius.
  */
@@ -169,6 +170,7 @@ unregister_sensors:
 
 	return err;
 }
+
 
 static int mnh_thermal_remove(struct platform_device *pdev)
 {

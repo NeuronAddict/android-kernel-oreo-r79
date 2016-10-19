@@ -190,6 +190,11 @@
 	    #thermal-sensor-cells = <1>;
 	};
 
+	freq_cooling: freq_cooling@40030000 {
+	    compatible = "intel, mnh_freq_cooling";
+	    reg = <0x0 0x4003000 0x0 0x1000>;
+	};
+
 	pcie@041C2000 {
 		compatible = "snps, dw_pcie_ep";
 		reg = <0x0 0x00200000 0x0 0x2000>,
