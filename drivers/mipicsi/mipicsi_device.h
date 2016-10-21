@@ -4,6 +4,8 @@
 
 #include "mipicsi_top.h"
 
+void mipicsi_dev_dphy_write(enum mipicsi_top_dev dev,
+			    uint8_t command, uint8_t data);
 void mipicsi_device_reset(enum mipicsi_top_dev dev);
 void mipicsi_device_dphy_reset(enum mipicsi_top_dev dev);
 int mipicsi_device_start(struct mipicsi_top_cfg *config);
