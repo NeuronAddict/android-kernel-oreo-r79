@@ -11,8 +11,8 @@
 		only where necessary to work around broken firmware which does not configure
 		CNTFRQ on all CPUs to a uniform correct value. Use of this property is
 		strongly discouraged; fix your firmware unless absolutely impossible.
-		*/
 		clock-frequency = <2500000>;
+		*/
 	};
 
 	/include/ "mnh-clocks.dtsi"
