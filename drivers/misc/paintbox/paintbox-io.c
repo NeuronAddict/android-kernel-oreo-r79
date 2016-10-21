@@ -34,52 +34,52 @@
 #include "paintbox-io.h"
 #include "paintbox-mipi.h"
 #include "paintbox-regs.h"
+#include "paintbox-regs-supplemental.h"
 #include "paintbox-stp.h"
 
 
 #ifdef CONFIG_DEBUG_FS
-static uint32_t io_apb_reg_entry_read(
+static uint64_t io_apb_reg_entry_read(
 		struct paintbox_debug_reg_entry *reg_entry)
 {
 	struct paintbox_debug *debug = reg_entry->debug;
 	struct paintbox_io *io = container_of(debug, struct paintbox_io,
 			apb_debug);
-	return readl(io->apb_base + reg_entry->reg_offset);
+	return readq(io->apb_base + reg_entry->reg_offset);
 }
 
 static void io_apb_reg_entry_write(struct paintbox_debug_reg_entry *reg_entry,
-		uint32_t val)
+		uint64_t val)
 {
 	struct paintbox_debug *debug = reg_entry->debug;
 	struct paintbox_io *io = container_of(debug, struct paintbox_io,
 			apb_debug);
-	writel(val, io->apb_base + reg_entry->reg_offset);
+	writeq(val, io->apb_base + reg_entry->reg_offset);
 }
 
-static uint32_t io_axi_reg_entry_read(
+static uint64_t io_axi_reg_entry_read(
 		struct paintbox_debug_reg_entry *reg_entry)
 {
 	struct paintbox_debug *debug = reg_entry->debug;
 	struct paintbox_io *io = container_of(debug, struct paintbox_io,
 			axi_debug);
-	return readl(io->axi_base + reg_entry->reg_offset);
+	return readq(io->axi_base + reg_entry->reg_offset);
 }
 
 static void io_axi_reg_entry_write(struct paintbox_debug_reg_entry *reg_entry,
-		uint32_t val)
+		uint64_t val)
 {
 	struct paintbox_debug *debug = reg_entry->debug;
 	struct paintbox_io *io = container_of(debug, struct paintbox_io,
 			axi_debug);
-	writel(val, io->axi_base + reg_entry->reg_offset);
+	writeq(val, io->axi_base + reg_entry->reg_offset);
 }
 #endif
 
 #if defined(CONFIG_DEBUG_FS) || defined(VERBOSE_DEBUG)
 static const char *io_apb_reg_names[IO_APB_NUM_REGS] = {
 	REG_NAME_ENTRY(IPU_VERSION),
-	REG_NAME_ENTRY(IPU_CHECKSUM_L),
-	REG_NAME_ENTRY(IPU_CHECKSUM_H),
+	REG_NAME_ENTRY(IPU_CHECKSUM),
 	REG_NAME_ENTRY(IPU_ISR),
 	REG_NAME_ENTRY(IPU_IMR),
 	REG_NAME_ENTRY(IPU_CAP),
@@ -97,7 +97,7 @@ static inline int dump_io_apb_reg(struct paintbox_data *pb, uint32_t reg_offset,
 		char *buf, int *written, size_t len)
 {
 	const char *reg_name = io_apb_reg_names[REG_INDEX(reg_offset)];
-	return dump_ipu_register(pb, pb->io.apb_base, reg_offset, reg_name,
+	return dump_ipu_register64(pb, pb->io.apb_base, reg_offset, reg_name,
 			buf, written, len);
 }
 
@@ -110,11 +110,7 @@ int dump_io_apb_registers(struct paintbox_debug *debug, char *buf, size_t len)
 	if (ret < 0)
 		goto err_exit;
 
-	ret = dump_io_apb_reg(pb, IPU_CHECKSUM_L, buf, &written, len);
-	if (ret < 0)
-		goto err_exit;
-
-	ret = dump_io_apb_reg(pb, IPU_CHECKSUM_H, buf, &written, len);
+	ret = dump_io_apb_reg(pb, IPU_CHECKSUM, buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
 
@@ -184,8 +180,7 @@ static const char *io_axi_reg_names[IO_AXI_NUM_REGS] = {
 	REG_NAME_ENTRY(MMU_ISR),
 	REG_NAME_ENTRY(MMU_IMR),
 	REG_NAME_ENTRY(MMU_ISR_OVF),
-	REG_NAME_ENTRY(MMU_ERR_LOG_L),
-	REG_NAME_ENTRY(MMU_ERR_LOG_H),
+	REG_NAME_ENTRY(MMU_ERR_LOG),
 	REG_NAME_ENTRY(BIF_AXI_CTRL_DMA0),
 	REG_NAME_ENTRY(BIF_AXI_CTRL_DMA1),
 	REG_NAME_ENTRY(BIF_AXI_CTRL_DMA2),
@@ -196,9 +191,8 @@ static const char *io_axi_reg_names[IO_AXI_NUM_REGS] = {
 	REG_NAME_ENTRY(BIF_IMR),
 	REG_NAME_ENTRY(BIF_ISR),
 	REG_NAME_ENTRY(BIF_ISR_OVF),
-	REG_NAME_ENTRY(BIF_ERR_CFG_STS),
-	REG_NAME_ENTRY(BIF_ERR_LOG_L),
-	REG_NAME_ENTRY(BIF_ERR_LOG_H),
+	REG_NAME_ENTRY(BIF_TO_ERR_CFG),
+	REG_NAME_ENTRY(BIF_ERR_LOG),
 	REG_NAME_ENTRY(BIF_ERR_LOG_BUS_ADDR),
 	REG_NAME_ENTRY(BIF_PMON_CFG),
 	REG_NAME_ENTRY(BIF_PMON_CNT_0_CFG),
@@ -224,7 +218,7 @@ static inline int dump_io_axi_reg(struct paintbox_data *pb, uint32_t reg_offset,
 		char *buf, int *written, size_t len)
 {
 	const char *reg_name = io_axi_reg_names[REG_INDEX(reg_offset)];
-	return dump_ipu_register(pb, pb->io.axi_base, reg_offset, reg_name,
+	return dump_ipu_register64(pb, pb->io.axi_base, reg_offset, reg_name,
 			buf, written, len);
 }
 
@@ -303,6 +297,9 @@ static irqreturn_t paintbox_io_interrupt(int irq, void *arg)
 	uint32_t status;
 
 	status = readl(pb->io.apb_base + IPU_ISR);
+	if (status == 0)
+		return IRQ_NONE;
+
 	writel(status, pb->io.apb_base + IPU_ISR);
 
 	if (status & pb->io.dma_mask)
@@ -327,7 +324,7 @@ static irqreturn_t paintbox_io_interrupt(int irq, void *arg)
 	return IRQ_HANDLED;
 }
 
-/* The caller to this function must hold pb->lock */
+/* The caller to this function must hold pb->dma.dma_lock */
 void io_enable_dma_channel(struct paintbox_data *pb, unsigned int channel_id)
 {
 	uint32_t val;
@@ -338,7 +335,7 @@ void io_enable_dma_channel(struct paintbox_data *pb, unsigned int channel_id)
 
 }
 
-/* The caller to this function must hold pb->lock */
+/* The caller to this function must hold pb->dma.dma_lock */
 void io_disable_dma_channel(struct paintbox_data *pb, unsigned int channel_id)
 {
 	uint32_t val;
@@ -415,18 +412,18 @@ void io_disable_stp_interrupt(struct paintbox_data *pb, unsigned int stp_id)
 }
 
 static void io_enable_mipi_interface_interrupt(struct paintbox_data *pb,
-		uint32_t int_offset)
+		unsigned int interface_offset)
 {
 	unsigned long irq_flags;
 	uint32_t ipu_imr;
 
 	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
 
-	pb->io.mipi_imr |= 1 << int_offset;
+	pb->io.mipi_imr |= 1 << interface_offset;
 
 	if (!pb->io.mipi_disabled) {
 		ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-		ipu_imr |= int_offset;
+		ipu_imr |= 1 << interface_offset;
 		writel(ipu_imr, pb->io.apb_base + IPU_IMR);
 	}
 
@@ -434,18 +431,18 @@ static void io_enable_mipi_interface_interrupt(struct paintbox_data *pb,
 }
 
 static void io_disable_mipi_interface_interrupt(struct paintbox_data *pb,
-		uint32_t int_offset)
+		unsigned int interface_offset)
 {
 	unsigned long irq_flags;
 	uint32_t ipu_imr;
 
 	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
 
-	pb->io.mipi_imr &= ~(1 << int_offset);
+	pb->io.mipi_imr &= ~(1 << interface_offset);
 
 	if (!pb->io.mipi_disabled) {
 		ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-		ipu_imr &= ~(1 << int_offset);
+		ipu_imr &= ~(1 << interface_offset);
 		writel(ipu_imr, pb->io.apb_base + IPU_IMR);
 	}
 
@@ -561,7 +558,7 @@ int paintbox_io_axi_init(struct paintbox_data *pb)
 	paintbox_alloc_debug_buffer(pb, IO_AXI_DEBUG_BUFFER_SIZE);
 #endif
 
-	dev_dbg(&pb->pdev->dev, "io_axi: base %p len %u\n",
+	dev_dbg(&pb->pdev->dev, "io_axi: base %p len %lu\n",
 			pb->io.axi_base, IO_AXI_BLOCK_LEN);
 
 	return 0;
@@ -597,11 +594,27 @@ int paintbox_io_apb_init(struct paintbox_data *pb)
 	pb->io.mmu_start = pb->io.bif_start + NUM_BIF_INTERRUPTS;
 	pb->io.mmu_mask = ((1 << NUM_MMU_INTERRUPTS) - 1) << pb->io.mmu_start;
 
+	/* Update the number of available interrupts reported to the user space.
+	 * This value is also used to allocate the number of IRQ waiter objects.
+	 *
+	 * TODO(ahampson):  The IRQ waiter code should be modified to allocate
+	 * IRQ waiter objects on demand.  The fixed relationship between the
+	 * number of IRQ waiters and the number of interrupts is arbitrary and
+	 * should be cleaned up.  b/31684858
+	 */
+	pb->caps.num_interrupts = pb->io.mmu_start + NUM_MMU_INTERRUPTS;
+
 	if (pb->io_ipu.num_mipi_input_interfaces > 0) {
 		pb->io.mipi_input_start = pb->io.mmu_start + NUM_MMU_INTERRUPTS;
 		pb->io.mipi_input_mask = ((1 <<
 				pb->io_ipu.num_mipi_input_interfaces) -
 				1) << pb->io.mipi_input_start;
+
+		/* For the number of interrupts available that is reported to
+		 * the user space we want to have an interrupt per MIPI stream
+		 * rather than per interface.
+		 */
+		pb->caps.num_interrupts += pb->io_ipu.num_mipi_input_streams;
 	}
 
 	if (pb->io_ipu.num_mipi_output_interfaces > 0) {
@@ -610,6 +623,12 @@ int paintbox_io_apb_init(struct paintbox_data *pb)
 		pb->io.mipi_output_mask = ((1 <<
 				pb->io_ipu.num_mipi_output_interfaces) -
 				1) << pb->io.mipi_output_start;
+
+		/* For the number of interrupts available that is reported to
+		 * the user space we want to have an interrupt per MIPI stream
+		 * rather than per interface.
+		 */
+		pb->caps.num_interrupts += pb->io_ipu.num_mipi_output_streams;
 	}
 
 	ret = devm_request_irq(&pb->pdev->dev, pb->io.irq,
@@ -617,7 +636,7 @@ int paintbox_io_apb_init(struct paintbox_data *pb)
 	if (ret < 0)
 		return ret;
 
-	dev_dbg(&pb->pdev->dev, "io_apb: base %p len %u\n",
+	dev_dbg(&pb->pdev->dev, "io_apb: base %p len %lu\n",
 			pb->io.apb_base, IO_APB_BLOCK_LEN);
 
 	return 0;

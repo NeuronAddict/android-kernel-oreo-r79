@@ -17,12 +17,28 @@ config PAINTBOX_FPGA_SUPPORT
 	This option enables support for the Paintbox FPGA hardware.
 	If you are unsure, say N.
 
+config PAINTBOX_FPGA_SOFT_RESET
+	bool  "Paintbox FPGA Soft Reset Support"
+	depends on PAINTBOX_FPGA_SUPPORT
+	default n
+	---help---
+	This option enables support for the FPGA soft reset register.
+	If you are unsure, say N.
+
 config PAINTBOX_SIMULATOR_SUPPORT
 	bool  "Paintbox Simulator Support"
 	depends on PAINTBOX
 	default n
 	---help---
 	This option enables support for the Paintbox Simulator.
+	If you are unsure, say N.
+
+config PAINTBOX_TEST_SUPPORT
+	bool  "Paintbox Test Support"
+	depends on PAINTBOX
+	default n
+	---help---
+	This option enables support for Paintbox test only ioctls.
 	If you are unsure, say N.
 
 endmenu

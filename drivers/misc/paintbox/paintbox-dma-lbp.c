@@ -36,7 +36,6 @@
 #include "paintbox-regs.h"
 #include "paintbox-stp.h"
 
-
 /* The caller to this function must hold pb->lock */
 static int set_dma_lbp_parameters(struct paintbox_data *pb,
 		struct paintbox_session *session,
@@ -119,15 +118,15 @@ int dma_setup_dram_to_lbp_transfer(struct paintbox_data *pb,
 	ret = set_dma_lbp_parameters(pb, session, channel, transfer,
 			&config->dst.lbp);
 	if (ret < 0)
-		return ret;
+		goto err_exit;
 
 	ret = set_dma_image_parameters(pb, channel, transfer, &config->img);
 	if (ret < 0)
-		return ret;
+		goto err_exit;
 
 	ret = set_dma_transfer_region_parameters(pb, channel, transfer, config);
 	if (ret < 0)
-		return ret;
+		goto err_exit;
 
 	set_dma_dram_parameters(pb, channel, transfer);
 
@@ -138,6 +137,11 @@ int dma_setup_dram_to_lbp_transfer(struct paintbox_data *pb,
 			config->dst.lbp.lb_id, config->src.dram.len_bytes);
 
 	return 0;
+
+err_exit:
+	dma_unmap_buffer_cma(pb, transfer, NULL, 0);
+
+	return ret;
 }
 
 /* The caller to this function must hold pb->lock */
@@ -168,15 +172,15 @@ int dma_setup_lbp_to_dram_transfer(struct paintbox_data *pb,
 	ret = set_dma_lbp_parameters(pb, session, channel, transfer,
 			&config->src.lbp);
 	if (ret < 0)
-		return ret;
+		goto err_exit;
 
 	ret = set_dma_image_parameters(pb, channel, transfer, &config->img);
 	if (ret < 0)
-		return ret;
+		goto err_exit;
 
 	ret = set_dma_transfer_region_parameters(pb, channel, transfer, config);
 	if (ret < 0)
-		return ret;
+		goto err_exit;
 
 	set_dma_dram_parameters(pb, channel, transfer);
 
@@ -187,6 +191,11 @@ int dma_setup_lbp_to_dram_transfer(struct paintbox_data *pb,
 			&transfer->buf_paddr, config->dst.dram.len_bytes);
 
 	return 0;
+
+err_exit:
+	dma_unmap_buffer_cma(pb, transfer, NULL, 0);
+
+	return ret;
 }
 
 /* The caller to this function must hold pb->lock */

@@ -24,6 +24,7 @@
 
 #include "paintbox-common.h"
 #include "paintbox-regs.h"
+#include "paintbox-regs-supplemental.h"
 #include "paintbox-sram.h"
 #include "paintbox-stp.h"
 #include "paintbox-stp-sram.h"
@@ -46,22 +47,22 @@ int stp_sram_write_word(struct paintbox_data *pb,
 	switch (sram_config->ram_data_mode) {
 	case RAM_DATA_MODE_NORMAL:
 		write_ram_data_registers(pb, buf, pb->stp_base +
-				STP_RAM_DATA0_L, STP_DATA_REG_COUNT);
+				STP_RAM_DATA0, STP_DATA_REG_COUNT);
 		break;
 	case RAM_DATA_MODE_SWAP:
 		write_ram_data_registers_swapped(pb, buf, pb->stp_base +
-				STP_RAM_DATA0_L, STP_DATA_REG_COUNT);
+				STP_RAM_DATA0, STP_DATA_REG_COUNT);
 		break;
 	case RAM_DATA_MODE_COL_MAJOR:
 		write_ram_data_registers_column_major(pb, buf);
 		break;
 	};
 
-	writel(STP_RAM_RUN | STP_RAM_WRITE | ram_ctrl_addr |
+	writel(STP_RAM_CTRL_RUN_MASK | STP_RAM_CTRL_WRITE_MASK | ram_ctrl_addr |
 			sram_config->ram_ctrl_target, pb->stp_base +
 			STP_RAM_CTRL);
 
-	while (readl(pb->stp_base + STP_RAM_CTRL) & STP_RAM_RUN) {
+	while (readl(pb->stp_base + STP_RAM_CTRL) & STP_RAM_CTRL_RUN_MASK) {
 		spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
 
 		if (++attempts >= MAX_MEMORY_ACCESS_ATTEMPTS) {
@@ -98,10 +99,11 @@ int stp_sram_read_word(struct paintbox_data *pb,
 
 	writel(sram_config->core_id, pb->stp_base + STP_SEL);
 
-	writel(STP_RAM_RUN | ram_ctrl_addr | sram_config->ram_ctrl_target,
-			pb->stp_base + STP_RAM_CTRL);
+	writel(STP_RAM_CTRL_RUN_MASK | ram_ctrl_addr |
+			sram_config->ram_ctrl_target, pb->stp_base +
+			STP_RAM_CTRL);
 
-	while (readl(pb->stp_base + STP_RAM_CTRL) & STP_RAM_RUN) {
+	while (readl(pb->stp_base + STP_RAM_CTRL) & STP_RAM_CTRL_RUN_MASK) {
 		spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
 
 		if (++attempts >= MAX_MEMORY_ACCESS_ATTEMPTS) {
@@ -127,11 +129,11 @@ int stp_sram_read_word(struct paintbox_data *pb,
 	switch (sram_config->ram_data_mode) {
 	case RAM_DATA_MODE_NORMAL:
 		read_ram_data_registers(pb, buf, pb->stp_base +
-				STP_RAM_DATA0_L, STP_DATA_REG_COUNT);
+				STP_RAM_DATA0, STP_DATA_REG_COUNT);
 		break;
 	case RAM_DATA_MODE_SWAP:
 		read_ram_data_registers_swapped(pb, buf, pb->stp_base +
-				STP_RAM_DATA0_L, STP_DATA_REG_COUNT);
+				STP_RAM_DATA0, STP_DATA_REG_COUNT);
 		break;
 	case RAM_DATA_MODE_COL_MAJOR:
 		read_ram_data_registers_column_major(pb, buf);
@@ -187,15 +189,15 @@ int create_scalar_sram_config(struct paintbox_sram_config *sram_config,
 	switch (sram_target) {
 	case SRAM_TARGET_STP_INSTRUCTION_RAM:
 		sram_config->ram_ctrl_target = STP_RAM_TARG_INST_RAM <<
-				STP_RAM_TARG_SHIFT;
+				STP_RAM_CTRL_RAM_TARG_SHIFT;
 		break;
 	case SRAM_TARGET_STP_CONSTANT_RAM:
 		sram_config->ram_ctrl_target = STP_RAM_TARG_CNST_RAM <<
-				STP_RAM_TARG_SHIFT;
+				STP_RAM_CTRL_RAM_TARG_SHIFT;
 		break;
 	case SRAM_TARGET_STP_SCALAR_RAM:
 		sram_config->ram_ctrl_target = STP_RAM_TARG_DATA_RAM <<
-				STP_RAM_TARG_SHIFT;
+				STP_RAM_CTRL_RAM_TARG_SHIFT;
 		break;
 	default:
 		return -EINVAL;
@@ -233,8 +235,8 @@ static inline uint32_t get_vector_address(uint32_t lane_group_x,
 	 * index
 	 */
 	ram_ctrl = ((lane_group_y << STP_RAM_ADDR_ROW_SHIFT) | sheet_slot) <<
-			STP_RAM_ADDR_SHIFT;
-	ram_ctrl |= (lane_group_x + target_base) << STP_RAM_TARG_SHIFT;
+			STP_RAM_CTRL_RAM_ADDR_SHIFT;
+	ram_ctrl |= (lane_group_x + target_base) << STP_RAM_CTRL_RAM_TARG_SHIFT;
 
 	return ram_ctrl;
 }

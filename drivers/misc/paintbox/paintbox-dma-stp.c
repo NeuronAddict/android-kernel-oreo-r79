@@ -223,11 +223,11 @@ int dma_setup_dram_to_stp_transfer(struct paintbox_data *pb,
 	ret = set_dma_stp_parameters(pb, session, channel, transfer,
 			&config->src.dram, &config->dst.stp);
 	if (ret < 0)
-		return ret;
+		goto err_exit;
 
 	ret = set_dma_image_parameters(pb, channel, transfer, &config->img);
 	if (ret < 0)
-		return ret;
+		goto err_exit;
 
 	/* TODO(ahampson):  Not supported in the simulator (b/28197242).  Once
 	 * simulator support is added this code will need to be completed.
@@ -235,9 +235,14 @@ int dma_setup_dram_to_stp_transfer(struct paintbox_data *pb,
 	 */
 	ret = set_dma_transfer_region_parameters(pb, channel, transfer, config);
 	if (ret < 0)
-		return ret;
+		goto err_exit;
 
 	set_dma_dram_parameters(pb, channel, transfer);
 
 	return 0;
+
+err_exit:
+	dma_unmap_buffer_cma(pb, transfer, NULL, 0);
+
+	return ret;
 }

@@ -72,6 +72,7 @@ enum dma_transfer_type {
 	DMA_LBP_TO_DRAM,
 	DMA_MIPI_TO_LBP,
 	DMA_LBP_TO_MIPI,
+	DMA_MIPI_TO_DRAM,
 	DMA_SRC_DST_PAIRS
 };
 
@@ -138,6 +139,7 @@ struct dma_transfer_config {
 	uint32_t sheet_height;
 	uint32_t stripe_height;
 	uint32_t noc_outstanding;
+	uint32_t retry_interval;
 
 	/* Set to true when the runtime will be waiting for a completion
 	 * notification.
@@ -400,5 +402,13 @@ struct mipi_interrupt_config {
 #define PB_UNBIND_STP_INTERRUPT       _IOW('p', 63, unsigned int)
 #define PB_STOP_DMA_TRANSFER          _IOW('p', 64, unsigned int)
 #define PB_FLUSH_DMA_TRANSFERS        _IOW('p', 65, struct dma_transfer_flush)
+
+/* Test ioctls
+ * The following ioctls are for testing and are not to be used for normal
+ * operation.  Whether or not the implementation of these ioctls is included in
+ * the driver is governed by the PAINTBOX_TEST_SUPPORT kconfig.
+ */
+#define PB_TEST_DMA_RESET              _IO('t', 1)
+#define PB_TEST_DMA_CHANNEL_RESET     _IOW('t', 2, unsigned int)
 
 #endif /* __PAINTBOX_H__ */

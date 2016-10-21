@@ -81,4 +81,21 @@ int dma_start_transfer(struct paintbox_data *pb,
 void dma_stop_transfer(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel);
 
+int dma_mipi_stream_allocated(struct paintbox_data *pb,
+			struct paintbox_session *session,
+			struct paintbox_mipi_stream *stream,
+			unsigned int channel_id);
+
+void dma_mipi_stream_released(struct paintbox_data *pb,
+		struct paintbox_session *session,
+		struct paintbox_dma_channel *channel);
+
+#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
+int dma_test_reset_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg);
+
+int dma_test_channel_reset_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg);
+#endif
+
 #endif  /* __PAINTBOX_DMA_H__ */

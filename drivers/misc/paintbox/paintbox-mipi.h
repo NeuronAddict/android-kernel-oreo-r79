@@ -59,7 +59,18 @@ int unbind_mipi_interrupt_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg,
 		bool is_input);
 
+/* The caller to this functions must hold pb->lock */
 void release_mipi_stream(struct paintbox_data *pb,
+		struct paintbox_session *session,
+		struct paintbox_mipi_stream *stream);
+
+/* The caller to this functions must hold pb->lock */
+void mipi_dma_channel_allocated(struct paintbox_data *pb,
+			struct paintbox_session *session,
+			struct paintbox_dma_channel *channel);
+
+/* The caller to this functions must hold pb->lock */
+void mipi_dma_channel_released(struct paintbox_data *pb,
 		struct paintbox_session *session,
 		struct paintbox_mipi_stream *stream);
 

@@ -55,8 +55,8 @@ typedef int (*register_dump_t)(struct paintbox_debug *debug, char *buf,
 			size_t len);
 
 typedef void (*register_write_t)(struct paintbox_debug_reg_entry *reg_entry,
-		uint32_t val);
-typedef uint32_t (*register_read_t)(struct paintbox_debug_reg_entry *reg_entry);
+		uint64_t val);
+typedef uint64_t (*register_read_t)(struct paintbox_debug_reg_entry *reg_entry);
 
 
 struct paintbox_debug_reg_entry {
@@ -131,6 +131,8 @@ struct paintbox_mipi_stream {
 	struct paintbox_session *session;
 	struct paintbox_mipi_interface *interface;
 	struct paintbox_irq *irq;
+	struct paintbox_dma_channel *dma_channel;
+	struct paintbox_data *pb;
 	unsigned long irq_flags;
 	unsigned int stream_id;
 	uint32_t ctrl_offset;
@@ -151,6 +153,9 @@ struct paintbox_io_ipu {
 	unsigned int num_mipi_output_streams;
 	unsigned int num_mipi_input_interfaces;
 	unsigned int num_mipi_output_interfaces;
+
+	/* mipi_lock is used to protect the mipi registers */
+	spinlock_t mipi_lock;
 };
 
 enum paintbox_irq_src {
@@ -218,6 +223,7 @@ struct paintbox_dma_transfer {
 	uint32_t chan_va_bdry_low;
 	uint32_t chan_va_bdry_high;
 	uint32_t chan_noc_xfer_low;
+	uint32_t chan_noc_xfer_high;
 	uint32_t chan_node;
 	int error;
 	enum dma_data_direction dir;
@@ -241,6 +247,7 @@ struct paintbox_dma_channel {
 
 	struct paintbox_debug debug;
 	struct paintbox_session *session;
+	struct paintbox_mipi_stream *mipi_stream;
 	struct completion stop_completion;
 	unsigned int channel_id;
 	struct paintbox_irq *irq;
@@ -362,6 +369,9 @@ struct paintbox_data {
 	void __iomem *stp_base;
 #ifdef CONFIG_PAINTBOX_SIMULATOR_SUPPORT
 	void __iomem *sim_base;
+#endif
+#ifdef CONFIG_PAINTBOX_FPGA_SUPPORT
+	void __iomem *fpga_reg_base;
 #endif
 	struct miscdevice misc_device;
 	struct platform_device *pdev;

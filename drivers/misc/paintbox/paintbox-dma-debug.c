@@ -93,7 +93,7 @@ static const char *dma_reg_names[DMA_NUM_REGS] = {
 	REG_NAME_ENTRY(DMA_SPARE)
 };
 
-static uint32_t dma_reg_entry_read(struct paintbox_debug_reg_entry *reg_entry)
+static uint64_t dma_reg_entry_read(struct paintbox_debug_reg_entry *reg_entry)
 {
 	struct paintbox_debug *debug = reg_entry->debug;
 	struct paintbox_dma *dma = container_of(debug, struct paintbox_dma,
@@ -102,7 +102,7 @@ static uint32_t dma_reg_entry_read(struct paintbox_debug_reg_entry *reg_entry)
 }
 
 static void dma_reg_entry_write(struct paintbox_debug_reg_entry *reg_entry,
-		uint32_t val)
+		uint64_t val)
 {
 	struct paintbox_debug *debug = reg_entry->debug;
 	struct paintbox_dma *dma = container_of(debug, struct paintbox_dma,
@@ -110,14 +110,14 @@ static void dma_reg_entry_write(struct paintbox_debug_reg_entry *reg_entry,
 	writel(val, dma->dma_base + reg_entry->reg_offset);
 }
 
-static uint32_t dma_channel_reg_entry_read(
+static uint64_t dma_channel_reg_entry_read(
 		struct paintbox_debug_reg_entry *reg_entry)
 {
 	struct paintbox_debug *debug = reg_entry->debug;
 	struct paintbox_dma_channel *channel = container_of(debug,
 			struct paintbox_dma_channel, debug);
 	struct paintbox_data *pb = debug->pb;
-	uint32_t val;
+	uint64_t val;
 
 	mutex_lock(&pb->lock);
 
@@ -131,7 +131,7 @@ static uint32_t dma_channel_reg_entry_read(
 }
 
 static void dma_channel_reg_entry_write(
-		struct paintbox_debug_reg_entry *reg_entry, uint32_t val)
+		struct paintbox_debug_reg_entry *reg_entry, uint64_t val)
 {
 	struct paintbox_debug *debug = reg_entry->debug;
 	struct paintbox_dma_channel *channel = container_of(debug,
@@ -451,7 +451,8 @@ int dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
 
 	val = readl(pb->dma.dma_base + DMA_CHAN_NOC_XFER_H);
 	ret = dump_dma_reg_verbose(pb, DMA_CHAN_NOC_XFER_H, buf, &written, len,
-			"\tRETRY_INTERVAL %u\n",
+			"\tDYN_OUTSTANDING %d RETRY_INTERVAL %u\n",
+			!!(val & DMA_CHAN_NOC_XFER_DYN_OUTSTANDING_MASK),
 			val & DMA_CHAN_RETRY_INTERVAL_MASK);
 	if (ret < 0)
 		goto err_exit;

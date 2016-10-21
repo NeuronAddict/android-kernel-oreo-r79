@@ -15,6 +15,7 @@
 
 #include <linux/completion.h>
 #include <linux/debugfs.h>
+#include <linux/delay.h>
 #include <linux/dma-mapping.h>
 #include <linux/err.h>
 #include <linux/fs.h>
@@ -41,6 +42,7 @@
 #include "paintbox-lbp.h"
 #include "paintbox-mipi.h"
 #include "paintbox-mipi-debug.h"
+#include "paintbox-regs.h"
 #include "paintbox-stp.h"
 #include "paintbox-stp-sim.h"
 #include "paintbox-stp-sram.h"
@@ -48,6 +50,9 @@
 #include "paintbox-regs.h"
 #include "paintbox-sim-regs.h"
 
+#ifdef CONFIG_PAINTBOX_FPGA_SUPPORT
+#include "paintbox-fpga.h"
+#endif
 
 static int paintbox_open(struct inode *ip, struct file *fp)
 {
@@ -123,6 +128,10 @@ static int paintbox_release(struct inode *ip, struct file *fp)
 	list_for_each_entry_safe(stream, stream_next,
 			&session->mipi_output_list, session_entry)
 		release_mipi_stream(pb, session, stream);
+
+#ifdef CONFIG_PAINTBOX_FPGA_SUPPORT
+	paintbox_fpga_soft_reset(pb);
+#endif
 
 	mutex_unlock(&pb->lock);
 
@@ -281,6 +290,12 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 		return bind_mipi_interrupt_ioctl(pb, session, arg, false);
 	case PB_UNBIND_MIPI_OUT_INTERRUPT:
 		return unbind_mipi_interrupt_ioctl(pb, session, arg, false);
+#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
+	case PB_TEST_DMA_RESET:
+		return dma_test_reset_ioctl(pb, session, arg);
+	case PB_TEST_DMA_CHANNEL_RESET:
+		return dma_test_channel_reset_ioctl(pb, session, arg);
+#endif
 	default:
 		dev_err(&pb->pdev->dev, "%s: unknown ioctl 0x%0x\n", __func__,
 				cmd);
@@ -487,7 +502,7 @@ static void paintbox_get_version(struct paintbox_data *pb)
 	pb->caps.version_minor = (version & IPU_VERSION_MINOR_MASK) >>
 			IPU_VERSION_MAJOR_SHIFT;
 	pb->caps.version_build = version & IPU_VERSION_INCR_MASK;
-	pb->caps.is_fpga = !!(version & IPU_VERSION_FPGA_BUILD);
+	pb->caps.is_fpga = !!(version & IPU_VERSION_FPGA_BUILD_MASK);
 
 #if defined(CONFIG_PAINTBOX_SIMULATOR_SUPPORT)
 	pb->caps.is_simulator = true;
@@ -539,6 +554,12 @@ static int paintbox_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 
+#ifdef CONFIG_PAINTBOX_FPGA_SUPPORT
+	ret = paintbox_fpga_init(pb);
+	if (ret < 0)
+		return ret;
+#endif
+
 	pb->io.irq = platform_get_irq(pdev, 0);
 	if (pb->io.irq < 0) {
 		dev_err(&pdev->dev, "platform_get_irq failed\n");
@@ -577,13 +598,16 @@ static int paintbox_probe(struct platform_device *pdev)
 	if (ret < 0)
 		return ret;
 
-	/* Initialize the IO APB block last.  It needs to have all the interrupt
-	 * sources initialized first.
+	/* Initialize the IO APB block after the blocks that can generate
+	 * interrupts.  All interrupt sources need to be initialized first.
 	 */
 	ret = paintbox_io_apb_init(pb);
 	if (ret < 0)
 		return ret;
 
+	/* Initialize the IRQ waiters after IO APB so the IRQ waiter code knows
+	 * how many interrupts to allocate.
+	 */
 	ret = paintbox_irq_init(pb);
 	if (ret < 0)
 		return ret;
@@ -617,6 +641,10 @@ static int paintbox_remove(struct platform_device *pdev)
 	misc_deregister(&pb->misc_device);
 
 	paintbox_deinit(pb);
+
+#ifdef CONFIG_PAINTBOX_FPGA_SUPPORT
+	paintbox_fpga_deinit(pb);
+#endif
 
 	devm_free_irq(&pdev->dev, pb->io.irq, pb);
 

@@ -20,6 +20,7 @@
 
 #include "paintbox-common.h"
 #include "paintbox-regs.h"
+#include "paintbox-regs-supplemental.h"
 #include "paintbox-sram.h"
 
 
@@ -31,8 +32,8 @@ void dump_registers(struct paintbox_data *pb, void __iomem *reg_start,
 	dev_info(&pb->pdev->dev, "%s: reg addr %p len %lu\n", msg, reg_start,
 			reg_count);
 	for (i = 0; i < reg_count; i++)
-		dev_info(&pb->pdev->dev, "0x%08x\n", readl(reg_start + i *
-				IPU_REG_WIDTH));
+		dev_info(&pb->pdev->dev, "0x%016llx\n", readq(reg_start + i *
+				IPU_REG_WIDTH_BYTES));
 }
 
 #define DUMP_REGISTERS(pb, reg, reg_count, msg)	\
@@ -65,15 +66,20 @@ void write_ram_data_registers(struct paintbox_data *pb, const uint8_t *buf,
 {
 	unsigned int i;
 
-	for (i = 0; i < reg_count * IPU_REG_WIDTH; i += IPU_REG_WIDTH) {
-		uint32_t data;
+	for (i = 0; i < reg_count * IPU_REG_WIDTH_BYTES; i +=
+			IPU_REG_WIDTH_BYTES) {
+		uint64_t data;
 
-		data = ((uint32_t)buf[i + 0]) << 0;
-		data |= ((uint32_t)buf[i + 1]) << 8;
-		data |= ((uint32_t)buf[i + 2]) << 16;
-		data |= ((uint32_t)buf[i + 3]) << 24;
+		data = ((uint64_t)buf[i + 0]) << 0;
+		data |= ((uint64_t)buf[i + 1]) << 8;
+		data |= ((uint64_t)buf[i + 2]) << 16;
+		data |= ((uint64_t)buf[i + 3]) << 24;
+		data |= ((uint64_t)buf[i + 4]) << 32;
+		data |= ((uint64_t)buf[i + 5]) << 40;
+		data |= ((uint64_t)buf[i + 6]) << 48;
+		data |= ((uint64_t)buf[i + 7]) << 56;
 
-		writel(data, data_reg + i);
+		writeq(data, data_reg + i);
 	}
 
 	DUMP_REGISTERS(pb, data_reg, reg_count, __func__);
@@ -90,17 +96,21 @@ void write_ram_data_registers_swapped(struct paintbox_data *pb,
 {
 	unsigned int i, j;
 
-	for (i = 0, j = reg_count - 1; i < reg_count * IPU_REG_WIDTH;
-			i += IPU_REG_WIDTH, j--) {
-		uint32_t data;
+	for (i = 0, j = reg_count - 1; i < reg_count * IPU_REG_WIDTH_BYTES;
+			i += IPU_REG_WIDTH_BYTES, j--) {
+		uint64_t data;
 
 		/* Swap the byte order when loading the registers */
-		data = ((uint32_t)buf[i + 0]) << 24;
-		data |= ((uint32_t)buf[i + 1]) << 16;
-		data |= ((uint32_t)buf[i + 2]) << 8;
-		data |= ((uint32_t)buf[i + 3]) << 0;
+		data = ((uint64_t)buf[i + 0]) << 56;
+		data |= ((uint64_t)buf[i + 1]) << 48;
+		data |= ((uint64_t)buf[i + 2]) << 40;
+		data |= ((uint64_t)buf[i + 3]) << 32;
+		data |= ((uint64_t)buf[i + 4]) << 24;
+		data |= ((uint64_t)buf[i + 5]) << 16;
+		data |= ((uint64_t)buf[i + 6]) << 8;
+		data |= ((uint64_t)buf[i + 7]) << 0;
 
-		writel(data, data_reg + j * IPU_REG_WIDTH);
+		writeq(data, data_reg + j * IPU_REG_WIDTH_BYTES);
 	}
 
 	DUMP_REGISTERS(pb, data_reg, reg_count, __func__);
@@ -133,20 +143,24 @@ void write_ram_data_registers_column_major(struct paintbox_data *pb,
 	row1_col = VECTOR_LANE_GROUP_WIDTH * VECTOR_LANE_WIDTH;
 
 	for (reg_index = 0; reg_index < STP_DATA_REG_COUNT; reg_index++,
-			row0_col += VECTOR_LANE_WIDTH,
-			row1_col += VECTOR_LANE_WIDTH) {
-		uint32_t data;
+			row0_col += VECTOR_GROUP_ROW_OFFSET_BYTES,
+			row1_col += VECTOR_GROUP_ROW_OFFSET_BYTES) {
+		uint64_t data;
 
-		data = ((uint32_t)buf[row0_col]) << 0;
-		data |= ((uint32_t)buf[row0_col + 1]) << 8;
-		data |= ((uint32_t)buf[row1_col]) << 16;
-		data |= (uint32_t)buf[row1_col + 1] << 24;
+		data = ((uint64_t)buf[row0_col]) << 0;
+		data |= ((uint64_t)buf[row0_col + 1]) << 8;
+		data |= ((uint64_t)buf[row1_col]) << 16;
+		data |= ((uint64_t)buf[row1_col + 1]) << 24;
+		data |= ((uint64_t)buf[row0_col + 2]) << 32;
+		data |= ((uint64_t)buf[row0_col + 3]) << 40;
+		data |= ((uint64_t)buf[row1_col + 2]) << 48;
+		data |= ((uint64_t)buf[row1_col + 3]) << 56;
 
-		writel(data, pb->stp_base + STP_RAM_DATA0_L + reg_index *
-				sizeof(uint32_t));
+		writeq(data, pb->stp_base + STP_RAM_DATA0 + reg_index *
+				IPU_REG_WIDTH_BYTES);
 	}
 
-	DUMP_REGISTERS(pb, pb->stp_base + STP_RAM_DATA0_L, STP_DATA_REG_COUNT,
+	DUMP_REGISTERS(pb, pb->stp_base + STP_RAM_DATA0, STP_DATA_REG_COUNT,
 			__func__);
 }
 
@@ -157,13 +171,18 @@ void read_ram_data_registers(struct paintbox_data *pb, uint8_t *buf,
 
 	DUMP_REGISTERS(pb, data_reg, reg_count, __func__);
 
-	for (i = 0; i < reg_count * IPU_REG_WIDTH; i += IPU_REG_WIDTH) {
-		uint32_t data = readl(data_reg + i);
+	for (i = 0; i < reg_count * IPU_REG_WIDTH_BYTES; i +=
+			IPU_REG_WIDTH_BYTES) {
+		uint64_t data = readq(data_reg + i);
 
 		buf[i + 0] = (uint8_t)((data >> 0) & 0xff);
 		buf[i + 1] = (uint8_t)((data >> 8) & 0xff);
 		buf[i + 2] = (uint8_t)((data >> 16) & 0xff);
 		buf[i + 3] = (uint8_t)((data >> 24) & 0xff);
+		buf[i + 4] = (uint8_t)((data >> 32) & 0xff);
+		buf[i + 5] = (uint8_t)((data >> 40) & 0xff);
+		buf[i + 6] = (uint8_t)((data >> 48) & 0xff);
+		buf[i + 7] = (uint8_t)((data >> 56) & 0xff);
 	}
 }
 
@@ -179,15 +198,19 @@ void read_ram_data_registers_swapped(struct paintbox_data *pb,
 
 	DUMP_REGISTERS(pb, data_reg, reg_count, __func__);
 
-	for (i = 0, j = reg_count - 1; i < reg_count * IPU_REG_WIDTH;
-			i += IPU_REG_WIDTH, j--) {
-		uint32_t data = readl(data_reg + j * IPU_REG_WIDTH);
+	for (i = 0, j = reg_count - 1; i < reg_count * IPU_REG_WIDTH_BYTES;
+			i += IPU_REG_WIDTH_BYTES, j--) {
+		uint64_t data = readq(data_reg + j * IPU_REG_WIDTH_BYTES);
 
 		/* Swap the byte order when copying from the registers */
-		buf[i + 0] = (uint8_t)((data >> 24) & 0xff);
-		buf[i + 1] = (uint8_t)((data >> 16) & 0xff);
-		buf[i + 2] = (uint8_t)((data >> 8) & 0xff);
-		buf[i + 3] = (uint8_t)((data >> 0) & 0xff);
+		buf[i + 0] = (uint8_t)((data >> 56) & 0xff);
+		buf[i + 1] = (uint8_t)((data >> 48) & 0xff);
+		buf[i + 2] = (uint8_t)((data >> 40) & 0xff);
+		buf[i + 3] = (uint8_t)((data >> 32) & 0xff);
+		buf[i + 4] = (uint8_t)((data >> 24) & 0xff);
+		buf[i + 5] = (uint8_t)((data >> 16) & 0xff);
+		buf[i + 6] = (uint8_t)((data >> 8) & 0xff);
+		buf[i + 7] = (uint8_t)((data >> 0) & 0xff);
 	}
 }
 
@@ -200,7 +223,7 @@ void read_ram_data_registers_column_major(struct paintbox_data *pb,
 {
 	unsigned int reg_index, row0_col, row1_col;
 
-	DUMP_REGISTERS(pb, pb->stp_base + STP_RAM_DATA0_L, STP_DATA_REG_COUNT,
+	DUMP_REGISTERS(pb, pb->stp_base + STP_RAM_DATA0, STP_DATA_REG_COUNT,
 			__func__);
 
 	/* Each vector bank is a 4 x 2 array of ALU lanes (lanes are 16 bits).
@@ -221,15 +244,19 @@ void read_ram_data_registers_column_major(struct paintbox_data *pb,
 	row1_col = VECTOR_LANE_GROUP_WIDTH * VECTOR_LANE_WIDTH;
 
 	for (reg_index = 0; reg_index < STP_DATA_REG_COUNT; reg_index++,
-			row0_col += VECTOR_LANE_WIDTH,
-			row1_col += VECTOR_LANE_WIDTH) {
-		uint32_t data = readl(pb->stp_base + STP_RAM_DATA0_L +
-				reg_index * sizeof(uint32_t));
+			row0_col += VECTOR_GROUP_ROW_OFFSET_BYTES,
+			row1_col += VECTOR_GROUP_ROW_OFFSET_BYTES) {
+		uint64_t data = readq(pb->stp_base + STP_RAM_DATA0 + reg_index *
+				IPU_REG_WIDTH_BYTES);
 
 		buf[row0_col] = (uint8_t)((data >> 0) & 0xff);
 		buf[row0_col + 1] = (uint8_t)((data >> 8) & 0xff);
 		buf[row1_col] = (uint8_t)((data >> 16) & 0xff);
 		buf[row1_col + 1] = (uint8_t)((data >> 24) & 0xff);
+		buf[row0_col + 2] = (uint8_t)((data >> 32) & 0xff);
+		buf[row0_col + 3] = (uint8_t)((data >> 40) & 0xff);
+		buf[row1_col + 2] = (uint8_t)((data >> 48) & 0xff);
+		buf[row1_col + 3] = (uint8_t)((data >> 56) & 0xff);
 	}
 }
 

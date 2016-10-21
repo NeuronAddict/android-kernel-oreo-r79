@@ -78,15 +78,45 @@ int dump_ipu_register(struct paintbox_data *pb, void __iomem *group_base,
 			readl(group_base + reg_offset));
 }
 
+/* TODO(ahampson):  Remove the 32bit version and rename this one
+ * dump_ipu_register() when all the register groups have been converted.
+ */
+int dump_ipu_register64(struct paintbox_data *pb, void __iomem *group_base,
+		uint32_t reg_offset, const char *reg_name, char *buf,
+		int *written, size_t len)
+{
+	return dump_ipu_printf(pb, buf, written, len,
+			"0x%04lx: %-*s0x%016llx\n", group_base - pb->reg_base +
+			reg_offset, REG_VALUE_COLUMN_NUMBER -
+			REG_NAME_COLUMN_NUMBER, reg_name ? reg_name :
+			REG_UNUSED, readq(group_base + reg_offset));
+}
+
 int dump_ipu_register_with_value(struct paintbox_data *pb,
 		void __iomem *group_base, uint32_t reg_offset,
 		uint32_t reg_value, const char *reg_name, char *buf,
 		int *written, size_t len)
 {
-	return dump_ipu_printf(pb, buf, written, len, "0x%04lx: %-*s0x%08x\n",
+	return dump_ipu_printf(pb, buf, written, len, "0x%04lx: %-*s0x%016x\n",
 			group_base - pb->reg_base + reg_offset,
 			REG_VALUE_COLUMN_NUMBER - REG_NAME_COLUMN_NUMBER,
 			reg_name ? reg_name : REG_UNUSED, reg_value);
+}
+
+/* TODO(ahampson):  Remove the 32bit version and rename this one
+ * dump_ipu_register_with_value() when all the register groups have been
+ * converted.
+ */
+int dump_ipu_register_with_value64(struct paintbox_data *pb,
+		void __iomem *group_base, uint32_t reg_offset,
+		uint64_t reg_value, const char *reg_name, char *buf,
+		int *written, size_t len)
+{
+	return dump_ipu_printf(pb, buf, written, len,
+			"0x%04lx: %-*s0x%016llx\n", group_base - pb->reg_base +
+			reg_offset, REG_VALUE_COLUMN_NUMBER -
+			REG_NAME_COLUMN_NUMBER, reg_name ? reg_name :
+			REG_UNUSED, reg_value);
 }
 
 
@@ -188,7 +218,7 @@ void paintbox_debug_create_entry(struct paintbox_data *pb,
 static int reg_entry_show(struct seq_file *s, void *p)
 {
 	struct paintbox_debug_reg_entry *reg_entry = s->private;
-	seq_printf(s, "0x%08x\n", reg_entry->read(reg_entry));
+	seq_printf(s, "0x%016llx\n", reg_entry->read(reg_entry));
 	return 0;
 }
 
@@ -204,10 +234,10 @@ static ssize_t reg_entry_write(struct file *file, const char __user *user_buf,
 	struct paintbox_debug_reg_entry *reg_entry = s->private;
 	struct paintbox_debug *debug = reg_entry->debug;
 	struct paintbox_data *pb = debug->pb;
-	uint32_t val;
+	uint64_t val;
 	int ret;
 
-	ret = kstrtou32_from_user(user_buf, count, 0, &val);
+	ret = kstrtou64_from_user(user_buf, count, 0, &val);
 	if (ret < 0) {
 		dev_err(&pb->pdev->dev, "%s: invalid value, err = %d",
 				__func__, ret);

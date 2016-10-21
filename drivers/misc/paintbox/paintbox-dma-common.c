@@ -290,12 +290,27 @@ int set_dma_transfer_region_parameters(struct paintbox_data *pb,
 		return -EINVAL;
 	}
 
+	if (config->retry_interval > DMA_CHAN_RETRY_INTERVAL_MAX) {
+		dev_err(&pb->pdev->dev,
+			"%s: dma channel%u: invalid retry interval value %u > "
+			"%u\n", __func__, channel->channel_id,
+			config->retry_interval, DMA_CHAN_RETRY_INTERVAL_MAX);
+		return -EINVAL;
+	}
+
 	transfer->chan_bif_xfer = config->stripe_height;
 	transfer->chan_noc_xfer_low = config->sheet_width;
 	transfer->chan_noc_xfer_low |= config->sheet_height <<
 			DMA_CHAN_SHEET_HEIGHT_SHIFT;
 	transfer->chan_noc_xfer_low |= config->noc_outstanding <<
 			DMA_CHAN_NOC_OUTSTANDING_SHIFT;
+	transfer->chan_noc_xfer_high = config->retry_interval;
+
+	/* TODO(ahampson):  DMA_CHAN_DYN_OUTSTANDING is currently set for all
+	 * DMA transfers at this time.  This may change in the future to give
+	 * priority to MIPI transfers.
+	 */
+	transfer->chan_noc_xfer_high |= DMA_CHAN_NOC_XFER_DYN_OUTSTANDING_MASK;
 
 	return 0;
 }

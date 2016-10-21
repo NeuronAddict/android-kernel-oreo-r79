@@ -22,7 +22,6 @@
 #include <linux/spinlock.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
-#include <linux/version.h>
 
 #include "paintbox-common.h"
 #include "paintbox-irq.h"
@@ -385,9 +384,6 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 	if (irq->error) {
 		ret = irq->error;
 		irq->error = 0;
-		spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
-		mutex_unlock(&pb->lock);
-		return ret;
 	}
 
 	spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
@@ -424,14 +420,8 @@ void init_waiters(struct paintbox_data *pb, struct paintbox_irq *irq)
 
 	spin_lock_irqsave(&pb->irq_lock, irq_flags);
 
-	/* TODO(ahampson): This should be cleaned up when the QEMU kernel is
-	* updated to 3.13 or greater.
-	*/
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0)
-	INIT_COMPLETION(irq->completion);
-#else
 	reinit_completion(&irq->completion);
-#endif
+
 	spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
 }
 
@@ -449,7 +439,9 @@ int release_interrupt(struct paintbox_data *pb,
 	case IRQ_SRC_MIPI_OUT_STREAM:
 		unbind_mipi_interrupt(pb, session, irq->mipi_stream);
 		break;
-	/* TODO(ahampson):  Add support for STP Interrupt */
+	case IRQ_SRC_STP:
+		unbind_stp_interrupt(pb, session, irq->stp);
+		break;
 	default:
 		dev_err(&pb->pdev->dev, "%s: invalid interrupt source\n",
 				__func__);
@@ -487,10 +479,6 @@ int release_interrupt_ioctl(struct paintbox_data *pb,
 int paintbox_irq_init(struct paintbox_data *pb)
 {
 	unsigned int interrupt_id;
-
-	/* TODO(ahampson):  This should be fixed in QEMU or simulator. */
-	pb->caps.num_interrupts = pb->dma.num_channels;
-	pb->caps.num_interrupts += pb->caps.num_stps;
 
 	pb->irqs = kzalloc(sizeof(struct paintbox_irq) *
 			pb->caps.num_interrupts, GFP_KERNEL);

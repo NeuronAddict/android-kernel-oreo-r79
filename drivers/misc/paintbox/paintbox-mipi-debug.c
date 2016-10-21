@@ -26,13 +26,13 @@
 #include "paintbox-regs.h"
 
 
-static uint32_t mipi_reg_entry_read(struct paintbox_debug_reg_entry *reg_entry)
+static uint64_t mipi_reg_entry_read(struct paintbox_debug_reg_entry *reg_entry)
 {
 	struct paintbox_debug *debug = reg_entry->debug;
 	struct paintbox_mipi_stream *stream = container_of(debug,
 			struct paintbox_mipi_stream, debug);
 	struct paintbox_data *pb = debug->pb;
-	uint32_t val;
+	uint64_t val;
 
 	mutex_lock(&pb->lock);
 
@@ -51,7 +51,7 @@ static uint32_t mipi_reg_entry_read(struct paintbox_debug_reg_entry *reg_entry)
 }
 
 static void mipi_reg_entry_write(struct paintbox_debug_reg_entry *reg_entry,
-		uint32_t val)
+		uint64_t val)
 {
 	struct paintbox_debug *debug = reg_entry->debug;
 	struct paintbox_mipi_stream *stream = container_of(debug,
