@@ -187,6 +187,7 @@
 	soc_thermal: thermal@40030000 {
 	    compatible = "intel, mnh_thermal";
 	    reg = <0x0 0x4003000 0x0 0x1000>;
+	    #thermal-sensor-cells = <1>;
 	};
 
 	pcie@041C2000 {

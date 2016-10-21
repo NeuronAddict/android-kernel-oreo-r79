@@ -57,9 +57,7 @@ static int caculate_temp(u16 val)
 static int mnh_thermal_get_temp(void *data, int *out_temp)
 {
 	struct mnh_thermal_sensor *sensor = (struct mnh_thermal_sensor*)data;
-	u32 val;
-
-	pr_err("mnh_thermal_get_temp\n");
+	u32 val = 0;
 
 	/* Program VSAMPLE/PSAMPLE for temperature evaulation */
 	HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id, PSAMPLE, 0);
@@ -69,7 +67,9 @@ static int mnh_thermal_get_temp(void *data, int *out_temp)
 	HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id, ENA, 1);
 
 	/* Wait for conversion cycle time or poll for PVT_DATA[x]. DATAVALID to
-	be 1 or wait for SCU interrupt if enabled for PVT_SENSx_DV interrupt reason */
+	 * be 1 or wait for SCU interrupt if enabled for PVT_SENSx_DV
+	 * interrupt reason
+	 */
 	while(1){
 		val = HW_INxf(sensor->dev->regs, SCU, PVT_DATA,
 			sensor->id, DATAVALID);
@@ -107,10 +107,19 @@ static int mnh_thermal_probe(struct platform_device *pdev)
 	if (!mnh_dev)
 		return -ENOMEM;
 
+
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	mnh_dev->regs = devm_ioremap_resource(&pdev->dev, res);
-	if (IS_ERR(mnh_dev->regs))
-		return PTR_ERR(mnh_dev->regs);
+	if (!res) {
+		dev_err(&pdev->dev, "cannot get platform resources\n");
+		return -ENOENT;
+	}
+
+	mnh_dev->regs = ioremap_nocache(res->start, resource_size(res));
+	if (!mnh_dev->regs) {
+		dev_err(&pdev->dev, "unable to remap resources\n");
+		return -ENOMEM;
+	}
+
 
 	/* Initialize thermctl sensors */
 	for (i = 0; i < ARRAY_SIZE(mnh_dev->sensors); ++i) {
@@ -121,7 +130,7 @@ static int mnh_thermal_probe(struct platform_device *pdev)
 		sensor->dev = mnh_dev;
 		sensor->id = i;
 		sensor->tzd = thermal_zone_of_sensor_register(&pdev->dev, i,
-				mnh_dev->sensors[i], &mnh_of_thermal_ops);
+				sensor, &mnh_of_thermal_ops);
 
 
 		if (IS_ERR(sensor->tzd)) {
@@ -136,11 +145,13 @@ static int mnh_thermal_probe(struct platform_device *pdev)
 	}
 
 
-	/* TBD : Initialize the sensor with TRIM value */
-	/* Read from EFUSE */
+	/* TBD : Initialize the sensor with TRIM value by readin EFUSE
+	 * (Not available yet in FPGA, will be available in silicon)
+	 */
 
 	/* Enable 1.2MHz clock to PVT sensor and wait for 2msecs for the clock
-	 to PVT sensor to start ticking */
+	 * to PVT sensor to start ticking
+	 */
 	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, PVT_CLKEN, 1);
 	udelay(2);
 
@@ -171,6 +182,8 @@ static int mnh_thermal_remove(struct platform_device *pdev)
 
 	/* Disable the clock */
 	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, PVT_CLKEN, 0);
+
+	iounmap(&mnh_dev->regs);
 
 	return 0;
 }
