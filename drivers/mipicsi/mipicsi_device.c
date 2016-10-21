@@ -163,10 +163,9 @@ int32_t mipicsi_device_set_pll(struct mipicsi_top_cfg *config)
 
 	dev = config->dev;
 
-#ifdef MNH_EMULATION
-
 	mipicsi_pll_calc(config->mbps, &pll);
 
+#ifdef MNH_EMULATION
 
 	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_HS_RX_CTRL_L0,
 			       (pll.hsfreq << 1));
@@ -196,44 +195,39 @@ int32_t mipicsi_device_set_pll(struct mipicsi_top_cfg *config)
 				   (((pll.loop_div-2) >> 5) & 0x1F), 1, 1);
 
 #else
+	/* Set hsfreqrange[6:0]  */
+	mipicsi_dev_dphy_write(dev, 0x02, pll->hsfreq);
 
-	if (config->mbps <= 800) {
-		pr_info("%s: Setting bitrate to 800mbps",__func__);
-		mipicsi_dev_dphy_write (dev, 0x179, 0x9E);
-		mipicsi_dev_dphy_write (dev, 0x17A, 0x00);
-		mipicsi_dev_dphy_write (dev, 0x17B, 0x9F);
-		mipicsi_dev_dphy_write (dev, 0x178, 0xC8);
-		mipicsi_dev_dphy_write (dev, 0x15E, 0x10);
-		mipicsi_dev_dphy_write (dev, 0x162, 0x04);
-		mipicsi_dev_dphy_write (dev, 0x16E, 0x0C);
-	} else if (config->mbps <= 1000) {
-		pr_info("%s: Setting bitrate to 1000mbps",__func__);
-		mipicsi_dev_dphy_write (dev, 0x179, 0x4E);
-		mipicsi_dev_dphy_write (dev, 0x17A, 0x00);
-		mipicsi_dev_dphy_write (dev, 0x17B, 0x93);
-		mipicsi_dev_dphy_write (dev, 0x178, 0x98);
-		mipicsi_dev_dphy_write (dev, 0x15E, 0x10);
-		mipicsi_dev_dphy_write (dev, 0x162, 0x04);
-		mipicsi_dev_dphy_write (dev, 0x16E, 0x0C);
-	} else if (config->mbps <= 1500) {
-		pr_info("%s: Setting bitrate to 1500mbps",__func__);
-		mipicsi_dev_dphy_write (dev, 0x179, 0x2A);
-		mipicsi_dev_dphy_write (dev, 0x17A, 0x01);
-		mipicsi_dev_dphy_write (dev, 0x17B, 0x87);
-		mipicsi_dev_dphy_write (dev, 0x178, 0xC8);
-		mipicsi_dev_dphy_write (dev, 0x15E, 0x10);
-		mipicsi_dev_dphy_write (dev, 0x162, 0x04);
-		mipicsi_dev_dphy_write (dev, 0x16E, 0x0C);
-	} else if (config->mbps <= 2500) {
-		pr_info("%s: Setting bitrate to 2500mbps",__func__);
-		mipicsi_dev_dphy_write (dev, 0x179, 0xF2);
-		mipicsi_dev_dphy_write (dev, 0x17A, 0x01);
-		mipicsi_dev_dphy_write (dev, 0x17B, 0x83);
-		mipicsi_dev_dphy_write (dev, 0x178, 0xC8);
-		mipicsi_dev_dphy_write (dev, 0x15E, 0x10);
-		mipicsi_dev_dphy_write (dev, 0x162, 0x04);
-		mipicsi_dev_dphy_write (dev, 0x16E, 0x0C);
+	/* Set cfgclkfreqrange[7:0] = round[ (Fcfg_clk(MHz)-17)*4] = 8'b10000100
+	   assuming cfg_clk = 50MHz; */
+	/* Hardware controlled*/
+
+	/* Apply cfg_clk signal with 50Mhz frequency */
+	/* Hardware controlled */
+
+	/* Refer to table "Slew rate vs DDL oscilation target" on page 117 and
+	 * configure test control registers with appropriate values for the
+	 * specified rise/fall time. */
+	if (sr_osc_freq_tgt != 0){
+		mipicsi_dev_dphy_write(dev, 0x270, pll->sr_osc_freq_tgt & 0xFF);
+		mipicsi_dev_dphy_write(dev, 0x271, (pll->sr_osc_freq_tgt>>8) & 0xFF);
+		mipicsi_dev_dphy_write(dev, 0x272, (pll->sr_range<<0) | (1<<4));
 	}
+
+	/* Configure PLL operating frequency through D-PHY test control
+	 * registers or through PLL SoC shadow registers interface as
+	 * described in section "Initialization" on page 53
+	 */
+	mipicsi_dev_dphy_write(dev, 0x179, (pll->loop_div-2) & 0xFF);
+	mipicsi_dev_dphy_write(dev, 0x17A, ((pll->loop_div-2)>>8) & 0xFF);
+	mipicsi_dev_dphy_write(dev, 0x17B, (1<<7) | (pll->vco_cntrl<<1) | 1<<0);
+	mipicsi_dev_dphy_write(dev, 0x178, (1<<7) | ((pll->input_div-1)<<3));
+
+	/* TO DO - these can come from fuse bits */
+	mipicsi_dev_dphy_write(dev, 0x15E, 0x10);
+	mipicsi_dev_dphy_write(dev, 0x162, 0x04);
+	mipicsi_dev_dphy_write(dev, 0x16E, 0x0C);
+
 #endif
 	return 0;
 }
@@ -386,23 +380,6 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 	/* Set testclr to low; */
 	TX_OUT(PHY0_TST_CTRL0, 0);
 
-	/* Set hsfreqrange[6:0] = 7'b0001010 */
-	/* Refer to table "Slew rate vs DDL oscilation target" on page 117 and
-	 * configure test control registers with appropriate values for the
-	 * specified rise/fall time. */
-	mipicsi_dev_dphy_write (dev, 0x270, 0xE2);
-	mipicsi_dev_dphy_write (dev, 0x271, 0x04);
-	mipicsi_dev_dphy_write (dev, 0x272, 0x11);
-
-	/* Set cfgclkfreqrange[7:0] = round[ (Fcfg_clk(MHz)-17)*4] = 8'b10000100
-	   assuming cfg_clk = 50MHz; */
-
-	/* Apply cfg_clk signal with 50Mhz frequency */
-	/* Hardware controlled */
-
-	/* Configure PLL operating frequency through D-PHY test control registers or through PLL
-	 * SoC shadow registers interface as described in section "Initialization" on page 53
-	 */
 	mipicsi_device_set_pll(config);
 
 	/* Set basedir_0 = 1'b0 */

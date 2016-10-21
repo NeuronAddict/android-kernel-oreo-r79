@@ -259,19 +259,28 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 
 	mipicsi_host_dphy_write (dev, R_CSI2_DCPHY_HS_RX_DATA_THS_SETL, 0xA5);
 #else
+	mipicsi_pll pll;
 	/* Set TESTCLR to logic low */
 	udelay (1);
 	RX_OUT(PHY_TEST_CTRL0, 0);
 
-	/* Set hsfreqrange[6:0] = 7'b0001010 */
+	/* Set hsfreqrange[6:0] */
+	if (mipicsi_pll_get_pll(config->mbps, &pll) != 0)
+		return -EINVAL;
+
+	mipicsi_host_dphy_write(dev, 0x02, hsfreq);
+
 	/* Refer to "Frequency Ranges and Default" on page 141 and configure
 	 * registers 0xe2, 0xe3 with the appropriate DDL target oscillation
 	 * frequency. Enable override to configure the DDL target oscillation
 	 * frequency on bit 0 of register 0xe4.
 	 */
-	mipicsi_host_dphy_write (dev, 0xE2, 0xB6);
-	mipicsi_host_dphy_write (dev, 0xE3, 0x01);
-	mipicsi_host_dphy_write (dev, 0xE4, 0x01);
+	if (pll->sr_osc_freq_tgt != 0){
+		mipicsi_host_dphy_write(dev, 0xE2, pll->sr_osc_freq_tgt & 0xFF);
+		mipicsi_host_dphy_write(dev, 0xE3, 
+					(pll->sr_osc_freq_tgt>>8) & 0xFF);
+		mipicsi_host_dphy_write(dev, 0xE4, 0x01);
+	}
 
 	/*  Configure register 0x8 to set deskew_polarity_rw signal
 	 * (bit 5) to 1'b1

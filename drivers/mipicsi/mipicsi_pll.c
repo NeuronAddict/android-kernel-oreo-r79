@@ -40,6 +40,7 @@
 #include "mipicsi_pll.h"
 
 
+#ifdef MNH_EMULATION
 #define MIPICSI_PLL_M_MIN 250
 #define MIPICSI_PLL_M_MAX 1000
 #define MIPICSI_PLL_N_MIN 1
@@ -48,10 +49,20 @@
 #define MIPICSI_PLL_P_MAX 8
 #define MIPICSI_PLL_FVCO_MIN 500
 #define MIPICSI_PLL_FVCO_MAX 2000
+#else
+#define MIPICSI_PLL_M_MIN 40
+#define MIPICSI_PLL_M_MAX 625
+#define MIPICSI_PLL_N_MIN 1
+#define MIPICSI_PLL_N_MAX 16
+#define MIPICSI_PLL_P_MIN 1
+#define MIPICSI_PLL_P_MAX 8
+#define MIPICSI_PLL_FVCO_MIN 40
+#define MIPICSI_PLL_FVCO_MAX 1250
+#endif
 
 
 
-struct pll_freqrange {
+struct pll_hsfreq {
 	uint32_t min_range;
 	uint32_t max_range;
 	uint32_t default_bps;
@@ -59,7 +70,7 @@ struct pll_freqrange {
 };
 
 /* Table 5-2: Frequency Ranges and Defaults */
-struct pll_freqrange freqrange_dc[] = {
+struct pll_hsfreq hsfreq_tbl_dc[] = {
 	{  80000000,  110250000,   80000000, 0x00},
 	{  80000000,  120750000,   90000000, 0x10},
 	{  80000000,  131250000,  100000000, 0x20},
@@ -112,7 +123,6 @@ struct pll_freqrange freqrange_dc[] = {
 	{1733750000, 1968750000, 1850000000, 0x3E}
 };
 
-
 struct pll_cp_lpf_ctrl {
 	uint16_t vco_fmin;
 	uint16_t vco_fmax;
@@ -129,21 +139,137 @@ struct pll_cp_lpf_ctrl pll_cp_lpf_ctrl_dc[]= {
 	{1320, 2000, 0x03, 0x06, 0x08}
 };
 
+struct pll_hsfreq hsfreq_tbl_g3[] = {
+	{  80000000,   97125000,   80000000, 0x00},
+	{  80000000,  107625000,   90000000, 0x10},
+	{  83125000,  118125000,  100000000, 0x20},
+	{  92625000,  128625000,  110000000, 0x30},
+	{ 102125000,  139125000,  120000000, 0x01},
+	{ 111625000,  149625000,  130000000, 0x11},
+	{ 121125000,  160125000,  140000000, 0x21},
+	{ 130625000,  170625000,  150000000, 0x31},
+	{ 140125000,  181125000,  160000000, 0x02},
+	{ 149625000,  191625000,  170000000, 0x12},
+	{ 159125000,  202125000,  180000000, 0x22},
+	{ 168625000,  212625000,  190000000, 0x32},
+	{ 182875000,  228375000,  205000000, 0x03},
+	{ 197125000,  244125000,  220000000, 0x13},
+	{ 211375000,  259875000,  235000000, 0x23},
+	{ 225625000,  275625000,  250000000, 0x33},
+	{ 249375000,  301875000,  275000000, 0x04},
+	{ 273125000,  328125000,  300000000, 0x14},
+	{ 296875000,  354375000,  325000000, 0x25},
+	{ 320625000,  380625000,  350000000, 0x35},
+	{ 368125000,  433125000,  400000000, 0x05},
+	{ 415625000,  485625000,  450000000, 0x16},
+	{ 463125000,  538125000,  500000000, 0x26},
+	{ 510625000,  590625000,  550000000, 0x37},
+	{ 558125000,  643125000,  600000000, 0x07},
+	{ 605625000,  695625000,  650000000, 0x18},
+	{ 653125000,  748125000,  700000000, 0x28},
+	{ 700625000,  800625000,  750000000, 0x39},
+	{ 748125000,  853125000,  800000000, 0x09},
+	{ 795625000,  905625000,  850000000, 0x19},
+	{ 843125000,  958125000,  900000000, 0x29},
+	{ 890625000, 1010625000,  950000000, 0x3A},
+	{ 938125000, 1063125000, 1000000000, 0x0A},
+	{ 985625000, 1115625000, 1050000000, 0x1A},
+	{1033125000, 1168125000, 1100000000, 0x2A},
+	{1080625000, 1220625000, 1150000000, 0x3B},
+	{1128125000, 1273125000, 1200000000, 0x0B},
+	{1175625000, 1325625000, 1250000000, 0x1B},
+	{1223125000, 1378125000, 1300000000, 0x2B},
+	{1270625000, 1430625000, 1350000000, 0x3C},
+	{1318125000, 1483125000, 1400000000, 0x0C},
+	{1365625000, 1535625000, 1450000000, 0x1C},
+	{1413125000, 1588125000, 1500000000, 0x2C},
+	{1460625000, 1640625000, 1550000000, 0x3D},
+	{1508125000, 1693125000, 1600000000, 0x0D},
+	{1555625000, 1745625000, 1650000000, 0x1D},
+	{1603125000, 1798125000, 1700000000, 0x2E},
+	{1650625000, 1850625000, 1750000000, 0x3E},
+	{1698125000, 1903125000, 1800000000, 0x0E},
+	{1745625000, 1955625000, 1850000000, 0x1E},
+	{1793125000, 2008125000, 1900000000, 0x2F},
+	{1840625000, 2060625000, 1950000000, 0x3F},
+	{1888125000, 2113125000, 2000000000, 0x0F},
+	{1935625000, 2165625000, 2050000000, 0x40},
+	{1983125000, 2218125000, 2100000000, 0x41},
+	{2030625000, 2270625000, 2150000000, 0x42},
+	{2078125000, 2323125000, 2200000000, 0x43},
+	{2125625000, 2375625000, 2250000000, 0x44},
+	{2173125000, 2428125000, 2300000000, 0x45},
+	{2220625000, 2480625000, 2350000000, 0x46},
+	{2268125000, 2500000000, 2400000000, 0x47},
+	{2315625000, 2500000000, 2450000000, 0x48},
+	{2363125000, 2500000000, 2500000000, 0x49},
+};
+
+
+struct pll_vco_cntrl_g3 {
+	uint32_t vco_fmin;
+	uint32_t vco_fmax;
+	uint8_t  vco_cntrl;
+	uint8_t  P;
+};
+
+/* Table 3-10: VCO Ranges in Hz */
+struct pll_vco_cntrl_g3 pll_vco_cntrl_tbl[]= {
+	{  40000000,   55000000, 0x3F, 8},
+	{  52500000,   82500000, 0x39, 8},
+	{  80000000,  110000000, 0x2F, 4},
+	{ 105000000,  165000000, 0x29, 4},
+	{ 160000000,  220000000, 0x1F, 2},
+	{ 210000000,  330000000, 0x19, 2},
+	{ 320000000,  440000000, 0x0F, 1},
+	{ 420000000,  660000000, 0x09, 1},
+	{ 630000000, 1149000000, 0x03, 1},
+	{1100000000, 1152000000, 0x01, 1},
+	{1150000000, 1250000000, 0x01, 1}
+};
+
+struct sr_cntrl {
+	uint32_t fmin;
+	uint32_t fmax;
+	uint8_t sr_range;
+	uint16_t sr_osc_freq_tgt;
+};
+
+/* Table 5-5: VCO Slew rate vs DDL oscillation target */
+struct sr_cntrl sr_tbl_g3[]= {
+	{  80,  500, 1, 0x384},
+	{ 500, 1000, 1, 0x4E2},
+	{1000, 1500, 0, 0x7D0}
+};
+
+
 int mipicsi_pll_get_hsfreq (uint16_t mbps, uint8_t *hsfreq)
 {
 
 	uint8_t i;
 	uint32_t bps = mbps*1000*1000;
 
-	for (i = 0; i < (sizeof(freqrange_dc))/(sizeof(struct pll_freqrange));
+#ifdef MNH_EMULATION
+	for (i = 0; i < (sizeof(hsfreq_tbl_dc))/(sizeof(struct pll_hsfreq));
 	     i++) {
-		if ((bps == freqrange_dc[i].default_bps) ||
-		    ((bps > freqrange_dc[i].min_range) &&
-		     (bps < freqrange_dc[i].max_range))) {
-			*hsfreq = freqrange_dc[i].hsfreq;
+		if ((bps == hsfreq_tbl_dc[i].default_bps) ||
+		    ((bps > hsfreq_tbl_dc[i].min_range) &&
+		     (bps < hsfreq_tbl_dc[i].max_range))) {
+			*hsfreq = hsfreq_tbl_dc[i].hsfreq;
 			return 0;
 		}
 	}
+#else
+	for (i = 0; i < (sizeof(hsfreq_tbl_g3))/(sizeof(struct pll_hsfreq));
+	     i++) {
+		if ((bps == hsfreq_tbl_g3[i].default_bps) ||
+		    ((bps > hsfreq_tbl_g3[i].min_range) &&
+		     (bps < hsfreq_tbl_g3[i].max_range))) {
+			*hsfreq = hsfreq_tbl_g3[i].hsfreq;
+			return 0;
+		}
+	}
+#endif
 
 	pr_info ("%s: HS Freq not found\n");
 	return -EINVAL;
@@ -151,14 +277,15 @@ int mipicsi_pll_get_hsfreq (uint16_t mbps, uint8_t *hsfreq)
 
 int mipicsi_pll_calc(uint16_t mbps, struct mipicsi_pll *pll)
 {
-	uint16_t i, M, N, P, N_min, N_max, fout, delta = 0xffff;
-	uint32_t fvco;
+	uint16_t i, M, N, P, N_min, N_max, delta = 0xffff;
+	uint32_t fvco, fclkin, fout;
 	bool found = false;
 
 	if ((mbps < MIPICSI_PLL_MIN_FREQ) || (mbps > MIPICSI_PLL_MAX_FREQ))
 		return -EINVAL;
 
 	/* Hardcode input freq for now */
+	fclkin = MIPICSI_PLL_INP_FREQ;
 	pll->input_freq = MIPICSI_PLL_INP_FREQ;
 
 	pr_info("%s: PLL calculation for target freq %u\n", __func__, mbps);
@@ -182,10 +309,10 @@ int mipicsi_pll_calc(uint16_t mbps, struct mipicsi_pll *pll)
 	/* Determine valid N values based on fclkin */
 	N_min = MIPICSI_PLL_N_MIN;
 	N_max = MIPICSI_PLL_N_MAX;
-	for (N = N_min; pll->input_freq/N > 24; N++) {
+	for (N = N_min; fclkin/N > 24; N++) {
 		N_min = N+1;
 	}
-	for (N = N_max; pll->input_freq/N < 2; N--) {
+	for (N = N_max; fclkin/N < 2; N--) {
 		N_max = N-1;
 	}
 
@@ -197,8 +324,7 @@ int mipicsi_pll_calc(uint16_t mbps, struct mipicsi_pll *pll)
 
 	/* Calculate M and N */
 	for (N = N_min; N <= N_max; N++) {
-		M = (mbps * pll->output_div * N)
-			/(pll->input_freq);
+		M = (mbps * P * N)/(pll->input_freq);
 		if ((M >= MIPICSI_PLL_M_MIN)
 		    && (M <= MIPICSI_PLL_M_MAX)) {
 			fout = (pll->input_freq*M)/(P*N);
@@ -233,10 +359,6 @@ int mipicsi_pll_calc(uint16_t mbps, struct mipicsi_pll *pll)
 	}
 	if (!found)
 		return -EINVAL;
-#endif
-
-	/* TO DO - Add support for Gen 3 */
-
 	if (pll->output_freq != mbps)
 		pr_info("%s: NOTE: Actual PLL output freq set to %u\n",
 			__func__, pll->output_freq);
@@ -247,6 +369,83 @@ int mipicsi_pll_calc(uint16_t mbps, struct mipicsi_pll *pll)
 
 	pr_info("%s: M=0x%x N=0x%x P=0x%x\n", __func__, pll->loop_div,
 		 pll->input_div, pll->output_div);
+
+
+#else /* MNH_EMULATION */
+
+	fout = mbps/2;
+
+	uint32_t hz;
+
+	/* Determine valid N values based on fclkin */
+	N_min = MIPICSI_PLL_N_MIN;
+	N_max = MIPICSI_PLL_N_MAX;
+
+	for (N = N_min; fclkin/N >= 8; N++) {
+		N_min = N+1;
+	}
+	for (N = N_max; fclkin/N < 2; N--) {
+		N_max = N-1;
+	}
+	pr_info("Nmin=%d Nmax=%d\n", N_min, N_max);
+
+	hz = fout*1000*1000;
+	for (i=0; i<(sizeof(pll_vco_cntrl_tbl))/
+		     (sizeof(struct pll_vco_cntrl_g3)); i++) {
+		if (hz <= pll_vco_cntrl_tbl[i].vco_fmax) {
+			pll->vco_cntrl    = pll_vco_cntrl_tbl[i].vco_cntrl;
+			P                 = pll_vco_cntrl_tbl[i].P;
+			found = true;
+			break;
+		}
+	}
+	if (!found)
+		return -EINVAL;
+
+	pll->sr_osc_freq_tgt = 0;
+	pll->sr_range = 0;
+	for (i=0; i<(sizeof(sr_tbl_g3))/(sizeof(struct sr_cntrl)); i++) {
+		if (mbps <= sr_tbl_g3[i].fmax) {
+			pll->sr_osc_freq_tgt = sr_tbl_g3[i].sr_osc_freq_tgt;
+			pll->sr_range = sr_tbl_g3[i].sr_range;
+			break;
+		}
+	}
+
+	/* Calculate M and N */
+	for (N = N_min; N <= N_max; N++) {
+		M = (mbps/2 * N * P)/fclkin;
+		if ((M >= MIPICSI_PLL_M_MIN)
+		    && (M <= MIPICSI_PLL_M_MAX)) {
+			fout = (pll->input_freq*M)/(P*N);
+			while ((fout < mbps/2) && (M <= MIPICSI_PLL_M_MAX)) {
+				M += 1;
+				fout = (pll->input_freq*M)/(P*N);
+			}
+			if ((fout >= mbps/2) && (fout - mbps/2) < delta) {
+				pll->loop_div = M;
+				pll->input_div = N;
+				pll->output_freq = fout;
+				delta = fout - mbps/2;
+				if (delta == 0)
+					break;
+			}
+		}
+	}
+
+	if (mipicsi_pll_get_hsfreq(mbps, &(pll->hsfreq)) != 0)
+		return -EINVAL;
+
+	pr_info("fout=%d fclkin=%d\n\n", fout,fclkin);
+	pr_info("vco_cntrl                 = 0x%x\n", pll->vco_cntrl);
+	pr_info("M                         = %d\n", pll->loop_div);
+	pr_info("N                         = %d\n\n", pll->input_div);
+
+	if (pll->output_freq != mbps/2)
+		pr_info("NOTE: Actual PLL output freq set to %u\n",
+			pll->output_freq);
+
+#endif /* MNH_EMULATION */
 
 	return 0;
 }
