@@ -700,15 +700,16 @@ int pcie_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
 		return -EINVAL;
 	}
 	if (n_num < maxsg) {
-		sg_init_table(sgl->sc_list, n_num + 1);
+		sg_init_table(sgl->sc_list, n_num);
 		sg_set_page(sgl->sc_list, *(sgl->mypage),
 					PAGE_SIZE - fp_offset, fp_offset);
-		for (i = 1; i <= n_num-1; i++)
+		for (i = 1; i < n_num-1; i++)
 			sg_set_page(sgl->sc_list + i, *(sgl->mypage + i),
 					PAGE_SIZE, 0);
-		sg_set_page(sgl->sc_list + n_num, *(sgl->mypage + n_num),
+		sg_set_page(sgl->sc_list + (n_num - 1),
+			*(sgl->mypage + (n_num - 1)),
 			size - (PAGE_SIZE - fp_offset)
-			- ((n_num-1)*PAGE_SIZE), 0);
+			- ((n_num-2)*PAGE_SIZE), 0);
 		count = dma_map_sg(pcie_ep_dev->dev, sgl->sc_list,
 				n_num, DMA_BIDIRECTIONAL);
 		i = 0;
@@ -1161,7 +1162,7 @@ static ssize_t sysfs_send_msi(struct device *dev,
 
 	if (kstrtoul(buf, 0, &val))
 		return -EINVAL;
-	if ((val < 0) | (val > 31))
+	if ((val < MSI_START) | (val > MSI_END))
 		return -EINVAL;
 	mnh_send_msi((enum mnh_msi_msg_t) val);
 	return count;
