@@ -108,7 +108,7 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 		interrupts = <GIC_SPI 43 IRQ_TYPE_LEVEL_HIGH>;
-		clock-frequency = <400000>;
+		clock-frequency = <100000>;
 		i2c-sda-hold-time-ns = <500>;
 		clocks = <&soc_refclk100mhz>;
 	};
@@ -119,7 +119,7 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 		interrupts = <GIC_SPI 44 IRQ_TYPE_LEVEL_HIGH>;
-		clock-frequency = <400000>;
+		clock-frequency = <100000>;
 		i2c-sda-hold-time-ns = <500>;
 		clocks = <&soc_refclk100mhz>;
 
@@ -135,7 +135,7 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 		interrupts = <GIC_SPI 45 IRQ_TYPE_LEVEL_HIGH>;
-		clock-frequency = <400000>;
+		clock-frequency = <100000>;
 		i2c-sda-hold-time-ns = <500>;
 		clocks = <&soc_refclk100mhz>;
 	};
@@ -146,7 +146,7 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 		interrupts = <GIC_SPI 46 IRQ_TYPE_LEVEL_HIGH>;
-		clock-frequency = <400000>;
+		clock-frequency = <100000>;
 		i2c-sda-hold-time-ns = <500>;
 		clocks = <&soc_refclk100mhz>;
 	};
