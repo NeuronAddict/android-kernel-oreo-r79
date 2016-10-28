@@ -701,15 +701,20 @@ int pcie_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
 	}
 	if (n_num < maxsg) {
 		sg_init_table(sgl->sc_list, n_num);
-		sg_set_page(sgl->sc_list, *(sgl->mypage),
+		if (n_num == 1)
+			sg_set_page(sgl->sc_list, *(sgl->mypage),
+					size, fp_offset);
+		else {
+			sg_set_page(sgl->sc_list, *(sgl->mypage),
 					PAGE_SIZE - fp_offset, fp_offset);
-		for (i = 1; i < n_num-1; i++)
-			sg_set_page(sgl->sc_list + i, *(sgl->mypage + i),
-					PAGE_SIZE, 0);
-		sg_set_page(sgl->sc_list + (n_num - 1),
-			*(sgl->mypage + (n_num - 1)),
-			size - (PAGE_SIZE - fp_offset)
-			- ((n_num-2)*PAGE_SIZE), 0);
+			for (i = 1; i < n_num-1; i++)
+				sg_set_page(sgl->sc_list + i,
+				*(sgl->mypage + i), PAGE_SIZE, 0);
+			sg_set_page(sgl->sc_list + (n_num - 1),
+				*(sgl->mypage + (n_num - 1)),
+				size - (PAGE_SIZE - fp_offset)
+				- ((n_num-2)*PAGE_SIZE), 0);
+		}
 		count = dma_map_sg(pcie_ep_dev->dev, sgl->sc_list,
 				n_num, DMA_BIDIRECTIONAL);
 		i = 0;
