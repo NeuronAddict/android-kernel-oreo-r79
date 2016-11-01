@@ -18,7 +18,7 @@
  * with this program;
  *
  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
- * Author: 
+ * 
  */
 
 
@@ -80,17 +80,13 @@ static PartTable def_part_table =
 
 };
 
-static void copy_mbr(u8 *disk)
+void copy_mbr(u8 *disk)
 {
-	//memset(disk, 0x0, MBR_SIZE);
-	//*(unsigned long *)(disk + MBR_DISK_SIGNATURE_OFFSET) = 0x36E5756D;
-        iowrite32(0x36E5756D, disk+MBR_DISK_SIGNATURE_OFFSET);
-	memcpy(disk + PARTITION_TABLE_OFFSET, &def_part_table, PARTITION_TABLE_SIZE);
-	*(unsigned short *)(disk + MBR_SIGNATURE_OFFSET) = MBR_SIGNATURE;
-}
+        u32 mbr_offset  = 0x36E5756D;
+        u32 mbr_sign = MBR_SIGNATURE;//2bytes
 
-void copy_mbr_n_br(u8 *disk)
-{
-	copy_mbr(disk);
+        memcpy_toio(disk+MBR_DISK_SIGNATURE_OFFSET,(u8 *) &mbr_offset, 4);  
+	memcpy_toio(disk + PARTITION_TABLE_OFFSET, &def_part_table, PARTITION_TABLE_SIZE);
+        memcpy_toio(disk + MBR_SIGNATURE_OFFSET, (u8 *)&mbr_sign, 2);  
 }
 

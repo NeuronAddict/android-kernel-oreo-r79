@@ -17,7 +17,7 @@
  * with this program;
  *
  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
- * Author: 
+ * 
  */
 
 #include <linux/module.h>
@@ -112,8 +112,9 @@ static int rb_transfer(struct request *req)
 			ret = -EIO;
 		}
 		sectors = BV_LEN(bv) / RB_SECTOR_SIZE;
-		printk(KERN_DEBUG "rb: Start Sector: %llu, Sector Offset: %llu; Buffer: %p; Length: %u sectors\n",
-			(unsigned long long)(start_sector), (unsigned long long)(sector_offset), buffer, sectors);
+		/*printk(KERN_DEBUG "rb: Start Sector: %llu, Sector Offset: %llu; Buffer: %p; Length: %u sectors\n",
+			(unsigned long long)(start_sector), (unsigned long long)(sector_offset), buffer, sectors);*/
+
 		if (dir == WRITE) /* Write to the device */
 		{
 			ramdevice_write(start_sector + sector_offset, buffer, sectors);
@@ -176,7 +177,7 @@ static int __init rb_init(void)
 	rb_dev.size = ret;
 
 
-	rb_major = register_blkdev(rb_major, "rb");
+	rb_major = register_blkdev(rb_major, "mswp");
 	if (rb_major <= 0)
 	{
 		printk(KERN_ERR "rb: Unable to get Major Number\n");
@@ -190,7 +191,7 @@ static int __init rb_init(void)
 	if (rb_dev.rb_queue == NULL)
 	{
 		printk(KERN_ERR "rb: blk_init_queue failure\n");
-		unregister_blkdev(rb_major, "rb");
+		unregister_blkdev(rb_major, "mswp");
 		ramdevice_cleanup();
 		return -ENOMEM;
 	}
@@ -200,7 +201,7 @@ static int __init rb_init(void)
 	{
 		printk(KERN_ERR "rb: alloc_disk failure\n");
 		blk_cleanup_queue(rb_dev.rb_queue);
-		unregister_blkdev(rb_major, "rb");
+		unregister_blkdev(rb_major, "mswp");
 		ramdevice_cleanup();
 		return -ENOMEM;
 	}
@@ -211,7 +212,7 @@ static int __init rb_init(void)
 	rb_dev.rb_disk->fops = &rb_fops;
 	rb_dev.rb_disk->private_data = &rb_dev;
 	rb_dev.rb_disk->queue = rb_dev.rb_queue;
-	sprintf(rb_dev.rb_disk->disk_name, "rb");
+	snprintf(rb_dev.rb_disk->disk_name, DISK_NAME_LEN, "mswp");
 	set_capacity(rb_dev.rb_disk, rb_dev.size);
 
 
@@ -228,13 +229,10 @@ static void __exit rb_cleanup(void)
 	del_gendisk(rb_dev.rb_disk);
 	put_disk(rb_dev.rb_disk);
 	blk_cleanup_queue(rb_dev.rb_queue);
-	unregister_blkdev(rb_major, "rb");
+	unregister_blkdev(rb_major, "mswp");
 	ramdevice_cleanup();
 }
 
-//device_initcall(rb_init);
-
-//module_init(rb_init);
-//module_exit(rb_cleanup);
+device_initcall(rb_init);
 
 MODULE_LICENSE("GPL");
