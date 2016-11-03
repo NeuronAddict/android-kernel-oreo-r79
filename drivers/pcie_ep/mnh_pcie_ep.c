@@ -474,7 +474,7 @@ static void msi_rx_worker(struct work_struct *work)
 	inc.vm = 0;
 
 	apirq = CSR_IN(PCIE_SW_INTR_TRIGG);
-	if (apirq != 0) {
+	while (apirq != 0) {
 		dev_err(pcie_ep_dev->dev, "AP IRQ %x received\n", apirq);
 
 		if (apirq & (0x1 << MSG_SEND_I)) {
@@ -498,6 +498,13 @@ static void msi_rx_worker(struct work_struct *work)
 			CSR_OUT(PCIE_SW_INTR_TRIGG, (MNH_PCIE_SW_IRQ_CLEAR
 				& (0x1 << APPDEFINED_1_I)));
 		}
+
+		/* Clear unused IRQ bits just in case, don't block new IRQs */
+		CSR_OUT(PCIE_SW_INTR_TRIGG, MNH_PCIE_SW_IRQ_CLEAR &
+                        ~((0x1 << MSG_SEND_I) |
+                          (0x1 << DMA_STATUS) |
+                          (0x1 << APPDEFINED_1_I)));
+		apirq = CSR_IN(PCIE_SW_INTR_TRIGG);
 	}
 }
 
