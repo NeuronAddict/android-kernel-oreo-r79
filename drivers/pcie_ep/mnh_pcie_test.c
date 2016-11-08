@@ -104,7 +104,7 @@ int test2_dma_callback(struct mnh_dma_irq *irq)
 			status =1;
 			if (ll_index == 1)
 				buildll();
-	} else if ((irq->status == MNH_DMA_ABORT) && (status ==2))
+	} else if ((irq->status == MNH_DMA_DONE) && (status ==2))
 		status =3;
 	return 0;
 }
