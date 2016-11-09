@@ -106,6 +106,279 @@ struct miscdevice easelcomm_miscdev = {
 };
 EXPORT_SYMBOL(easelcomm_miscdev);
 
+/*
+ * Add an additional refcount bump on a message for which a refcount is
+ * already held.  This function is for use by callers that hold a valid
+ * message pointer for which a refcount is already held, in order to reflect
+ * another reference being created, which will be dropped by another context
+ * later.  At present this is used only to hand off incoming reply messages to
+ * waiters, where the additional refcount reflects the fact that the original
+ * message contains a pointer to the reply message.
+ */
+static void easelcomm_grab_reference(
+	struct easelcomm_service *service,
+	struct easelcomm_message_metadata *msg_metadata)
+{
+	if (!msg_metadata)
+		return;
+	spin_lock(&service->lock);
+	msg_metadata->reference_count++;
+	spin_unlock(&service->lock);
+}
+
+/*
+ * Find a local message (for the specified service) by ID.
+ * Returns a pointer to the metadata with the reference count bumped.
+ */
+struct easelcomm_message_metadata *easelcomm_find_local_message(
+	struct easelcomm_service *service, easelcomm_msgid_t message_id)
+{
+	struct easelcomm_message_metadata *msg_metadata = NULL;
+	struct easelcomm_message_metadata *msg_cursor;
+
+	spin_lock(&service->lock);
+	list_for_each_entry(msg_cursor, &service->local_list,
+			list) {
+		if (msg_cursor->msg->desc.message_id == message_id) {
+			msg_metadata = msg_cursor;
+			msg_metadata->reference_count++;
+			break;
+		}
+	}
+	spin_unlock(&service->lock);
+	return msg_metadata;
+}
+EXPORT_SYMBOL(easelcomm_find_local_message);
+
+/*
+ * Find a remote message (for the specified service) by ID.
+ * Returns a pointer to the metadata with the reference count bumped.
+ */
+struct easelcomm_message_metadata *easelcomm_find_remote_message(
+	struct easelcomm_service *service, easelcomm_msgid_t message_id)
+{
+	struct easelcomm_message_metadata *msg_metadata = NULL;
+	struct easelcomm_message_metadata *msg_cursor;
+
+	spin_lock(&service->lock);
+	list_for_each_entry(msg_cursor, &service->remote_list, list) {
+		if (msg_cursor->msg->desc.message_id == message_id) {
+			msg_metadata = msg_cursor;
+			msg_metadata->reference_count++;
+			break;
+		}
+	}
+	spin_unlock(&service->lock);
+	return msg_metadata;
+}
+EXPORT_SYMBOL(easelcomm_find_remote_message);
+
+/*
+ * Return a pointer to the reply message for the specified original message.
+ * Responsibility for the existing reference count held for the reply message
+ * (due to the linkage from the original message) now transfers to the caller,
+ * which must drop the reference when appropriate.
+ */
+static struct easelcomm_message_metadata *easelcomm_grab_reply_message(
+	struct easelcomm_service *service,
+	struct easelcomm_message_metadata *orig_msg_metadata)
+{
+	struct easelcomm_message_metadata *reply_msg_metadata;
+
+	if (!orig_msg_metadata)
+		return NULL;
+	spin_lock(&service->lock);
+	reply_msg_metadata = orig_msg_metadata->reply_metadata;
+	orig_msg_metadata->reply_metadata = NULL;
+	spin_unlock(&service->lock);
+	return reply_msg_metadata;
+}
+
+/*
+ * Add a new message and metadata for the specified service.  Depending on the
+ * message type, the message will be placed in the local or remote list and
+ * potentially the receiveMessage queue.  The reference count for the message
+ * starts at 1 due to the returned pointer.
+ */
+static struct easelcomm_message_metadata *easelcomm_add_metadata(
+	struct easelcomm_service *service,
+	enum easelcomm_msg_type msg_type, struct easelcomm_kmsg *msg)
+{
+	struct easelcomm_message_metadata *msg_metadata =
+		kmalloc(sizeof(struct easelcomm_message_metadata), GFP_KERNEL);
+	if (!msg_metadata)
+		return NULL;
+	msg_metadata->msg_type = msg_type;
+	INIT_LIST_HEAD(&msg_metadata->list);
+	msg_metadata->dma_xfer.sg_local = NULL;
+	msg_metadata->dma_xfer.sg_local_size = 0;
+	msg_metadata->dma_xfer.sg_remote = NULL;
+	msg_metadata->dma_xfer.sg_remote_size = 0;
+	init_completion(&msg_metadata->dma_xfer.sg_remote_ready);
+	init_completion(&msg_metadata->dma_xfer.xfer_ready);
+	init_completion(&msg_metadata->dma_xfer.xfer_done);
+	msg_metadata->dma_xfer.aborting = false;
+	msg_metadata->msg = msg;
+	msg_metadata->reference_count = 1;
+	msg_metadata->queued = false;
+	msg_metadata->flushing = false;
+	msg_metadata->free_message = false;
+	init_completion(&msg_metadata->reply_received);
+	msg_metadata->reply_metadata = NULL;
+
+	spin_lock(&service->lock);
+	switch(msg_metadata->msg_type) {
+	case TYPE_LOCAL:
+		/* add to the local list */
+		list_add_tail(&msg_metadata->list, &service->local_list);
+		break;
+	case TYPE_REMOTE_REPLY:
+	case TYPE_REMOTE_NONREPLY:
+		/* add to the remote list */
+		list_add_tail(&msg_metadata->list, &service->remote_list);
+
+		if (msg_metadata->msg_type == TYPE_REMOTE_NONREPLY) {
+			/*
+			 * Also add to the receiveMessage queue and wakeup
+			 * waiter.
+			 */
+			list_add_tail(&msg_metadata->rcvq_list,
+				&service->receivemsg_queue);
+			msg_metadata->queued = true;
+			complete(&service->receivemsg_queue_new);
+		}
+		break;
+	default:
+		WARN_ON(1);
+	}
+	spin_unlock(&service->lock);
+	return msg_metadata;
+}
+
+/*
+ * Free message, remove from lists and receiveMessage queue.  Called when
+ * message reference count drops to zero, and either: the message is marked
+ * for freeing when no longer referenced, or: the message is being flushed.
+ * The lock for the containing service must be held.  This method is only for
+ * use by reference counting and message flushing routines, not for general use.
+ */
+static void easelcomm_free_message(
+	struct easelcomm_service *service,
+	struct easelcomm_message_metadata *msg_metadata)
+{
+	if (!msg_metadata)
+		return;
+
+	WARN_ON(msg_metadata->reference_count);
+	/* remove from local or remote list */
+	list_del(&msg_metadata->list);
+	/* If queued remove from receive queue */
+	if (msg_metadata->queued)
+		list_del(&msg_metadata->rcvq_list);
+	kfree(msg_metadata->msg);
+	if (msg_metadata->dma_xfer.sg_local)
+		kfree(msg_metadata->dma_xfer.sg_local);
+	if (msg_metadata->dma_xfer.sg_remote)
+		kfree(msg_metadata->dma_xfer.sg_remote);
+	kfree(msg_metadata);
+}
+
+/*
+ * Decrement message refcount, optionally mark for freeing.  The message is
+ * freed if it is now, or has previously been, marked for freeing when
+ * unreferenced and the reference count is dropped to zero.  Once this method
+ * is called the supplied message pointer is no longer valid and must not be
+ * dereferenced.  Any code that needs to reference the same message again
+ * needs to find it by message ID.
+ *
+ * A reference count must be held whenever a pointer to the message is created
+ * and valid (apart from local or remote message list linkage, which is always
+ * present until the message is freed).	 (And except briefly while maintaining
+ * message state and the service lock is held.)	 A reference count of zero
+ * indicates the message is not actively being manipulated by a kernel code
+ * path and no pointers to it existing apart from the local or remote message
+ * list for its associated service -- if not in the process of being freed then
+ * it is expected something will later grab a reference to the message and
+ * resume handling it.
+ */
+void easelcomm_drop_reference(
+	struct easelcomm_service *service,
+	struct easelcomm_message_metadata *msg_metadata, bool mark_free)
+{
+	if (!msg_metadata)
+		return;
+
+	spin_lock(&service->lock);
+	if (!WARN_ON(!msg_metadata->reference_count))
+		msg_metadata->reference_count--;
+
+	if (mark_free)
+		msg_metadata->free_message = true;
+
+	if (!msg_metadata->reference_count && msg_metadata->free_message)
+		easelcomm_free_message(service, msg_metadata);
+	spin_unlock(&service->lock);
+}
+EXPORT_SYMBOL(easelcomm_drop_reference);
+
+/*
+ * Attempt to flush a message.	If a reference count is held on the message or
+ * the DMA transfer for the message is in progress then the message is not
+ * flushed. If a DMA transfer is active then a DMA abort is initiated.
+ * Function returns true if need to retry flushing the message later due to
+ * the above, or false if now flushed.
+ */
+static bool easelcomm_flush_message(
+	struct easelcomm_service *service,
+	struct easelcomm_message_metadata *msg_metadata)
+{
+	easelcomm_msgid_t msgid;
+	bool ret = false;
+
+	if (!msg_metadata || !msg_metadata->msg)
+		return false;
+
+	msgid = msg_metadata->msg->desc.message_id;
+	/* Mark message for flushing in case message is still in progress */
+	msg_metadata->flushing = true;
+
+	/*
+	 * If we may be working on a DMA transfer then trigger an abort.  If
+	 * a local process is working on it then a refcount will be held, and
+	 * we'll need to retry after dropping the spinlock, letting the
+	 * process handle the DMA abort and then drop the refcount.
+	 */
+	if (msg_metadata->msg->desc.dma_buf_size &&
+		!msg_metadata->dma_xfer.aborting) {
+		dev_dbg(easelcomm_miscdev.this_device,
+			"flush abort DMA msg %u:%s%llu\n",
+			service->service_id,
+			easelcomm_msgid_prefix(msg_metadata), msgid);
+		msg_metadata->dma_xfer.aborting = true;
+		complete(&msg_metadata->dma_xfer.sg_remote_ready);
+		complete(&msg_metadata->dma_xfer.xfer_ready);
+		complete(&msg_metadata->dma_xfer.xfer_done);
+	}
+
+	if (msg_metadata->reference_count) {
+		dev_dbg(easelcomm_miscdev.this_device,
+			"not flushing msg %u:%s%llu refcnt=%d\n",
+			service->service_id,
+			easelcomm_msgid_prefix(msg_metadata), msgid,
+			msg_metadata->reference_count);
+		ret = true;
+	} else {
+		easelcomm_free_message(service, msg_metadata);
+		dev_dbg(easelcomm_miscdev.this_device,
+			"flushed msg %u:%s%llu\n",
+			service->service_id,
+			easelcomm_msgid_prefix(msg_metadata), msgid);
+		ret = false;
+	}
+
+	return ret;
+}
+
 /* Flush all messages (local or remote) kept locally for the service. */
 static void easelcomm_flush_local_service(struct easelcomm_service *service)
 {
