@@ -106,6 +106,19 @@ struct miscdevice easelcomm_miscdev = {
 };
 EXPORT_SYMBOL(easelcomm_miscdev);
 
+/* Dump message info for debugging. */
+static void easelcomm_dump_message(
+	struct easelcomm_message_metadata *msg_metadata)
+{
+	struct easelcomm_kmsg *msg = msg_metadata->msg;
+	dev_dbg(easelcomm_miscdev.this_device, "msg: id=%s%llu msgsize=%u dmasize=%u"
+		" needreply=%d inreplyto=%llu replycode=%d\n",
+		easelcomm_msgid_prefix(msg_metadata),
+		msg->desc.message_id, msg->desc.message_size,
+		msg->desc.dma_buf_size, msg->desc.need_reply,
+		msg->desc.in_reply_to, msg->desc.replycode);
+}
+
 /*
  * Add an additional refcount bump on a message for which a refcount is
  * already held.  This function is for use by callers that hold a valid
@@ -418,6 +431,75 @@ static void easelcomm_flush_local_service(struct easelcomm_service *service)
 }
 
 /*
+ * Handle SEND_MSG command from remote.  Add a remote message, link a reply
+ * to original message and wakeup waiter.
+ */
+static void easelcomm_handle_cmd_send_msg(
+	struct easelcomm_service *service, char *command_args,
+	int command_arg_len)
+{
+	struct easelcomm_kmsg *cmd_msg;
+	struct easelcomm_kmsg *new_msg;
+	enum easelcomm_msg_type msg_type;
+	struct easelcomm_message_metadata *msg_metadata;
+	bool discard_message = false;
+
+	if (WARN_ON(command_arg_len < sizeof(struct easelcomm_kmsg_desc)))
+		return;
+	cmd_msg = (struct easelcomm_kmsg *) command_args;
+	if (WARN_ON(command_arg_len != sizeof(struct easelcomm_kmsg_desc) +
+			cmd_msg->desc.message_size))
+		return;
+
+	dev_dbg(easelcomm_miscdev.this_device,
+		"recv cmd SEND_MSG msg %u:r%llu\n",
+		service->service_id, cmd_msg->desc.message_id);
+
+	new_msg = kmalloc(command_arg_len, GFP_KERNEL);
+	if (WARN_ON(!new_msg))
+		return;
+	memcpy(new_msg, cmd_msg, command_arg_len);
+	msg_type = new_msg->desc.in_reply_to ?
+		TYPE_REMOTE_REPLY : TYPE_REMOTE_NONREPLY;
+	msg_metadata = easelcomm_add_metadata(service, msg_type, new_msg);
+	if (WARN_ON(!msg_metadata)) {
+		kfree(new_msg);
+		return;
+	}
+	easelcomm_dump_message(msg_metadata);
+
+	/* If a reply then link to the original message and wakeup waiter. */
+	if (msg_type == TYPE_REMOTE_REPLY) {
+		struct easelcomm_message_metadata *orig_msg_metadata =
+			easelcomm_find_local_message(
+				service, msg_metadata->msg->desc.in_reply_to);
+
+		if (orig_msg_metadata) {
+			orig_msg_metadata->reply_metadata =
+				msg_metadata;
+			/*
+			 * Bump reference count for this new ref, waiter will
+			 * drop.
+			 */
+			easelcomm_grab_reference(service, msg_metadata);
+			complete(&orig_msg_metadata->reply_received);
+			easelcomm_drop_reference(
+				service, orig_msg_metadata, false);
+		} else {
+			dev_dbg(easelcomm_miscdev.this_device,
+				"reply msg %u:r%llu reply-to msg %u:l%llu"
+				" not found\n", service->service_id,
+				msg_metadata->msg->desc.message_id,
+				service->service_id,
+				msg_metadata->msg->desc.in_reply_to);
+			discard_message = true;
+		}
+	}
+
+	easelcomm_drop_reference(service, msg_metadata, discard_message);
+}
+
+/*
  * Remote side of link indicates command channel ready.	 Client calls this when
  * the EP bootstrap procedure is complete.  Server calls this when a LINK_INIT
  * command is received from the client.
@@ -563,6 +645,10 @@ static void easelcomm_handle_command(struct easelcomm_cmd_header *cmdhdr)
 	case EASELCOMM_CMD_LINK_INIT:
 		easelcomm_handle_cmd_link_init(
 			cmdargs, cmdhdr->command_arg_len);
+		break;
+	case EASELCOMM_CMD_SEND_MSG:
+		easelcomm_handle_cmd_send_msg(
+			service, cmdargs, cmdhdr->command_arg_len);
 		break;
 	case EASELCOMM_CMD_FLUSH_SERVICE:
 		easelcomm_handle_cmd_flush_service(service);
@@ -945,6 +1031,229 @@ out:
 }
 EXPORT_SYMBOL(easelcomm_send_cmd);
 
+/*
+ * Return next message ID in sequence for this service.  Message ID zero is
+ * not used, bump twice to avoid if needed.
+ */
+static easelcomm_msgid_t easelcomm_next_msgid(
+	struct easelcomm_service *service)
+{
+	easelcomm_msgid_t next_id;
+
+	spin_lock(&service->lock);
+	next_id = ++service->next_id;
+	if (!next_id)
+		next_id = ++service->next_id;
+	spin_unlock(&service->lock);
+	return next_id;
+}
+
+/*
+ * Handle SENDMSG ioctl, the message descriptor send part of easelcomm
+ * sendMessage*() and sendReply() calls.
+ */
+static int easelcomm_send_message_ioctl(
+	struct easelcomm_service *service,
+	struct easelcomm_kmsg_desc __user *pmsg_desc)
+{
+	struct easelcomm_kmsg_desc *msg_desc;
+	struct easelcomm_message_metadata *msg_metadata = NULL;
+	int ret = 0;
+
+	msg_desc = kmalloc(sizeof(struct easelcomm_kmsg_desc), GFP_KERNEL);
+	if (!msg_desc)
+		return -ENOMEM;
+	if (copy_from_user(msg_desc, (void __user *) pmsg_desc,
+			   sizeof(struct easelcomm_kmsg_desc))) {
+		ret = -EFAULT;
+		goto out_freedesc;
+	}
+	if (msg_desc->message_size > EASELCOMM_MAX_MESSAGE_SIZE) {
+		ret = -EINVAL;
+		goto out_freedesc;
+	}
+
+	/* Assign a message ID to the new message and add to local list. */
+	msg_desc->message_id = easelcomm_next_msgid(service);
+	msg_metadata = easelcomm_add_metadata(service, TYPE_LOCAL,
+					(struct easelcomm_kmsg *)msg_desc);
+	if (!msg_metadata) {
+		ret = -ENOMEM;
+		goto out_freedesc;
+	}
+	/*
+	 * After a successful call to the above, msg_desc is pointed to by
+	 * msg_metadata and the memory is managed along with the other
+	 * metadata.
+	 */
+
+	dev_dbg(easelcomm_miscdev.this_device, "SENDMSG msg %u:l%llu\n",
+		service->service_id, msg_desc->message_id);
+	easelcomm_dump_message(msg_metadata);
+
+	/* Copy the updated msg desc with message ID to user. */
+	if (copy_to_user((void __user *) pmsg_desc, msg_desc,
+				sizeof(struct easelcomm_kmsg_desc))) {
+		easelcomm_drop_reference(service, msg_metadata, true);
+		return -EFAULT;
+	}
+
+	/*
+	 * If this is a reply then we are done with the replied-to remote
+	 * message.
+	 */
+	if (msg_metadata->msg->desc.in_reply_to) {
+		struct easelcomm_message_metadata *orig_msg_metadata =
+			easelcomm_find_remote_message(
+				service, msg_metadata->msg->desc.in_reply_to);
+
+		if (!orig_msg_metadata) {
+			dev_dbg(easelcomm_miscdev.this_device,
+				"msg %u:l%llu replied-to msg r%llu"
+				" not found\n", service->service_id,
+				msg_desc->message_id,
+				msg_metadata->msg->desc.in_reply_to);
+		} else {
+			dev_dbg(easelcomm_miscdev.this_device,
+				"msg %u:l%llu is reply to msg r%llu\n",
+				service->service_id, msg_desc->message_id,
+				msg_metadata->msg->desc.in_reply_to);
+			easelcomm_drop_reference(
+				service, orig_msg_metadata, true);
+		}
+	}
+	easelcomm_drop_reference(service, msg_metadata, false);
+	return 0;
+
+out_freedesc:
+	kfree(msg_desc);
+	return ret;
+}
+
+/* Handle RECVMSG ioctl / easelcomm receiveMessage() call. */
+static int easelcomm_wait_message(
+	struct easelcomm_service *service,
+	struct easelcomm_kmsg_desc __user *msgp)
+{
+	struct easelcomm_message_metadata *msg_metadata = NULL;
+	int ret = 0;
+
+	dev_dbg(easelcomm_miscdev.this_device, "WAITMSG svc %u\n",
+		service->service_id);
+
+	while (!msg_metadata) {
+		spin_lock(&service->lock);
+		if (service->shutdown_local ||
+		    (easelcomm_is_client() && service->shutdown_remote)) {
+			/* Service shutdown initiated locally or remotely. */
+			dev_dbg(easelcomm_miscdev.this_device,
+				"WAITMSG svc %u returning shutdown"
+				" local=%d remote=%d\n",
+				service->service_id, service->shutdown_local,
+				service->shutdown_remote);
+			service->shutdown_remote = false;
+			spin_unlock(&service->lock);
+			return -ESHUTDOWN;
+		}
+		/* grab first entry off receiveMessage queue. */
+		msg_metadata = list_first_entry_or_null(
+			&service->receivemsg_queue,
+			struct easelcomm_message_metadata, rcvq_list);
+		if (msg_metadata)
+			break;
+		spin_unlock(&service->lock);
+		ret = wait_for_completion_interruptible(
+			&service->receivemsg_queue_new);
+		if (ret)
+			return ret;
+	}
+
+	dev_dbg(easelcomm_miscdev.this_device,
+		"WAITMSG svc %u returning msg %u:r%llu\n",
+		service->service_id, service->service_id,
+		msg_metadata->msg->desc.message_id);
+	/* remove from receive queue, grab a ref while copy to user */
+	list_del(&msg_metadata->rcvq_list);
+	msg_metadata->queued = false;
+	msg_metadata->reference_count++;
+	spin_unlock(&service->lock);
+	/* Copy the message desc to the caller */
+	if (copy_to_user(msgp, msg_metadata->msg,
+				sizeof(struct easelcomm_kmsg_desc)))
+		ret = -EFAULT;
+
+	easelcomm_drop_reference(service, msg_metadata, false);
+	return ret;
+}
+
+/*
+ * Handle WAITREPLY ioctl / reply waiting part of easelcomm
+ * sendMessageReceiveReply() call.
+ */
+static int easelcomm_wait_reply(
+	struct easelcomm_service *service,
+	struct easelcomm_kmsg_desc __user *pmsg_desc)
+{
+	struct easelcomm_kmsg_desc orig_msg_desc;
+	struct easelcomm_message_metadata *orig_msg_metadata;
+	struct easelcomm_message_metadata *msg_metadata = NULL;
+	int ret;
+
+	if (copy_from_user(&orig_msg_desc, (void __user *) pmsg_desc,
+				sizeof(struct easelcomm_kmsg_desc)))
+		return -EFAULT;
+
+	/* Grab a reference to the original message. */
+	orig_msg_metadata = easelcomm_find_local_message(
+		service, orig_msg_desc.message_id);
+	if (!orig_msg_metadata) {
+		dev_dbg(easelcomm_miscdev.this_device,
+			"WAITREPLY msg %u:l%llu not found\n",
+			service->service_id, orig_msg_desc.message_id);
+		return -EINVAL;
+	}
+
+	dev_dbg(easelcomm_miscdev.this_device,
+		"WAITREPLY msg %u:l%llu\n",
+		service->service_id, orig_msg_desc.message_id);
+
+	do {
+		ret = wait_for_completion_interruptible(
+			&orig_msg_metadata->reply_received);
+		if (ret)
+			goto out;
+		if (orig_msg_metadata->flushing) {
+			dev_dbg(easelcomm_miscdev.this_device,
+				"WAITREPLY msg %u:l%llu flushed\n",
+				service->service_id, orig_msg_desc.message_id);
+			goto out;
+		}
+
+		msg_metadata = easelcomm_grab_reply_message(
+			service, orig_msg_metadata);
+	} while (!msg_metadata);
+
+	/* Copy the reply message descriptor to the caller */
+	if (copy_to_user(pmsg_desc, &msg_metadata->msg->desc,
+				sizeof(struct easelcomm_kmsg_desc))) {
+		ret = -EFAULT;
+		goto out;
+	}
+	dev_dbg(easelcomm_miscdev.this_device,
+		"WAITREPLY msg %u:l%llu returning msg r%llu\n",
+		service->service_id, orig_msg_desc.message_id,
+		msg_metadata->msg->desc.message_id);
+	ret = 0;
+
+out:
+	/* Discard reply message if error retrieving it. */
+	if (msg_metadata)
+		easelcomm_drop_reference(service, msg_metadata, ret);
+	/* Always discard the original message, we're done with it. */
+	easelcomm_drop_reference(service, orig_msg_metadata, true);
+	return ret;
+}
+
 /* Initiate a flush of service on both sides of the link. */
 static void easelcomm_flush_service(struct easelcomm_service *service)
 {
@@ -998,6 +1307,173 @@ static int easelcomm_register(struct easelcomm_user_state *user_state,
 	if (easelcomm_is_client())
 		easelcomm_flush_service(service);
 	return 0;
+}
+
+/*
+ * Handle READDATA ioctl, the read message data part of easelcomm
+ * receiveMessage() and sendMessageReceiveReply() calls.
+ */
+static int easelcomm_read_msgdata(
+	struct easelcomm_service *service,
+	struct easelcomm_kbuf_desc *buf_desc)
+{
+	struct easelcomm_message_metadata *msg_metadata;
+	int ret = 0;
+
+	dev_dbg(easelcomm_miscdev.this_device,
+		"READDATA msg %u:r%llu buf=%p\n",
+		service->service_id, buf_desc->message_id, buf_desc->buf);
+	msg_metadata =
+		easelcomm_find_remote_message(service, buf_desc->message_id);
+	if (!msg_metadata) {
+		dev_err(easelcomm_miscdev.this_device,
+			"READDATA msg %u:r%llu not found\n",
+			service->service_id, buf_desc->message_id);
+		return -EINVAL;
+	}
+
+	if (buf_desc->buf_size &&
+		buf_desc->buf_size != msg_metadata->msg->desc.message_size) {
+		dev_err(easelcomm_miscdev.this_device,
+			"READDATA descriptor buffer size %u doesn't"
+			" match message %u:r%llu size %u\n", buf_desc->buf_size,
+			service->service_id, buf_desc->message_id,
+			msg_metadata->msg->desc.message_size);
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (buf_desc->buf_size) {
+		if (copy_to_user(buf_desc->buf,
+					&msg_metadata->msg->message_data,
+					buf_desc->buf_size)) {
+			ret = -EFAULT;
+			goto out;
+		}
+	}
+
+	/*
+	 * If no DMA transfer and no reply needed then we're done with this
+	 * message.
+	 */
+	if (!msg_metadata->msg->desc.dma_buf_size &&
+		!msg_metadata->msg->desc.need_reply) {
+		easelcomm_drop_reference(service, msg_metadata, true);
+		return 0;
+	}
+
+out:
+	easelcomm_drop_reference(service, msg_metadata, false);
+	return ret;
+}
+
+/*
+ * Handle WRITEDATA ioctl, the message data write portion of easelcomm
+ * sendMessage*() and sendReply() calls.
+ */
+static int easelcomm_write_msgdata(
+	struct easelcomm_service *service, struct easelcomm_kbuf_desc *buf_desc)
+{
+	struct easelcomm_message_metadata *msg_metadata;
+	char *databuf = NULL;
+	bool discard_message = true;
+	int ret;
+
+	dev_dbg(easelcomm_miscdev.this_device,
+		"WRITEDATA msg %u:l%llu buf=%p\n",
+		service->service_id, buf_desc->message_id, buf_desc->buf);
+
+	msg_metadata =
+		easelcomm_find_local_message(service, buf_desc->message_id);
+	if (!msg_metadata) {
+		dev_err(easelcomm_miscdev.this_device,
+			"WRITEDATA msg %u:l%llu not found\n",
+			service->service_id, buf_desc->message_id);
+		return -EINVAL;
+	}
+
+	if (buf_desc->buf_size &&
+	    buf_desc->buf_size != msg_metadata->msg->desc.message_size) {
+		dev_err(easelcomm_miscdev.this_device,
+			"WRITEDATA descriptor buffer size %u doesn't"
+			" match message %u:l%llu size %u\n",
+			buf_desc->buf_size, service->service_id,
+			buf_desc->message_id,
+			msg_metadata->msg->desc.message_size);
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (buf_desc->buf_size) {
+		databuf = kmalloc(buf_desc->buf_size, GFP_KERNEL);
+		if (!databuf) {
+			ret = -ENOMEM;
+			goto out;
+		}
+
+		if (copy_from_user(
+				databuf, buf_desc->buf, buf_desc->buf_size)) {
+			ret = -EFAULT;
+			goto out;
+		}
+	}
+
+	dev_dbg(easelcomm_miscdev.this_device,
+		"send cmd SEND_MSG msg %u:l%llu\n",
+		service->service_id, msg_metadata->msg->desc.message_id);
+	ret = easelcomm_start_cmd(
+		service, EASELCOMM_CMD_SEND_MSG,
+		sizeof(struct easelcomm_kmsg_desc) + buf_desc->buf_size);
+	if (ret)
+		goto out;
+	ret = easelcomm_append_cmd_args(
+		service, &msg_metadata->msg->desc,
+		sizeof(struct easelcomm_kmsg_desc));
+	if (ret)
+		goto out;
+	if (buf_desc->buf_size) {
+		ret = easelcomm_append_cmd_args(
+			service, databuf, buf_desc->buf_size);
+		if (ret)
+			goto out;
+	}
+	ret = easelcomm_send_cmd(service);
+	if (ret)
+		goto out;
+
+	/*
+	 * If no DMA transfer and no reply needed then we're done with this
+	 * message.
+	 */
+	discard_message = !msg_metadata->msg->desc.dma_buf_size &&
+		!msg_metadata->msg->desc.need_reply;
+
+out:
+	/*
+	 * If success and no DMA transfer and no reply needed, or if error,
+	 * then free the message.
+	 */
+	easelcomm_drop_reference(service, msg_metadata, discard_message);
+	kfree(databuf);
+	return ret;
+}
+
+/*
+ * Client sends LINK_INIT command to tell server client command channel ready.
+ */
+static int easelcomm_send_cmd_link_init(void)
+{
+	struct easelcomm_service *service =
+		&easelcomm_service[EASELCOMM_SERVICE_SYSCTRL];
+	int ret;
+
+	ret = easelcomm_start_cmd(
+		service, EASELCOMM_CMD_LINK_INIT, 0);
+	if (ret)
+		return ret;
+	dev_dbg(easelcomm_miscdev.this_device, "send cmd LINK_INIT\n");
+	ret = easelcomm_send_cmd(service);
+	return ret;
 }
 
 /*
