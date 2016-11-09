@@ -237,6 +237,9 @@ extern int easelcomm_append_cmd_args(
         size_t cmd_args_len);
 /* Finish and send command to remote */
 extern int easelcomm_send_cmd(struct easelcomm_service *service);
+/* Start and send a new command with no arguments */
+extern int easelcomm_send_cmd_noargs(
+	struct easelcomm_service *service, int command_code);
 
 /* Easel MNH coprocessor/PCIe hardware access functions */
 
