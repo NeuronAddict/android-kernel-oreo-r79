@@ -30,6 +30,9 @@
 #include <linux/spinlock.h>
 #include <linux/types.h>
 
+/* retry delay in msec for retrying flush of a message being processed */
+#define MSG_FLUSH_RETRY_DELAY 10
+
 /* Per-Easel-service state */
 static struct easelcomm_service easelcomm_service[EASELCOMM_SERVICE_COUNT];
 
@@ -103,8 +106,46 @@ struct miscdevice easelcomm_miscdev = {
 };
 EXPORT_SYMBOL(easelcomm_miscdev);
 
+/* Flush all messages (local or remote) kept locally for the service. */
+static void easelcomm_flush_local_service(struct easelcomm_service *service)
+{
+	struct easelcomm_message_metadata *msg_cursor;
+	struct easelcomm_message_metadata *msg_temp;
+	int i;
+	bool need_retry = true;
+
+#define MAX_FLUSH_TRIES 4
+
+	for (i = 0; need_retry && i < MAX_FLUSH_TRIES; i++) {
+		spin_lock(&service->lock);
+		need_retry = false;
+		list_for_each_entry_safe(
+			msg_cursor, msg_temp, &service->local_list, list) {
+			need_retry |= easelcomm_flush_message(
+				service, msg_cursor);
+		}
+		list_for_each_entry_safe(
+			msg_cursor, msg_temp, &service->remote_list, list) {
+			need_retry |= easelcomm_flush_message(
+				service, msg_cursor);
+		}
+		spin_unlock(&service->lock);
+
+		if (!need_retry)
+			break;
+
+		/* sleep, let refcount holders abort DMA/reply wait */
+		msleep(MSG_FLUSH_RETRY_DELAY);
+	}
+
+	if (need_retry)
+		dev_err(easelcomm_miscdev.this_device,
+			"svc %u failed to flush messages after %d tries\n",
+			service->service_id, MAX_FLUSH_TRIES);
+}
+
 /*
- * Remote side of link indicates command channel ready.  Client calls this when
+ * Remote side of link indicates command channel ready.	 Client calls this when
  * the EP bootstrap procedure is complete.  Server calls this when a LINK_INIT
  * command is received from the client.
  *
@@ -161,6 +202,76 @@ static int easelcomm_wait_channel_initialized(
 	return ret;
 }
 
+/*
+ * Handle local-side processing of shutting down an Easel service.  Easel
+ * services are shutdown when the local side handling process closes its fd
+ * or issues the shutdown ioctl, or the remote side sends a CLOSE_SERVICE
+ * command (meaning the remote side is doing one of those things).
+ *
+ * Flush local state if local side initiated the shutdown, wakeup the
+ * receiveMessage() waiter.
+ */
+static void easelcomm_handle_service_shutdown(
+	struct easelcomm_service *service, bool shutdown_local)
+{
+	dev_dbg(easelcomm_miscdev.this_device, "svc %u shutdown from %s\n",
+		service->service_id, shutdown_local ? "local" : "remote");
+
+	/*
+	 * If local side shutting down then flush local state, just in case.
+	 * If remote is closing then local side may still have messages in
+	 * progress, just signal the receivemessage() caller to return
+	 * shutdown status.
+	 */
+	if (shutdown_local)
+		easelcomm_flush_local_service(service);
+
+	spin_lock(&service->lock);
+	if (shutdown_local)
+		service->shutdown_local = true;
+	else
+		service->shutdown_remote = true;
+	spin_unlock(&service->lock);
+	/* Wakeup any receiveMessage() waiter so they can return to user */
+	complete(&service->receivemsg_queue_new);
+}
+
+/* CLOSE_SERVICE command received from remote, shut down service. */
+static void easelcomm_handle_cmd_close_service(
+	struct easelcomm_service *service)
+{
+	dev_dbg(easelcomm_miscdev.this_device,
+		"recv cmd CLOSE_SERVICE svc %u\n",
+		service->service_id);
+	easelcomm_handle_service_shutdown(service, false);
+}
+
+/*
+ * FLUSH_SERVICE command received from remote, flush local state for service
+ * and send FLUSH_SERVICE_DONE back to remote.
+ */
+static void easelcomm_handle_cmd_flush_service(
+	struct easelcomm_service *service)
+{
+	dev_dbg(easelcomm_miscdev.this_device,
+		"recv cmd FLUSH_SERVICE svc %u\n",
+		service->service_id);
+	easelcomm_flush_local_service(service);
+	dev_dbg(easelcomm_miscdev.this_device,
+		"send cmd FLUSH_SERVICE_DONE svc %u\n",
+		service->service_id);
+	easelcomm_send_cmd_noargs(service, EASELCOMM_CMD_FLUSH_SERVICE_DONE);
+}
+
+/* FLUSH_SERVICE_DONE command received from remote, wakeup waiter. */
+static void easelcomm_handle_cmd_flush_service_done(
+	struct easelcomm_service *service)
+{
+	dev_dbg(easelcomm_miscdev.this_device,
+		"recv cmd FLUSH_SERVICE_DONE svc %u\n", service->service_id);
+	complete(&service->flush_done);
+}
+
 /* Command received from remote, dispatch. */
 static void easelcomm_handle_command(struct easelcomm_cmd_header *cmdhdr)
 {
@@ -179,6 +290,15 @@ static void easelcomm_handle_command(struct easelcomm_cmd_header *cmdhdr)
 	case EASELCOMM_CMD_LINK_INIT:
 		easelcomm_handle_cmd_link_init(
 			cmdargs, cmdhdr->command_arg_len);
+		break;
+	case EASELCOMM_CMD_FLUSH_SERVICE:
+		easelcomm_handle_cmd_flush_service(service);
+		break;
+	case EASELCOMM_CMD_FLUSH_SERVICE_DONE:
+		easelcomm_handle_cmd_flush_service_done(service);
+		break;
+	case EASELCOMM_CMD_CLOSE_SERVICE:
+		easelcomm_handle_cmd_close_service(service);
 		break;
 	default:
 		dev_err(easelcomm_miscdev.this_device,
@@ -324,6 +444,31 @@ static int easelcomm_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
+/* Initiate service shutdown from fd release or ioctl. */
+static void easelcomm_initiate_service_shutdown(
+	struct easelcomm_service *service)
+{
+	bool already_shutdown;
+
+	spin_lock(&service->lock);
+	already_shutdown = service->shutdown_local;
+	spin_unlock(&service->lock);
+
+	if (already_shutdown) {
+		dev_dbg(easelcomm_miscdev.this_device,
+			"svc %u already shutdown\n",
+			service->service_id);
+		return;
+	}
+
+	dev_dbg(easelcomm_miscdev.this_device, "svc %u initiate shutdown\n",
+		service->service_id);
+	easelcomm_handle_service_shutdown(service, true);
+	dev_dbg(easelcomm_miscdev.this_device,
+		"svc %u send cmd CLOSE_SERVICE\n", service->service_id);
+	easelcomm_send_cmd_noargs(service, EASELCOMM_CMD_CLOSE_SERVICE);
+}
+
 /* Device file descriptor release, initiate service shutdown and cleanup */
 static int easelcomm_release(struct inode *inode, struct file *file)
 {
@@ -336,6 +481,7 @@ static int easelcomm_release(struct inode *inode, struct file *file)
 			dev_dbg(easelcomm_miscdev.this_device,
 				"svc %u release\n", service->service_id);
 
+			easelcomm_initiate_service_shutdown(service);
 			spin_lock(&service->lock);
 			service->user = NULL;
 			spin_unlock(&service->lock);
@@ -525,6 +671,25 @@ out:
 	return ret;
 }
 EXPORT_SYMBOL(easelcomm_send_cmd);
+
+/* Initiate a flush of service on both sides of the link. */
+static void easelcomm_flush_service(struct easelcomm_service *service)
+{
+	int ret;
+
+	easelcomm_flush_local_service(service);
+	dev_dbg(easelcomm_miscdev.this_device,
+		"send cmd FLUSH_SERVICE svc %u\n",
+		service->service_id);
+	ret = easelcomm_send_cmd_noargs(service, EASELCOMM_CMD_FLUSH_SERVICE);
+	if (ret)
+		return;
+	ret = wait_for_completion_interruptible(&service->flush_done);
+	if (ret)
+		dev_err(easelcomm_miscdev.this_device,
+			"service flush done wait aborted svc %u\n",
+			service->service_id);
+}
 
 /* Handle REGISTER ioctl, register an open fd for an Easel service. */
 static int easelcomm_register(struct easelcomm_user_state *user_state,
