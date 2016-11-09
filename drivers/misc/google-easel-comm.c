@@ -650,6 +650,18 @@ static void easelcomm_handle_command(struct easelcomm_cmd_header *cmdhdr)
 		easelcomm_handle_cmd_send_msg(
 			service, cmdargs, cmdhdr->command_arg_len);
 		break;
+	case EASELCOMM_CMD_DMA_SG:
+		easelcomm_handle_cmd_dma_sg(
+			service, cmdargs, cmdhdr->command_arg_len);
+		break;
+	case EASELCOMM_CMD_DMA_XFER:
+		easelcomm_handle_cmd_dma_xfer(
+			service, cmdargs, cmdhdr->command_arg_len);
+		break;
+	case EASELCOMM_CMD_DMA_DONE:
+		easelcomm_handle_cmd_dma_done(
+			service, cmdargs, cmdhdr->command_arg_len);
+		break;
 	case EASELCOMM_CMD_FLUSH_SERVICE:
 		easelcomm_handle_cmd_flush_service(service);
 		break;
@@ -714,7 +726,7 @@ void easelcomm_cmd_channel_data_handler(void)
 
 		/*
 		 * If producer dropped a wrap marker at the current position
-		 * then wrap our read poitner and let the producer know we
+		 * then wrap our read pointer and let the producer know we
 		 * wrapped and both sides are ready to continue at the top of
 		 * the buffer.
 		 */

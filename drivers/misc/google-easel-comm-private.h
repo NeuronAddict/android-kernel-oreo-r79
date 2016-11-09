@@ -90,6 +90,8 @@ struct easelcomm_dma_xfer_info {
          * or locally a service flush or signal was received.
          */
         bool aborting;
+        /* DMA transfer error code (-errno) if non-zero */
+        int32_t errcode;
 };
 
 /*
@@ -263,18 +265,24 @@ extern int easelcomm_hw_remote_write(
 /* build an MNH DMA scatter-gather list */
 extern void *easelcomm_hw_build_scatterlist(
     void __user *buf, uint32_t buf_size, uint32_t *scatterlist_size,
-    void **sglocaldata);
+    void **sglocaldata, enum easelcomm_dma_direction dma_dir);
 /* get block count from SG list, for determing if multi- or single-block */
 extern int easelcomm_hw_scatterlist_block_count(uint32_t scatterlist_size);
 /* get start address from SG list for single-block transfer */
 extern uint64_t easelcomm_hw_scatterlist_sblk_addr(void *sglist);
 /* destroy (and unmap pages pinned by) a scatter-gather list */
 extern void easelcomm_hw_destroy_scatterlist(void *sglocaldata);
-/* Easel builds multi-block DMA Linked List from local and remote SG lists */
+/*
+ * Easel builds multi-block DMA Linked List from local and remote SG lists.
+ *
+ * ll_data returns an opaque pointer passed to other calls.
+ */
 extern int easelcomm_hw_easel_build_ll(
-    void *src_sg, void *dest_sg, phys_addr_t *ll_addr);
+    void *src_sg, void *dest_sg, void **ll_data);
+/* Easel returns LL DMA address needed for multi-block transfer */
+extern uint64_t easelcomm_hw_easel_ll_addr(void *ll_data);
 /* Easel destroys MBLK DMA Linked List */
-extern int easelcomm_hw_easel_destroy_ll(phys_addr_t ll_addr);
+extern int easelcomm_hw_easel_destroy_ll(void *ll_data);
 /* AP performs a single-block DMA transfer */
 extern int easelcomm_hw_ap_dma_sblk_transfer(
         uint64_t ap_paddr, uint64_t easel_paddr, uint32_t xfer_len,

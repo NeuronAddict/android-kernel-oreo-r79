@@ -128,6 +128,7 @@ struct easelcomm_dma_xfer_arg {
 struct easelcomm_dma_done_arg {
         easelcomm_msgid_t message_id; /* local or remote message ID */
         uint32_t dma_dir;             /* DMA direction tells local/remote */
+        int32_t errcode;              /* DMA error code or zero if OK */
 };
 
 #endif /* _GOOGLE_EASEL_COMM_SHARED_H */
