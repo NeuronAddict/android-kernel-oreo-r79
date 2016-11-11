@@ -33,8 +33,8 @@
  * rules are compatible on both sides of the link.
  */
 
-/* command channel buffer size 16KB */
-#define EASELCOMM_CMD_CHANNEL_SIZE      (16 * 1024)
+/* command channel buffer size 100KB */
+#define EASELCOMM_CMD_CHANNEL_SIZE      (100 * 1024)
 
 /*
  * Command channel header at the top of each command channel buffer contains
