@@ -517,9 +517,14 @@ static int easelcomm_client_handle_dma_request(
 	if (ret || msg_metadata->dma_xfer.aborting)
 		goto abort;
 
-	/* If server discards/aborts the DMA request then done */
+	/*
+	 * If server discards/aborts the DMA request then done.  If
+	 * this is a client DMA send then silently discard.  If the
+	 * client is receiving a DMA buffer then return an error on
+	 * the read.
+	 */
 	if (msg_metadata->dma_xfer.xfer_type == EASELCOMM_DMA_XFER_ABORT)
-		return 0;
+		return dma_dir == EASELCOMM_DMA_DIR_TO_CLIENT ? -EIO : 0;
 
 	/* Single-Block or Multi-Block DMA? */
 	if (msg_metadata->dma_xfer.xfer_type == EASELCOMM_DMA_XFER_SBLK) {
