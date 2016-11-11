@@ -214,6 +214,15 @@ static const char *io_axi_reg_names[IO_AXI_NUM_REGS] = {
 	REG_NAME_ENTRY(MMU_PMON_CNT_1_STS)
 };
 
+int dump_io_apb_stats(struct paintbox_debug *debug, char *buf,
+		size_t len)
+{
+	struct paintbox_data *pb = debug->pb;
+
+	return snprintf(buf, len, "IPU interrupts: %u IRQ activations %u\n",
+			pb->io.ipu_interrupts, pb->io.irq_activations);
+}
+
 static inline int dump_io_axi_reg(struct paintbox_data *pb, uint32_t reg_offset,
 		char *buf, int *written, size_t len)
 {
@@ -296,19 +305,22 @@ static irqreturn_t paintbox_io_interrupt(int irq, void *arg)
 	struct paintbox_data *pb = (struct paintbox_data *)arg;
 	uint32_t status;
 
+	pb->io.irq_activations++;
+
 	status = readl(pb->io.apb_base + IPU_ISR);
 	if (status == 0)
 		return IRQ_NONE;
 
 	writel(status, pb->io.apb_base + IPU_ISR);
 
-	if (status & pb->io.dma_mask)
-		paintbox_dma_interrupt(pb, status & pb->io.dma_mask);
+	pb->io.ipu_interrupts++;
 
-	if (status & pb->io.stp_mask)
-		paintbox_stp_interrupt(pb, (status & pb->io.stp_mask) >>
-				pb->io.stp_start);
-
+	/* MIPI interrupts need to be processed before DMA interrupts so error
+	 * conditions like MIPI input overflow can be reported properly.  A
+	 * MIPI OVF interrupt will cause an early EOF on the associated DMA
+	 * channel.  This DMA EOF interrupt needs to be reported as an error and
+	 * not as a normal completion.
+	 */
 	if (status & pb->io.mipi_input_mask)
 		paintbox_mipi_input_interrupt(pb, (status &
 				pb->io.mipi_input_mask) >>
@@ -318,6 +330,13 @@ static irqreturn_t paintbox_io_interrupt(int irq, void *arg)
 		paintbox_mipi_output_interrupt(pb, (status &
 				pb->io.mipi_output_mask) >>
 				pb->io.mipi_output_start);
+
+	if (status & pb->io.dma_mask)
+		paintbox_dma_interrupt(pb, status & pb->io.dma_mask);
+
+	if (status & pb->io.stp_mask)
+		paintbox_stp_interrupt(pb, (status & pb->io.stp_mask) >>
+				pb->io.stp_start);
 
 	/* TODO(ahampson):  Check for BIF, and MMU interrupts */
 
@@ -353,13 +372,9 @@ void io_enable_dma_channel_interrupt(struct paintbox_data *pb,
 
 	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
 
-	pb->io.dma_imr |= 1 << channel_id;
-
-	if (!pb->io.dma_disabled) {
-		ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-		ipu_imr |= 1 << channel_id;
-		writel(ipu_imr, pb->io.apb_base + IPU_IMR);
-	}
+	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
+	ipu_imr |= 1 << channel_id;
+	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
 
 	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
 }
@@ -372,13 +387,9 @@ void io_disable_dma_channel_interrupt(struct paintbox_data *pb,
 
 	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
 
-	pb->io.dma_imr &= ~(1 << channel_id);
-
-	if (!pb->io.dma_disabled) {
-		ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-		ipu_imr &= ~(1 << channel_id);
-		writel(ipu_imr, pb->io.apb_base + IPU_IMR);
-	}
+	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
+	ipu_imr &= ~(1 << channel_id);
+	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
 
 	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
 }
@@ -419,13 +430,9 @@ static void io_enable_mipi_interface_interrupt(struct paintbox_data *pb,
 
 	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
 
-	pb->io.mipi_imr |= 1 << interface_offset;
-
-	if (!pb->io.mipi_disabled) {
-		ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-		ipu_imr |= 1 << interface_offset;
-		writel(ipu_imr, pb->io.apb_base + IPU_IMR);
-	}
+	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
+	ipu_imr |= 1 << interface_offset;
+	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
 
 	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
 }
@@ -438,13 +445,9 @@ static void io_disable_mipi_interface_interrupt(struct paintbox_data *pb,
 
 	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
 
-	pb->io.mipi_imr &= ~(1 << interface_offset);
-
-	if (!pb->io.mipi_disabled) {
-		ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-		ipu_imr &= ~(1 << interface_offset);
-		writel(ipu_imr, pb->io.apb_base + IPU_IMR);
-	}
+	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
+	ipu_imr &= ~(1 << interface_offset);
+	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
 
 	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
 }
@@ -477,77 +480,13 @@ void io_disable_mipi_output_interface_interrupt(struct paintbox_data *pb,
 			pb->io.mipi_output_start);
 }
 
-void io_disable_dma_interrupts(struct paintbox_data *pb)
-{
-	unsigned long irq_flags;
-	uint32_t ipu_imr;
-
-	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
-
-	pb->io.dma_disabled = true;
-
-	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-	ipu_imr &= ~pb->io.dma_imr;
-	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
-
-	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
-}
-
-void io_enable_dma_interrupts(struct paintbox_data *pb)
-{
-	unsigned long irq_flags;
-	uint32_t ipu_imr;
-
-	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
-
-	pb->io.dma_disabled = false;
-
-	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-	ipu_imr |= pb->io.dma_imr;
-	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
-
-	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
-}
-
-void io_disable_mipi_interrupts(struct paintbox_data *pb)
-{
-	unsigned long irq_flags;
-	uint32_t ipu_imr;
-
-	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
-
-	pb->io.mipi_disabled = true;
-
-	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-	ipu_imr &= ~(pb->io.mipi_input_mask | pb->io.mipi_output_mask);
-	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
-
-	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
-}
-
-void io_enable_mipi_interrupts(struct paintbox_data *pb)
-{
-	unsigned long irq_flags;
-	uint32_t ipu_imr;
-
-	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
-
-	pb->io.mipi_disabled = false;
-
-	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-	ipu_imr |= pb->io.mipi_imr;
-	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
-
-	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
-}
-
 int paintbox_io_axi_init(struct paintbox_data *pb)
 {
 	pb->io.axi_base = pb->reg_base + IPU_IO_AXI_OFFSET;
 
 #ifdef CONFIG_DEBUG_FS
 	paintbox_debug_create_entry(pb, &pb->io.axi_debug, pb->debug_root,
-			"axi", -1, dump_io_axi_registers, &pb->io);
+			"axi", -1, dump_io_axi_registers, NULL, &pb->io);
 
 	paintbox_debug_create_reg_entries(pb, &pb->io.axi_debug,
 			io_axi_reg_names, IO_AXI_NUM_REGS,
@@ -574,7 +513,8 @@ int paintbox_io_apb_init(struct paintbox_data *pb)
 
 #ifdef CONFIG_DEBUG_FS
 	paintbox_debug_create_entry(pb, &pb->io.apb_debug, pb->debug_root,
-			"apb", -1, dump_io_apb_registers, &pb->io);
+			"apb", -1, dump_io_apb_registers, dump_io_apb_stats,
+			&pb->io);
 
 	paintbox_debug_create_reg_entries(pb, &pb->io.apb_debug,
 			io_apb_reg_names, IO_APB_NUM_REGS,

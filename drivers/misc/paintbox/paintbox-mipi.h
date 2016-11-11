@@ -37,16 +37,9 @@ int enable_mipi_stream_ioctl(struct paintbox_data *pb,
 int disable_mipi_stream_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg,
 		bool is_input);
-int reset_mipi_stream_ioctl(struct paintbox_data *pb,
-		struct paintbox_session *session, unsigned long arg,
-		bool is_input);
+int get_mipi_frame_number_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg);
 int cleanup_mipi_stream_ioctl(struct paintbox_data *pb,
-		struct paintbox_session *session, unsigned long arg,
-		bool is_input);
-int enable_mipi_interrupt_ioctl(struct paintbox_data *pb,
-		struct paintbox_session *session, unsigned long arg,
-		bool is_input);
-int disable_mipi_interrupt_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg,
 		bool is_input);
 int wait_for_mipi_interrupt_ioctl(struct paintbox_data *pb,
@@ -59,26 +52,46 @@ int unbind_mipi_interrupt_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg,
 		bool is_input);
 
-/* The caller to this functions must hold pb->lock */
+/* The caller to this function must hold pb->lock */
 void release_mipi_stream(struct paintbox_data *pb,
 		struct paintbox_session *session,
 		struct paintbox_mipi_stream *stream);
 
-/* The caller to this functions must hold pb->lock */
-void mipi_dma_channel_allocated(struct paintbox_data *pb,
-			struct paintbox_session *session,
-			struct paintbox_dma_channel *channel);
+/* The caller to this function must hold pb->lock */
+struct paintbox_mipi_stream *mipi_handle_dma_channel_allocated(
+		struct paintbox_data *pb, struct paintbox_session *session,
+		struct paintbox_dma_channel *channel);
 
-/* The caller to this functions must hold pb->lock */
-void mipi_dma_channel_released(struct paintbox_data *pb,
-		struct paintbox_session *session,
+/* The caller to this function must hold pb->lock */
+void mipi_handle_dma_channel_released(struct paintbox_data *pb,
 		struct paintbox_mipi_stream *stream);
 
+/* The caller to this function must hold pb->lock */
+void cleanup_mipi_stream(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream);
+
+/* The caller to this function must hold pb->lock. */
+void mipi_request_cleanup(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream);
+
+/* The caller to this function must hold pb->lock. */
+int verify_cleanup_completion(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream);
+
+/* This function must be called from an interrupt context. */
 irqreturn_t paintbox_mipi_input_interrupt(struct paintbox_data *pb,
 		uint32_t stream_mask);
+
+/* This function must be called from an interrupt context. */
 irqreturn_t paintbox_mipi_output_interrupt(struct paintbox_data *pb,
 		uint32_t stream_mask);
 
 int paintbox_mipi_init(struct paintbox_data *pb);
+
+#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
+int mipi_test_stream_reset_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg,
+		bool is_input);
+#endif
 
 #endif  /* __PAINTBOX_MIPI_H__ */

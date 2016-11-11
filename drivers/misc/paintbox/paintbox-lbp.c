@@ -1057,7 +1057,7 @@ static int init_lbp(struct paintbox_data *pb, unsigned int lbp_index)
 
 #ifdef CONFIG_DEBUG_FS
 	paintbox_debug_create_entry(pb, &lbp->debug, pb->debug_root, "lbp",
-			lbp->pool_id, dump_lbp_registers, lbp);
+			lbp->pool_id, dump_lbp_registers, NULL, lbp);
 
 	paintbox_debug_create_reg_entries(pb, &lbp->debug, lbp_reg_names,
 			LBP_POOL_NUM_REGS, lbp_reg_entry_write,
@@ -1072,7 +1072,7 @@ static int init_lbp(struct paintbox_data *pb, unsigned int lbp_index)
 #ifdef CONFIG_DEBUG_FS
 		paintbox_debug_create_entry(pb, &lb->debug,
 				lbp->debug.debug_dir, "lb", lb->lb_id,
-				dump_lb_registers, lb);
+				dump_lb_registers, NULL, lb);
 
 		paintbox_debug_create_reg_entries(pb, &lb->debug,
 				&lbp_reg_names[REG_INDEX(LB_BLOCK_START)],

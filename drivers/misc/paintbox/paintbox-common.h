@@ -33,6 +33,16 @@
  */
 #define FPGA_HARDWARE_ID     6
 
+/* This timeout is the minimum wait time for a MIPI stream cleanup to
+ * complete.
+ */
+#define MIPI_CLEANUP_TIMEOUT_US 200
+
+/* This timeout is the minimum wait time for a DMA stop operation to complete
+ * before resetting the channel.
+ */
+#define DMA_STOP_TIMEOUT_US 500
+
 struct paintbox_data;
 
 /* Data structure for all information related to a paintbox session.  A session
@@ -52,7 +62,9 @@ struct paintbox_debug_reg_entry;
 struct paintbox_debug;
 
 typedef int (*register_dump_t)(struct paintbox_debug *debug, char *buf,
-			size_t len);
+		size_t len);
+typedef int (*stats_dump_t)(struct paintbox_debug *debug, char *buf,
+		size_t len);
 
 typedef void (*register_write_t)(struct paintbox_debug_reg_entry *reg_entry,
 		uint64_t val);
@@ -76,6 +88,9 @@ struct paintbox_debug {
 	 */
 	struct dentry *reg_dump_dentry;
 
+	/* Debug FS entry used for dumping statistics in a block. */
+	struct dentry *stats_dump_dentry;
+
 	/* Array of Debug FS entries sized to number of registers in the block.
 	 * (STP, LBP, etc.).  Each entry is used for read and write access
 	 * to an individual register in the block.
@@ -85,6 +100,7 @@ struct paintbox_debug {
 	const char *name;
 	int resource_id;
 	register_dump_t register_dump;
+	stats_dump_t stats_dump;
 };
 
 struct paintbox_io {
@@ -92,6 +108,8 @@ struct paintbox_io {
 	struct paintbox_debug apb_debug;
 	void __iomem *axi_base;
 	void __iomem *apb_base;
+	unsigned int ipu_interrupts;
+	unsigned int irq_activations;
 	int irq;
 	unsigned int stp_start;
 	unsigned int bif_start;
@@ -104,10 +122,6 @@ struct paintbox_io {
 	uint32_t mmu_mask;
 	uint32_t mipi_input_mask;
 	uint32_t mipi_output_mask;
-	uint32_t dma_imr;
-	uint32_t mipi_imr;
-	bool dma_disabled;
-	bool mipi_disabled;
 
 	/* io_lock is used to protect the interrupt control registers */
 	spinlock_t io_lock;
@@ -116,6 +130,11 @@ struct paintbox_io {
 struct paintbox_mipi_interface {
 	unsigned int interface_id;
 	unsigned int num_streams;
+	unsigned int inf_interrupts;
+
+	/* protected by pb->io_ipu.mipi_lock */
+	unsigned int active_stream_mask;
+
 	struct paintbox_mipi_stream **streams;
 };
 
@@ -131,15 +150,37 @@ struct paintbox_mipi_stream {
 	struct paintbox_session *session;
 	struct paintbox_mipi_interface *interface;
 	struct paintbox_irq *irq;
-	struct paintbox_dma_channel *dma_channel;
 	struct paintbox_data *pb;
-	unsigned long irq_flags;
+
+	/* protected by pb->lock and pb->io_ipu.mipi_lock */
+	struct paintbox_dma_channel *dma_channel;
+
+	/* workqueue enqueue and cancel operations must be done with
+	 * pb->io_ipu.mipi_lock held.
+	 */
+	struct delayed_work cleanup_work;
+
 	unsigned int stream_id;
+	union {
+		struct {
+			unsigned int sof_interrupts;
+			unsigned int ovf_interrupts;
+		} input;
+		struct {
+			unsigned int eof_interrupts;
+		} output;
+	} stats;
 	uint32_t ctrl_offset;
 	uint32_t select_offset;
+	int32_t frame_count;
 	int error;
 	bool is_input;
 	bool enabled;
+	bool free_running;
+
+	/* protected by pb->io_ipu.mipi_lock */
+	bool cleanup_in_progress;
+	bool is_clean;
 };
 
 struct paintbox_io_ipu {
@@ -165,6 +206,16 @@ enum paintbox_irq_src {
 	IRQ_SRC_MIPI_IN_STREAM,
 	IRQ_SRC_MIPI_OUT_STREAM
 };
+
+/* It is possible that multiple interrupts for the an IRQ wait object may occur
+ * during the wait period.  This could happen with MIPI overflow interrupts
+ * where the MIPI interrupt may be triggered for the SOF and for the overflow
+ * event.  The value for this define should be sufficient to hold the number of
+ * interrupts that can occur between the first interrupt and when the runtime
+ * thread can be woken up.  If too may interrupts occur in the wait period then
+ * a kernel warning will be generated.
+ */
+#define IRQ_MAX_PER_WAIT_PERIOD 10
 
 /* Data structure for information specific to an interrupt.
  * One entry will be allocated for each interrupt in the IPU's interrupt mask.
@@ -193,7 +244,10 @@ struct paintbox_irq {
 		struct paintbox_stp *stp;
 		struct paintbox_mipi_stream *mipi_stream;
 	};
-	int error;
+
+	/* The fields below are protected by pb->irq_lock */
+	unsigned int interrupt_count;
+	int error[IRQ_MAX_PER_WAIT_PERIOD];
 	int wait_count;
 };
 
@@ -225,7 +279,10 @@ struct paintbox_dma_transfer {
 	uint32_t chan_noc_xfer_low;
 	uint32_t chan_noc_xfer_high;
 	uint32_t chan_node;
+
+	/* error is protected by pb->dma.dma_lock */
 	int error;
+
 	enum dma_data_direction dir;
 	bool notify_on_completion;
 	bool auto_load_transfer;
@@ -247,7 +304,10 @@ struct paintbox_dma_channel {
 
 	struct paintbox_debug debug;
 	struct paintbox_session *session;
+
+	/* protected by pb->lock and pb->dma.dma_lock */
 	struct paintbox_mipi_stream *mipi_stream;
+
 	struct completion stop_completion;
 	unsigned int channel_id;
 	struct paintbox_irq *irq;
@@ -265,6 +325,14 @@ struct paintbox_dma_channel {
 	int active_count;
 	int completed_count;
 	bool stop_request;
+
+	struct {
+		unsigned int irq_activations;
+		unsigned int eof_interrupts;
+		unsigned int va_interrupts;
+		unsigned int reported_completions;
+		unsigned int reported_discards;
+	} stats;
 };
 
 struct paintbox_dma {
@@ -301,6 +369,7 @@ struct paintbox_stp {
 	struct paintbox_session *session;
 	struct paintbox_irq *irq;
 	unsigned int stp_id;
+	unsigned int interrupt_count;
 	unsigned int inst_mem_size_in_instructions;
 	unsigned int scalar_mem_size_in_words;
 	unsigned int const_mem_size_in_words;

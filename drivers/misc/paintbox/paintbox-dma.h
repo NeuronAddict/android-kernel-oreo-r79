@@ -61,33 +61,47 @@ int flush_dma_transfers_ioctl(struct paintbox_data *pb,
 
 int paintbox_dma_init(struct paintbox_data *pb);
 
+/* This function must be called in an interrupt context */
 irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 		uint32_t channel_mask);
 
-/* The caller to these functions must hold pb->lock */
+/* This function must be called in an interrupt context */
+void dma_set_mipi_error(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel, int err);
+
+/* The caller to this function must hold pb->lock */
 int validate_dma_channel(struct paintbox_data *pb,
 		struct paintbox_session *session, uint8_t channel_id);
 
+/* The caller to this function must hold pb->lock */
 struct paintbox_dma_channel *get_dma_channel(struct paintbox_data *pb,
 		struct paintbox_session *session, uint8_t channel_id, int *err);
 
+/* The caller to this function must hold pb->lock */
 void release_dma_channel(struct paintbox_data *pb,
 		struct paintbox_session *session,
 		struct paintbox_dma_channel *dma);
 
+/* The caller to this function must hold pb->lock */
+void dma_reset_channel(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel);
+
+/* The caller to this function must hold pb->lock */
 int dma_start_transfer(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel);
 
+/* The caller to this function must hold pb->lock */
 void dma_stop_transfer(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel);
 
-int dma_mipi_stream_allocated(struct paintbox_data *pb,
-			struct paintbox_session *session,
-			struct paintbox_mipi_stream *stream,
-			unsigned int channel_id);
+/* The caller to this function must hold pb->lock */
+struct paintbox_dma_channel *dma_handle_mipi_stream_allocated(
+		struct paintbox_data *pb, struct paintbox_session *session,
+		struct paintbox_mipi_stream *stream, unsigned int channel_id,
+		int *ret);
 
-void dma_mipi_stream_released(struct paintbox_data *pb,
-		struct paintbox_session *session,
+/* The caller to this function must hold pb->lock */
+void dma_handle_mipi_stream_released(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel);
 
 #ifdef CONFIG_PAINTBOX_TEST_SUPPORT

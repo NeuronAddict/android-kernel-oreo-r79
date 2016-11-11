@@ -98,7 +98,17 @@ static uint64_t dma_reg_entry_read(struct paintbox_debug_reg_entry *reg_entry)
 	struct paintbox_debug *debug = reg_entry->debug;
 	struct paintbox_dma *dma = container_of(debug, struct paintbox_dma,
 			debug);
-	return readl(dma->dma_base + reg_entry->reg_offset);
+	struct paintbox_data *pb = debug->pb;
+	unsigned long irq_flags;
+	uint64_t val;
+
+	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
+
+	val = readl(dma->dma_base + reg_entry->reg_offset);
+
+	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
+
+	return val;
 }
 
 static void dma_reg_entry_write(struct paintbox_debug_reg_entry *reg_entry,
@@ -107,7 +117,14 @@ static void dma_reg_entry_write(struct paintbox_debug_reg_entry *reg_entry,
 	struct paintbox_debug *debug = reg_entry->debug;
 	struct paintbox_dma *dma = container_of(debug, struct paintbox_dma,
 			debug);
+	struct paintbox_data *pb = debug->pb;
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
+
 	writel(val, dma->dma_base + reg_entry->reg_offset);
+
+	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 }
 
 static uint64_t dma_channel_reg_entry_read(
@@ -117,13 +134,18 @@ static uint64_t dma_channel_reg_entry_read(
 	struct paintbox_dma_channel *channel = container_of(debug,
 			struct paintbox_dma_channel, debug);
 	struct paintbox_data *pb = debug->pb;
+	unsigned long irq_flags;
 	uint64_t val;
 
 	mutex_lock(&pb->lock);
 
+	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
+
 	dma_select_channel(pb, channel->channel_id);
 	val = readl(pb->dma.dma_base + DMA_CHAN_BLOCK_START +
 		reg_entry->reg_offset);
+
+	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 
 	mutex_unlock(&pb->lock);
 
@@ -137,31 +159,37 @@ static void dma_channel_reg_entry_write(
 	struct paintbox_dma_channel *channel = container_of(debug,
 			struct paintbox_dma_channel, debug);
 	struct paintbox_data *pb = debug->pb;
+	unsigned long irq_flags;
 
 	mutex_lock(&pb->lock);
+
+	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
 
 	dma_select_channel(pb, channel->channel_id);
 	writel(val, pb->dma.dma_base + DMA_CHAN_BLOCK_START +
 		reg_entry->reg_offset);
 
+	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
+
 	mutex_unlock(&pb->lock);
 }
 
 static inline int dump_dma_reg(struct paintbox_data *pb, uint32_t reg_offset,
-		char *buf, int *written, size_t len)
+		uint32_t reg_value, char *buf, int *written, size_t len)
 {
 	const char *reg_name = dma_reg_names[REG_INDEX(reg_offset)];
-	return dump_ipu_register(pb, pb->dma.dma_base, reg_offset, reg_name,
-			buf, written, len);
+	return dump_ipu_register_with_value(pb, pb->dma.dma_base, reg_offset,
+			reg_value, reg_name, buf, written, len);
 }
 
 static int dump_dma_reg_verbose(struct paintbox_data *pb, uint32_t reg_offset,
-		char *buf, int *written, size_t len, const char *format, ...)
+		uint32_t reg_value, char *buf, int *written, size_t len,
+		const char *format, ...)
 {
 	va_list args;
 	int ret;
 
-	ret = dump_dma_reg(pb, reg_offset, buf, written, len);
+	ret = dump_dma_reg(pb, reg_offset, reg_value, buf, written, len);
 	if (ret < 0)
 		return ret;
 
@@ -189,16 +217,33 @@ static inline const char *dma_swizzle_to_str(uint32_t val)
 	};
 }
 
+/* The caller to this function must hold pb->lock */
 int dump_dma_registers(struct paintbox_debug *debug, char *buf, size_t len)
 {
+	uint32_t dma_ctrl_registers[DMA_CTRL_NUM_REGS];
+	uint32_t dma_stat_registers[DMA_STAT_NUM_REGS];
 	struct paintbox_data *pb = debug->pb;
 	uint32_t val, axi_swizzle;
-	unsigned int i;
+	unsigned long irq_flags;
+	unsigned int i, reg_offset;
 	int ret, written = 0;
 
-	val = readl(pb->dma.dma_base + DMA_CTRL);
+	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
+
+	for (reg_offset = DMA_CTRL; reg_offset < DMA_CTRL_BLOCK_END;
+			reg_offset += IPU_REG_WIDTH) {
+		if (!dma_reg_names[REG_INDEX(reg_offset)])
+			continue;
+
+		dma_ctrl_registers[REG_INDEX(reg_offset)] =
+				readl(pb->dma.dma_base + reg_offset);
+	}
+
+	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
+
+	val = dma_ctrl_registers[REG_INDEX(DMA_CTRL)];
 	axi_swizzle = (val & DMA_AXI_SWIZZLE_MASK) >> DMA_AXI_SWIZZLE_SHIFT;
-	ret = dump_dma_reg_verbose(pb, DMA_CTRL, buf, &written, len,
+	ret = dump_dma_reg_verbose(pb, DMA_CTRL, val, buf, &written, len,
 			"\tAXI_SWIZZLE %s DMA_CHAN_SEL 0x%02x RESET %d\n",
 			dma_swizzle_to_str(axi_swizzle),
 			(val & DMA_CHAN_SEL_MASK) >> DMA_CHAN_SEL_SHIFT,
@@ -206,8 +251,8 @@ int dump_dma_registers(struct paintbox_debug *debug, char *buf, size_t len)
 	if (ret < 0)
 		goto err_exit;
 
-	val = readl(pb->dma.dma_base + DMA_CHAN_CTRL_L);
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_CTRL_L, buf, &written, len,
+	val = dma_ctrl_registers[REG_INDEX(DMA_CHAN_CTRL_L)];
+	ret = dump_dma_reg_verbose(pb, DMA_CHAN_CTRL_L, val, buf, &written, len,
 			"\tDOUBLE_BUF 0x%04x CHAN_RESET 0x%04x\n",
 			(val & DMA_CHAN_DOUBLE_BUF_MASK) >>
 					DMA_CHAN_DOUBLE_BUF_SHIFT,
@@ -215,14 +260,14 @@ int dump_dma_registers(struct paintbox_debug *debug, char *buf, size_t len)
 	if (ret < 0)
 		goto err_exit;
 
-	val = readl(pb->dma.dma_base + DMA_CHAN_CTRL_H);
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_CTRL_H, buf, &written, len,
+	val = dma_ctrl_registers[REG_INDEX(DMA_CHAN_CTRL_H)];
+	ret = dump_dma_reg_verbose(pb, DMA_CHAN_CTRL_H, val, buf, &written, len,
 			"\tSTOP 0x%04x\n", val & DMA_STOP_MASK);
 	if (ret < 0)
 		goto err_exit;
 
-	val = readl(pb->dma.dma_base + DMA_CAP0);
-	ret = dump_dma_reg_verbose(pb, DMA_CAP0, buf, &written, len,
+	val = dma_ctrl_registers[REG_INDEX(DMA_CAP0)];
+	ret = dump_dma_reg_verbose(pb, DMA_CAP0, val, buf, &written, len,
 			"\tMAX_DMA_CHAN %u\n", val & MAX_DMA_CHAN_MASK);
 	if (ret < 0)
 		goto err_exit;
@@ -230,17 +275,34 @@ int dump_dma_registers(struct paintbox_debug *debug, char *buf, size_t len)
 	for (i = REG_INDEX(DMA_PMON_CFG); i <= REG_INDEX(DMA_PMON_CNT_3_STS);
 			i++) {
 		if (dma_reg_names[i] != NULL) {
-			ret = dump_dma_reg(pb, i * IPU_REG_WIDTH, buf,
+			val = dma_ctrl_registers[i];
+			ret = dump_dma_reg(pb, i * IPU_REG_WIDTH, val, buf,
 					&written, len);
 			if (ret < 0)
 				goto err_exit;
 		}
 	}
 
+	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
+
+	for (reg_offset = DMA_STAT_BLOCK_START; reg_offset < DMA_STAT_BLOCK_END;
+			reg_offset += IPU_REG_WIDTH) {
+		if (!dma_reg_names[REG_INDEX(reg_offset)])
+			continue;
+
+		dma_stat_registers[REG_INDEX(reg_offset -
+				DMA_STAT_BLOCK_START)] =
+				readl(pb->dma.dma_base + reg_offset);
+	}
+
+	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
+
 	for (i = REG_INDEX(DMA_STAT_BLOCK_START);
 			i < REG_INDEX(DMA_STAT_BLOCK_END); i++) {
 		if (dma_reg_names[i] != NULL) {
-			ret = dump_dma_reg(pb, i * IPU_REG_WIDTH, buf,
+			val = dma_stat_registers[i -
+					REG_INDEX(DMA_STAT_BLOCK_START)];
+			ret = dump_dma_reg(pb, i * IPU_REG_WIDTH, val, buf,
 					&written, len);
 			if (ret < 0)
 				goto err_exit;
@@ -323,18 +385,35 @@ static inline const char *dma_rgba_to_str(uint32_t val)
 int dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
 			size_t len)
 {
+	uint32_t dma_channel_registers[DMA_CHAN_NUM_REGS];
 	struct paintbox_dma_channel *channel = container_of(debug,
 			struct paintbox_dma_channel, debug);
 	struct paintbox_data *pb = debug->pb;
+	unsigned long irq_flags;
 	uint64_t va, va_bdry, plane_stride;
 	uint32_t val, row_stride;
-	unsigned int i;
+	unsigned int i, reg_offset;
 	int ret, written = 0;
+
+	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
 
 	dma_select_channel(pb, channel->channel_id);
 
-	val = readl(pb->dma.dma_base + DMA_CHAN_MODE);
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_MODE, buf, &written, len,
+	for (reg_offset = DMA_CHAN_BLOCK_START; reg_offset < DMA_CHAN_BLOCK_END;
+			reg_offset += IPU_REG_WIDTH) {
+		if (!dma_reg_names[REG_INDEX(reg_offset)])
+			continue;
+
+		dma_channel_registers[REG_INDEX(reg_offset -
+				DMA_CHAN_BLOCK_START)] =
+				readl(pb->dma.dma_base + reg_offset);
+	}
+
+	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
+
+	val = dma_channel_registers[REG_INDEX(DMA_CHAN_MODE -
+			DMA_CHAN_BLOCK_START)];
+	ret = dump_dma_reg_verbose(pb, DMA_CHAN_MODE, val, buf, &written, len,
 			"\tGATHER %u ADDR_MODE %s DST %s SRC %s ENA %u\n",
 			!!(val & DMA_CHAN_GATHER),
 			val & DMA_CHAN_ADDR_MODE_PHYSICAL ? "PHYSICAL" :
@@ -345,8 +424,10 @@ int dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
 	if (ret < 0)
 		goto err_exit;
 
-	val = readl(pb->dma.dma_base + DMA_CHAN_IMG_FORMAT);
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_IMG_FORMAT, buf, &written, len,
+	val = dma_channel_registers[REG_INDEX(DMA_CHAN_IMG_FORMAT -
+			DMA_CHAN_BLOCK_START)];
+	ret = dump_dma_reg_verbose(pb, DMA_CHAN_IMG_FORMAT, val, buf, &written,
+			len,
 			"\tBLOCK_4x4 %u RGBA %s MIPI_RAW_FORMAT %d BIT DEPTH %u"
 			" PLANES %u COMPONENTS %u\n",
 			!!(val & DMA_CHAN_BLOCK_4X4),
@@ -359,8 +440,10 @@ int dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
 	if (ret < 0)
 		goto err_exit;
 
-	val = readl(pb->dma.dma_base + DMA_CHAN_IMG_SIZE);
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_IMG_SIZE, buf, &written, len,
+	val = dma_channel_registers[REG_INDEX(DMA_CHAN_IMG_SIZE -
+			DMA_CHAN_BLOCK_START)];
+	ret = dump_dma_reg_verbose(pb, DMA_CHAN_IMG_SIZE, val, buf, &written,
+			len,
 			"\tIMG_HEIGHT %u IMG_WIDTH %u\n",
 			(val & DMA_CHAN_IMG_HEIGHT_MASK) >>
 					DMA_CHAN_IMG_HEIGHT_SHIFT,
@@ -368,78 +451,91 @@ int dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
 	if (ret < 0)
 		goto err_exit;
 
-	val = readl(pb->dma.dma_base + DMA_CHAN_IMG_POS_L);
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_IMG_POS_L, buf, &written, len,
-			"\tSTART_Y %u START_X %u\n",
+	val = dma_channel_registers[REG_INDEX(DMA_CHAN_IMG_POS_L -
+			DMA_CHAN_BLOCK_START)];
+	ret = dump_dma_reg_verbose(pb, DMA_CHAN_IMG_POS_L, val, buf, &written,
+			len, "\tSTART_Y %u START_X %u\n",
 			(val & DMA_CHAN_START_Y_MASK) >> DMA_CHAN_START_Y_SHIFT,
 			val & DMA_CHAN_START_X_MASK);
 	if (ret < 0)
 		goto err_exit;
 
-	val = readl(pb->dma.dma_base + DMA_CHAN_IMG_POS_H);
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_IMG_POS_H, buf, &written, len,
-			"\tLB_START_Y %d LB_START_X %d\n",
+	val = dma_channel_registers[REG_INDEX(DMA_CHAN_IMG_POS_H -
+			DMA_CHAN_BLOCK_START)];
+	ret = dump_dma_reg_verbose(pb, DMA_CHAN_IMG_POS_H, val, buf, &written,
+			len, "\tLB_START_Y %d LB_START_X %d\n",
 			(int16_t)((val & DMA_CHAN_LB_START_Y_MASK) >>
 					DMA_CHAN_LB_START_Y_SHIFT),
 			(int16_t)(val & DMA_CHAN_LB_START_X_MASK));
 	if (ret < 0)
 		goto err_exit;
 
-	ret = dump_dma_reg(pb, DMA_CHAN_IMG_LAYOUT_L, buf, &written, len);
+	val = dma_channel_registers[REG_INDEX(DMA_CHAN_IMG_LAYOUT_L -
+			DMA_CHAN_BLOCK_START)];
+	ret = dump_dma_reg(pb, DMA_CHAN_IMG_LAYOUT_L, val, buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
-
-	val = readl(pb->dma.dma_base + DMA_CHAN_IMG_LAYOUT_L);
 
 	row_stride = val & DMA_CHAN_ROW_STRIDE_MASK;
 	plane_stride = (val & DMA_CHAN_PLANE_STRIDE_LOW_MASK) >>
 			DMA_CHAN_PLANE_STRIDE_LOW_SHIFT;
 
-	val = readl(pb->dma.dma_base + DMA_CHAN_IMG_LAYOUT_H);
+	val = dma_channel_registers[REG_INDEX(DMA_CHAN_IMG_LAYOUT_H -
+			DMA_CHAN_BLOCK_START)];
 
 	plane_stride |= (uint64_t)(val & DMA_CHAN_PLANE_STRIDE_HIGH_MASK) <<
 			DMA_CHAN_PLANE_STRIDE_LOW_WIDTH;
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_IMG_LAYOUT_H, buf, &written,
-			len, "\tROW_STRIDE %u PLANE_STRIDE %llu\n", row_stride,
-			plane_stride);
+	ret = dump_dma_reg_verbose(pb, DMA_CHAN_IMG_LAYOUT_H, val, buf,
+			&written, len, "\tROW_STRIDE %u PLANE_STRIDE %llu\n",
+			row_stride, plane_stride);
 	if (ret < 0)
 		goto err_exit;
 
-	val = readl(pb->dma.dma_base + DMA_CHAN_BIF_XFER);
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_BIF_XFER, buf, &written, len,
-			"\tOUTSTANDING %u STRIPE_HEIGHT %u\n",
+	val = dma_channel_registers[REG_INDEX(DMA_CHAN_BIF_XFER -
+			DMA_CHAN_BLOCK_START)];
+	ret = dump_dma_reg_verbose(pb, DMA_CHAN_BIF_XFER, val, buf, &written,
+			len, "\tOUTSTANDING %u STRIPE_HEIGHT %u\n",
 			(val & DMA_CHAN_OUTSTANDING_MASK) >>
 					DMA_CHAN_OUTSTANDING_SHIFT,
 			val & DMA_CHAN_STRIPE_HEIGHT_MASK);
 	if (ret < 0)
 		goto err_exit;
 
-	ret = dump_dma_reg(pb, DMA_CHAN_VA_L, buf, &written, len);
+	val = dma_channel_registers[REG_INDEX(DMA_CHAN_VA_L -
+			DMA_CHAN_BLOCK_START)];
+	ret = dump_dma_reg(pb, DMA_CHAN_VA_L, val, buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	va = readl(pb->dma.dma_base + DMA_CHAN_VA_L);
-	va |= ((uint64_t)readl(pb->dma.dma_base + DMA_CHAN_VA_H)) <<
-			32;
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_VA_H, buf, &written, len,
+	va = dma_channel_registers[REG_INDEX(DMA_CHAN_VA_L -
+			DMA_CHAN_BLOCK_START)];
+	va |= ((uint64_t)dma_channel_registers[REG_INDEX(DMA_CHAN_VA_H -
+			DMA_CHAN_BLOCK_START)]) << 32;
+	ret = dump_dma_reg_verbose(pb, DMA_CHAN_VA_H, val, buf, &written, len,
 			"\tVA 0x%016llx\n", va);
 	if (ret < 0)
 		goto err_exit;
 
-	ret = dump_dma_reg(pb, DMA_CHAN_VA_BDRY_L, buf, &written, len);
+	val = dma_channel_registers[REG_INDEX(DMA_CHAN_VA_BDRY_L -
+			DMA_CHAN_BLOCK_START)];
+	ret = dump_dma_reg(pb, DMA_CHAN_VA_BDRY_L, val, buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	va_bdry = readl(pb->dma.dma_base + DMA_CHAN_VA_BDRY_L);
-	va_bdry |= ((uint64_t)readl(pb->dma.dma_base + DMA_CHAN_VA_BDRY_H)) <<
-			32;
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_VA_BDRY_H, buf, &written, len,
-			"\tVA BDRY %llu\n", va_bdry);
+	va_bdry = dma_channel_registers[REG_INDEX(DMA_CHAN_VA_BDRY_L -
+			DMA_CHAN_BLOCK_START)];
+	va_bdry |= ((uint64_t)dma_channel_registers[
+			REG_INDEX(DMA_CHAN_VA_BDRY_H -
+			DMA_CHAN_BLOCK_START)]) << 32;
+	ret = dump_dma_reg_verbose(pb, DMA_CHAN_VA_BDRY_H, val, buf, &written,
+			len, "\tVA BDRY %llu\n", va_bdry);
 	if (ret < 0)
 		goto err_exit;
 
-	val = readl(pb->dma.dma_base + DMA_CHAN_NOC_XFER_L);
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_NOC_XFER_L, buf, &written, len,
+	val = dma_channel_registers[REG_INDEX(DMA_CHAN_NOC_XFER_L -
+			DMA_CHAN_BLOCK_START)];
+	ret = dump_dma_reg_verbose(pb, DMA_CHAN_NOC_XFER_L, val, buf, &written,
+			len,
 			"\tOUTSTANDING %u SHEET_HEIGHT %u SHEET_WIDTH %u\n",
 			(val & DMA_CHAN_NOC_OUTSTANDING_MASK) >>
 					DMA_CHAN_NOC_OUTSTANDING_SHIFT,
@@ -449,16 +545,18 @@ int dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
 	if (ret < 0)
 		goto err_exit;
 
-	val = readl(pb->dma.dma_base + DMA_CHAN_NOC_XFER_H);
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_NOC_XFER_H, buf, &written, len,
-			"\tDYN_OUTSTANDING %d RETRY_INTERVAL %u\n",
+	val = dma_channel_registers[REG_INDEX(DMA_CHAN_NOC_XFER_H -
+			DMA_CHAN_BLOCK_START)];
+	ret = dump_dma_reg_verbose(pb, DMA_CHAN_NOC_XFER_H, val, buf, &written,
+			len, "\tDYN_OUTSTANDING %d RETRY_INTERVAL %u\n",
 			!!(val & DMA_CHAN_NOC_XFER_DYN_OUTSTANDING_MASK),
 			val & DMA_CHAN_RETRY_INTERVAL_MASK);
 	if (ret < 0)
 		goto err_exit;
 
-	val = readl(pb->dma.dma_base + DMA_CHAN_NODE);
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_NODE, buf, &written, len,
+	val = dma_channel_registers[REG_INDEX(DMA_CHAN_NODE -
+			DMA_CHAN_BLOCK_START)];
+	ret = dump_dma_reg_verbose(pb, DMA_CHAN_NODE, val, buf, &written, len,
 			"\tCORE_ID %u LB_ID %u RPTR_ID %u\n",
 			val & DMA_CHAN_CORE_ID_MASK,
 			(val & DMA_CHAN_LB_ID_MASK) >> DMA_CHAN_LB_ID_SHIFT,
@@ -470,7 +568,9 @@ int dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
 	for (i = REG_INDEX(DMA_CHAN_IMR); i <= REG_INDEX(DMA_CHAN_NODE_RO);
 			i++) {
 		if (dma_reg_names[i] != NULL) {
-			ret = dump_dma_reg(pb, i * IPU_REG_WIDTH, buf,
+			val = dma_channel_registers[i -
+					REG_INDEX(DMA_CHAN_BLOCK_START)];
+			ret = dump_dma_reg(pb, i * IPU_REG_WIDTH, val, buf,
 					&written, len);
 			if (ret < 0)
 				goto err_exit;
@@ -523,12 +623,43 @@ err_exit:
 			ret);
 }
 
+int dump_dma_channel_stats(struct paintbox_debug *debug, char *buf,
+		size_t len)
+{
+	struct paintbox_dma_channel *channel = container_of(debug,
+			struct paintbox_dma_channel, debug);
+	struct paintbox_data *pb = debug->pb;
+	int written;
+
+	written = snprintf(buf, len,
+			"interrupts EOF %u VA %u IRQ activations %u\n",
+			channel->stats.eof_interrupts,
+			channel->stats.va_interrupts,
+			channel->stats.irq_activations);
+
+	written += snprintf(buf + written, len - written,
+			"\ttransfers reported: completed %u discarded %u\n",
+			channel->stats.reported_completions,
+			channel->stats.reported_discards);
+
+	written += snprintf(buf + written, len - written,
+			"\tqueue counts: pending %u active %u completed %u "
+			"discarded %u\n",
+			channel->pending_count, channel->active_count,
+			channel->completed_count, pb->dma.discard_count);
+	written += snprintf(buf + written, len - written,
+			"\tstop request pending: %u\n", channel->stop_request);
+
+	return written;
+}
+
 void paintbox_dma_channel_debug_init(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel)
 {
 	paintbox_debug_create_entry(pb, &channel->debug,
 			pb->dma.debug.debug_dir, "channel", channel->channel_id,
-			dump_dma_channel_registers, channel);
+			dump_dma_channel_registers, dump_dma_channel_stats,
+			channel);
 
 	paintbox_debug_create_reg_entries(pb, &channel->debug,
 			&dma_reg_names[REG_INDEX(DMA_CHAN_BLOCK_START)],
@@ -544,7 +675,7 @@ void paintbox_dma_debug_init(struct paintbox_data *pb)
 	int ret;
 
 	paintbox_debug_create_entry(pb, &pb->dma.debug, pb->debug_root, "dma",
-			-1, dump_dma_registers, &pb->dma);
+			-1, dump_dma_registers, NULL, &pb->dma);
 
 	ret = paintbox_debug_alloc_reg_entries(pb, &pb->dma.debug, reg_count);
 

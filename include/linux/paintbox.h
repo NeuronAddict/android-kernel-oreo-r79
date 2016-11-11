@@ -285,6 +285,7 @@ struct mipi_input_stream_setup {
 struct mipi_output_stream_setup {
 	uint32_t seg_end;
 	uint32_t segs_per_row;
+	bool enable_row_sync;
 };
 
 struct mipi_stream_setup {
@@ -298,11 +299,46 @@ struct mipi_stream_setup {
 	uint32_t img_width;
 	uint32_t img_height;
 	uint32_t stripe_height;
+
 	union {
 		struct mipi_input_stream_setup input;
 		struct mipi_output_stream_setup output;
 	};
+
+	/* If enable_on_setup is true then the stream will be enabled after the
+	 * configuration is written, otherwise if false then the client will
+	 * have to enable the stream.
+	 */
 	bool enable_on_setup;
+
+	/* If enable_on_setup is true and free_running is true then the stream
+	 * will run with this configuration until the client disables it.
+	 */
+	bool free_running;
+
+	/* If enable_on_setup is true and free_running is false then the stream
+	 * will run for the specified number of frames.
+	 */
+	int32_t frame_count;
+};
+
+struct mipi_stream_enable {
+	uint32_t stream_id;
+
+	/* If free_running is true then the stream will run with this
+	 * configuration until the client disables it.
+	 */
+	bool free_running;
+
+	/* If free_running is false then the stream will run for the specified
+	 * number of frames.
+	 */
+	int32_t frame_count;
+
+	/* enable_row_sync is only used for output streams. */
+	struct {
+		bool enable_row_sync;
+	} output;
 };
 
 struct mipi_interrupt_config {
@@ -373,19 +409,17 @@ struct mipi_interrupt_config {
 #define PB_SETUP_MIPI_IN_STREAM      _IOW('p', 38, struct mipi_stream_setup)
 #define PB_ENABLE_MIPI_IN_STREAM     _IOW('p', 39, unsigned int)
 #define PB_DISABLE_MIPI_IN_STREAM    _IOW('p', 40, unsigned int)
-#define PB_RESET_MIPI_IN_STREAM      _IOW('p', 41, unsigned int)
+
+/* Returns frame number, < 0 error */
+#define PB_GET_MIPI_IN_FRAME_NUMBER  _IOW('p', 41, unsigned int)
+
 #define PB_CLEANUP_MIPI_IN_STREAM    _IOW('p', 42, unsigned int)
-#define PB_ENABLE_MIPI_IN_INTERRUPT  _IOW('p', 43, unsigned int)
-#define PB_DISABLE_MIPI_IN_INTERRUPT _IOW('p', 44, unsigned int)
 #define PB_ALLOCATE_MIPI_OUT_STREAM  _IOW('p', 45, unsigned int)
 #define PB_RELEASE_MIPI_OUT_STREAM   _IOW('p', 46, unsigned int)
 #define PB_SETUP_MIPI_OUT_STREAM     _IOW('p', 47, struct mipi_stream_setup)
 #define PB_ENABLE_MIPI_OUT_STREAM    _IOW('p', 48, unsigned int)
 #define PB_DISABLE_MIPI_OUT_STREAM   _IOW('p', 49, unsigned int)
-#define PB_RESET_MIPI_OUT_STREAM     _IOW('p', 50, unsigned int)
 #define PB_CLEANUP_MIPI_OUT_STREAM   _IOW('p', 51, unsigned int)
-#define PB_ENABLE_MIPI_OUT_INTERRUPT _IOW('p', 52, unsigned int)
-#define PB_DISABLE_MIPI_OUT_INTERRUPT _IOW('p', 53, unsigned int)
 #define PB_BIND_MIPI_IN_INTERRUPT    _IOW('p', 54, struct mipi_interrupt_config)
 #define PB_UNBIND_MIPI_IN_INTERRUPT  _IOW('p', 55, unsigned int)
 #define PB_BIND_MIPI_OUT_INTERRUPT   _IOW('p', 56, struct mipi_interrupt_config)
@@ -410,5 +444,7 @@ struct mipi_interrupt_config {
  */
 #define PB_TEST_DMA_RESET              _IO('t', 1)
 #define PB_TEST_DMA_CHANNEL_RESET     _IOW('t', 2, unsigned int)
+#define PB_TEST_MIPI_IN_RESET_STREAM  _IOW('t', 3, unsigned int)
+#define PB_TEST_MIPI_OUT_RESET_STREAM _IOW('t', 4, unsigned int)
 
 #endif /* __PAINTBOX_H__ */

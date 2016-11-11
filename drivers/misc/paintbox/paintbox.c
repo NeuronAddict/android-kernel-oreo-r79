@@ -256,14 +256,10 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 		return enable_mipi_stream_ioctl(pb, session, arg, true);
 	case PB_DISABLE_MIPI_IN_STREAM:
 		return disable_mipi_stream_ioctl(pb, session, arg, true);
-	case PB_RESET_MIPI_IN_STREAM:
-		return reset_mipi_stream_ioctl(pb, session, arg, true);
+	case PB_GET_MIPI_IN_FRAME_NUMBER:
+		return get_mipi_frame_number_ioctl(pb, session, arg);
 	case PB_CLEANUP_MIPI_IN_STREAM:
 		return cleanup_mipi_stream_ioctl(pb, session, arg, true);
-	case PB_ENABLE_MIPI_IN_INTERRUPT:
-		return enable_mipi_interrupt_ioctl(pb, session, arg, true);
-	case PB_DISABLE_MIPI_IN_INTERRUPT:
-		return disable_mipi_interrupt_ioctl(pb, session, arg, true);
 	case PB_ALLOCATE_MIPI_OUT_STREAM:
 		return allocate_mipi_output_stream_ioctl(pb, session, arg);
 	case PB_RELEASE_MIPI_OUT_STREAM:
@@ -274,14 +270,8 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 		return enable_mipi_stream_ioctl(pb, session, arg, false);
 	case PB_DISABLE_MIPI_OUT_STREAM:
 		return disable_mipi_stream_ioctl(pb, session, arg, false);
-	case PB_RESET_MIPI_OUT_STREAM:
-		return reset_mipi_stream_ioctl(pb, session, arg, false);
 	case PB_CLEANUP_MIPI_OUT_STREAM:
 		return cleanup_mipi_stream_ioctl(pb, session, arg, false);
-	case PB_ENABLE_MIPI_OUT_INTERRUPT:
-		return enable_mipi_interrupt_ioctl(pb, session, arg, false);
-	case PB_DISABLE_MIPI_OUT_INTERRUPT:
-		return disable_mipi_interrupt_ioctl(pb, session, arg, false);
 	case PB_BIND_MIPI_IN_INTERRUPT:
 		return bind_mipi_interrupt_ioctl(pb, session, arg, true);
 	case PB_UNBIND_MIPI_IN_INTERRUPT:
@@ -295,6 +285,16 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 		return dma_test_reset_ioctl(pb, session, arg);
 	case PB_TEST_DMA_CHANNEL_RESET:
 		return dma_test_channel_reset_ioctl(pb, session, arg);
+	case PB_TEST_MIPI_IN_RESET_STREAM:
+		return mipi_test_stream_reset_ioctl(pb, session, arg, true);
+	case PB_TEST_MIPI_OUT_RESET_STREAM:
+		return mipi_test_stream_reset_ioctl(pb, session, arg, false);
+#else
+	case PB_TEST_DMA_RESET:
+	case PB_TEST_DMA_CHANNEL_RESET:
+	case PB_TEST_MIPI_IN_RESET_STREAM:
+	case PB_TEST_MIPI_OUT_RESET_STREAM:
+		return -ENOSYS;
 #endif
 	default:
 		dev_err(&pb->pdev->dev, "%s: unknown ioctl 0x%0x\n", __func__,

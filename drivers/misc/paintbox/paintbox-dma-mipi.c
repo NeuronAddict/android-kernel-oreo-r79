@@ -43,6 +43,16 @@ int dma_setup_mipi_to_dram_transfer(struct paintbox_data *pb,
 			config->dst.dram.len_bytes))
 		return -EFAULT;
 
+	/* A MIPI transfer can not be initiated if the corresponding MIPI
+	 * stream for this channel is not in the session.
+	 */
+	if (!channel->mipi_stream) {
+		dev_err(&pb->pdev->dev,
+				"%s: dma channel%u no associated mipi stream\n",
+				__func__, channel->channel_id);
+		return -EINVAL;
+	}
+
 	/* TODO(ahampson): This needs to be conditionalized for IOMMU or CMA. */
 	ret = dma_map_buffer_cma(pb, transfer, config->dst.dram.host_vaddr,
 			config->dst.dram.len_bytes, DMA_FROM_DEVICE);

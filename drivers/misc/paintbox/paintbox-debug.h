@@ -49,7 +49,8 @@ int dump_ipu_register_with_value64(struct paintbox_data *pb,
 void paintbox_debug_create_entry(struct paintbox_data *pb,
 		struct paintbox_debug *debug, struct dentry *debug_root,
 		const char *name, unsigned int resource_id,
-		register_dump_t register_dump, void *arg);
+		register_dump_t register_dump, stats_dump_t stats_dump,
+		void *arg);
 
 int paintbox_debug_alloc_reg_entries(struct paintbox_data *pb,
 		struct paintbox_debug *debug, size_t reg_count);

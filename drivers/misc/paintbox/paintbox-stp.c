@@ -210,6 +210,15 @@ int dump_stp_registers(struct paintbox_debug *debug, char *buf, size_t len)
 
 	return written;
 }
+
+int dump_stp_stats(struct paintbox_debug *debug, char *buf,
+		size_t len)
+{
+	struct paintbox_stp *stp = container_of(debug, struct paintbox_stp,
+			debug);
+
+	return snprintf(buf, len, " interrupts: %u\n", stp->interrupt_count);
+}
 #endif
 
 #ifdef VERBOSE_DEBUG
@@ -898,6 +907,8 @@ irqreturn_t paintbox_stp_interrupt(struct paintbox_data *pb, uint64_t stp_mask)
 
 		writel(ctrl & ~STP_CTRL_INT_MASK, pb->stp_base + STP_CTRL);
 
+		stp->interrupt_count++;
+
 		signal_waiters(pb, stp->irq, int_code);
 
 		spin_unlock(&pb->stp_lock);
@@ -915,7 +926,7 @@ static int init_stp_entry(struct paintbox_data *pb, unsigned int stp_index)
 
 #ifdef CONFIG_DEBUG_FS
 	paintbox_debug_create_entry(pb, &stp->debug, pb->debug_root, "stp",
-			stp->stp_id, dump_stp_registers, stp);
+			stp->stp_id, dump_stp_registers, dump_stp_stats, stp);
 
 	paintbox_debug_create_reg_entries(pb, &stp->debug, stp_reg_names,
 			STP_NUM_REGS, stp_reg_entry_write, stp_reg_entry_read);

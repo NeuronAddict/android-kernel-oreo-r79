@@ -214,6 +214,16 @@ int dma_setup_mipi_to_lbp_transfer(struct paintbox_data *pb,
 		return -EINVAL;
 	}
 
+	/* A MIPI transfer can not be initiated if the corresponding MIPI
+	 * stream for this channel is not in the session.
+	 */
+	if (!channel->mipi_stream) {
+		dev_err(&pb->pdev->dev,
+				"%s: dma channel%u no associated mipi stream\n",
+				__func__, channel->channel_id);
+		return -EINVAL;
+	}
+
 	set_dma_channel_mode(transfer, DMA_CHAN_SRC_MIPI_IN, DMA_CHAN_DST_LBP,
 			false);
 
@@ -246,6 +256,16 @@ int dma_setup_lbp_to_mipi_transfer(struct paintbox_data *pb,
 		dev_err(&pb->pdev->dev,
 				"%s: dma%u: gather mode not supported for MIPI "
 				"transfers", __func__, channel->channel_id);
+		return -EINVAL;
+	}
+
+	/* A MIPI transfer can not be initiated if the corresponding MIPI
+	 * stream for this channel is not in the session.
+	 */
+	if (!channel->mipi_stream) {
+		dev_err(&pb->pdev->dev,
+				"%s: dma channel%u no associated mipi stream\n",
+				__func__, channel->channel_id);
 		return -EINVAL;
 	}
 

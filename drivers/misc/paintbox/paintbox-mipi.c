@@ -13,6 +13,7 @@
  * GNU General Public License for more details.
  */
 
+#include <linux/delay.h>
 #include <linux/interrupt.h>
 #include <linux/kernel.h>
 #include <linux/paintbox.h>
@@ -20,6 +21,7 @@
 #include <linux/spinlock.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
+#include <linux/workqueue.h>
 
 #include "paintbox-dma.h"
 #include "paintbox-debug.h"
@@ -31,7 +33,7 @@
 
 /* TODO(ahampson):  The mapping here below applies to Easel but may not be the
  * same in future versions of the hardware.  This mapping should be moved into
- * the device tree.
+ * the device tree.  b/32283059
  *
  * MIPI input streams 0..11 have a fixed mapping to DMA channels 0..11.
  * MIPI output streams 0..1 have a fixed mapping to DMA channels 14..15.
@@ -116,7 +118,9 @@ int allocate_mipi_input_stream_ioctl(struct paintbox_data *pb,
 {
 	unsigned int stream_id = (unsigned int)arg;
 	struct paintbox_mipi_stream *stream;
-	int ret;
+	struct paintbox_dma_channel *channel;
+	unsigned long irq_flags;
+	int ret = 0;
 
 	if (stream_id >= pb->io_ipu.num_mipi_input_streams) {
 		dev_err(&pb->pdev->dev, "%s: invalid stream_id %d\n", __func__,
@@ -133,20 +137,30 @@ int allocate_mipi_input_stream_ioctl(struct paintbox_data *pb,
 		return -EACCES;
 	}
 
-	stream->session = session;
-	list_add_tail(&stream->session_entry, &session->mipi_input_list);
-
 	/* MIPI streams and DMA channels have a fixed mapping, i.e. a specific
 	 * DMA channel must be used for transfers from a particular MIPI stream.
 	 * Notify the DMA code that this MIPI stream has been allocated to the
 	 * session.
 	 */
-	ret = dma_mipi_stream_allocated(pb, session, stream,
-			mipi_stream_to_dma_channel_id(stream));
+	channel = dma_handle_mipi_stream_allocated(pb, session, stream,
+			mipi_stream_to_dma_channel_id(stream), &ret);
+	if (ret < 0) {
+		mutex_unlock(&pb->lock);
+		return ret;
+	}
+
+	stream->session = session;
+	list_add_tail(&stream->session_entry, &session->mipi_input_list);
+
+	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
+
+	stream->dma_channel = channel;
+
+	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
 
 	mutex_unlock(&pb->lock);
 
-	return ret;
+	return 0;
 }
 
 int allocate_mipi_output_stream_ioctl(struct paintbox_data *pb,
@@ -154,6 +168,8 @@ int allocate_mipi_output_stream_ioctl(struct paintbox_data *pb,
 {
 	unsigned int stream_id = (unsigned int)arg;
 	struct paintbox_mipi_stream *stream;
+	struct paintbox_dma_channel *channel;
+	unsigned long irq_flags;
 	int ret;
 
 	if (stream_id >= pb->io_ipu.num_mipi_output_streams) {
@@ -176,8 +192,8 @@ int allocate_mipi_output_stream_ioctl(struct paintbox_data *pb,
 	 * Notify the DMA code that this MIPI stream has been allocated to the
 	 * session.
 	 */
-	ret = dma_mipi_stream_allocated(pb,  session, stream,
-			mipi_stream_to_dma_channel_id(stream));
+	channel = dma_handle_mipi_stream_allocated(pb, session, stream,
+			mipi_stream_to_dma_channel_id(stream), &ret);
 	if (ret < 0) {
 		mutex_unlock(&pb->lock);
 		return ret;
@@ -185,6 +201,12 @@ int allocate_mipi_output_stream_ioctl(struct paintbox_data *pb,
 
 	stream->session = session;
 	list_add_tail(&stream->session_entry, &session->mipi_output_list);
+
+	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
+
+	stream->dma_channel = channel;
+
+	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
 
 	mutex_unlock(&pb->lock);
 
@@ -198,25 +220,33 @@ void release_mipi_stream(struct paintbox_data *pb,
 {
 	unsigned long irq_flags;
 
+	/* Disable the MIPI stream and the stream interrupts. */
 	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
 
 	writel(stream->stream_id, pb->io_ipu.ipu_base + stream->select_offset);
-
-	/* Clean up the stream as part of the release. */
-	writel(stream->is_input ? MPI_STRM_CLEANUP : MPO_STRM_CLEANUP,
-			pb->io_ipu.ipu_base + stream->ctrl_offset);
 	writel(0, pb->io_ipu.ipu_base + stream->ctrl_offset);
 
 	stream->enabled = false;
 
 	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
 
-	/* Notify the DMA channel associated with this MIPI stream that the
-	 * stream has been released.
+	/* Stop the DMA channel associated with this MIPI stream. If there is no
+	 * dma_channel then there is no need to go through the stop procedures
+	 * because it was already done when the DMA channel was released.
 	 */
 	if (stream->dma_channel) {
-		dma_mipi_stream_released(pb, session, stream->dma_channel);
+		dma_stop_transfer(pb, stream->dma_channel);
+
+		/* Notify the DMA channel associated with this MIPI stream that
+		 * the stream has been released.
+		 */
+		dma_handle_mipi_stream_released(pb, stream->dma_channel);
+
+		spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
+
 		stream->dma_channel = NULL;
+
+		spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
 	}
 
 	/* Remove the MIPI stream from the session. */
@@ -225,11 +255,30 @@ void release_mipi_stream(struct paintbox_data *pb,
 }
 
 /* The caller to this function must hold pb->lock */
-void mipi_dma_channel_allocated(struct paintbox_data *pb,
-			struct paintbox_session *session,
-			struct paintbox_dma_channel *channel)
+void mipi_handle_dma_channel_released(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream)
+{
+	unsigned long irq_flags;
+
+	/* Disable the MIPI stream and the stream interrupts. */
+	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
+
+	writel(stream->stream_id, pb->io_ipu.ipu_base + stream->select_offset);
+	writel(0, pb->io_ipu.ipu_base + stream->ctrl_offset);
+	stream->enabled = false;
+
+	stream->dma_channel = NULL;
+
+	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
+}
+
+/* The caller to this function must hold pb->lock */
+struct paintbox_mipi_stream * mipi_handle_dma_channel_allocated(
+		struct paintbox_data *pb, struct paintbox_session *session,
+		struct paintbox_dma_channel *channel)
 {
 	struct paintbox_mipi_stream *stream;
+	unsigned long irq_flags;
 	unsigned int stream_id;
 
 	if (channel->channel_id <= MIPI_INPUT_DMA_CHANNEL_ID_END) {
@@ -245,7 +294,7 @@ void mipi_dma_channel_allocated(struct paintbox_data *pb,
 		 * nothing to do.  Note, this is not an error since this
 		 * function will be called for all DMA channels.
 		 */
-		return;
+		return NULL;
 	}
 
 	/* If the stream has not been allocated to a session then return with no
@@ -255,33 +304,29 @@ void mipi_dma_channel_allocated(struct paintbox_data *pb,
 	 * is allocated.
 	 */
 	if (stream->session == NULL)
-		return;
+		return NULL;
 
 	/* If the MIPI stream is owned by a different session then it can not be
 	 * associated with this DMA channel.  This is only a problem if the user
 	 * intends to use the DMA channel for MIPI transfers.  The DMA channel
 	 * may be used legitimately for non-MIPI transfers so no error will be
 	 * returned.
-	 *
-	 * TODO(ahampson):  Confirmation that the the session has both the MIPI
-	 * stream and assocated DMA channel will need to be done as part of the
-	 * DMA channel setup.
 	 */
 	if (stream->session != session)
-		return;
+		return NULL;
+
+	/* There should not be a DMA channel object already associated with this
+	 * stream.  If there is then there is a bug in cleanup.
+	 */
+	WARN_ON(stream->dma_channel);
+
+	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
 
 	stream->dma_channel = channel;
-	channel->mipi_stream = stream;
-}
 
-/* The caller to this function must hold pb->lock */
-void mipi_dma_channel_released(struct paintbox_data *pb,
-		struct paintbox_session *session,
-		struct paintbox_mipi_stream *stream)
-{
-	stream->dma_channel = NULL;
+	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
 
-	/* TODO(ahampson):  Determine MIPI side release actions. */
+	return stream;
 }
 
 int release_mipi_stream_ioctl(struct paintbox_data *pb,
@@ -344,38 +389,145 @@ static inline void strm_ctrl_clr(struct paintbox_data *pb,
 	writel(val, pb->io_ipu.ipu_base + stream->ctrl_offset);
 }
 
+/* The caller to this function must hold pb->io_ipu.mipi_lock. */
+static void enable_mipi_interface_interrupt(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream)
+{
+	struct paintbox_mipi_interface *interface = stream->interface;
+	if (interface->active_stream_mask == 0) {
+		if (stream->is_input)
+			io_enable_mipi_input_interface_interrupt(pb,
+					interface->interface_id);
+		else
+			io_enable_mipi_output_interface_interrupt(pb,
+					interface->interface_id);
+	}
+
+	interface->active_stream_mask |= 1 << stream->stream_id;
+}
+
+/* The caller to this function must hold pb->io_ipu.mipi_lock. */
+static void disable_mipi_interface_interrupt(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream)
+{
+	struct paintbox_mipi_interface *interface = stream->interface;
+
+	interface->active_stream_mask &= ~(1 << stream->stream_id);
+
+	if (interface->active_stream_mask == 0) {
+		if (stream->is_input)
+			io_disable_mipi_input_interface_interrupt(pb,
+					interface->interface_id);
+		else
+			io_disable_mipi_output_interface_interrupt(pb,
+					interface->interface_id);
+	}
+}
+
+/* The caller to this function must hold pb->lock and pb->io_ipu.mipi_lock.
+ * The caller must also set the MPI/MPO stream select register to the correct
+ * stream.
+ */
+static void enable_mipi_stream(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream, bool free_running,
+		int32_t frame_count, bool enable_row_sync)
+{
+	uint32_t val;
+
+	val = readl(pb->io_ipu.ipu_base + stream->ctrl_offset);
+
+	val |= stream->is_input ?
+			MPI_STRM_EN | MPI_STRM_SOF_IMR | MPI_STRM_OVF_IMR :
+			MPO_STRM_EN | MPO_STRM_EOF_IMR;
+
+	if (!stream->is_input && enable_row_sync)
+		val |= MPO_STRM_RSYNC_EN;
+
+	writel(val, pb->io_ipu.ipu_base + stream->ctrl_offset);
+
+	enable_mipi_interface_interrupt(pb, stream);
+
+	stream->enabled = true;
+	stream->free_running = free_running;
+	stream->is_clean = false;
+
+	/* frame count is zero when in free running mode. */
+	stream->frame_count = free_running ? 0 : frame_count;
+}
+
+/* The caller to this function must hold pb->lock and pb->io_ipu.mipi_lock.
+ * The caller must also set the MPI/MPO stream select register to the correct
+ * stream.
+ */
+static void disable_mipi_stream(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream)
+{
+	strm_ctrl_clr(pb, stream, stream->is_input ?
+			MPI_STRM_EN | MPI_STRM_SOF_IMR | MPI_STRM_OVF_IMR :
+			MPO_STRM_EN | MPO_STRM_RSYNC_EN | MPO_STRM_EOF_IMR);
+
+	disable_mipi_interface_interrupt(pb, stream);
+
+	stream->enabled = true;
+	stream->free_running = false;
+	stream->frame_count = 0;
+}
+
 int enable_mipi_stream_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg,
 		bool is_input)
 {
-	struct paintbox_mipi_interface *interface;
+	struct mipi_stream_enable __user *user_req;
+	struct mipi_stream_enable req;
 	struct paintbox_mipi_stream *stream;
-	unsigned int stream_id = (unsigned int)arg;
 	unsigned long irq_flags;
 	int ret = 0;
 
+	user_req = (struct mipi_stream_enable __user *)arg;
+	if (copy_from_user(&req, user_req, sizeof(req)))
+		return -EFAULT;
+
+	if (!req.free_running && req.frame_count <= 0) {
+		dev_err(&pb->pdev->dev,
+				"%s: mipi %u: stream is not free running and "
+				"frame count is invalid, %d <= 0\n", __func__,
+				req.stream_id, req.frame_count);
+		return -EINVAL;
+	}
+
 	mutex_lock(&pb->lock);
 
-	stream = get_mipi_stream(pb, session, stream_id, is_input, &ret);
+	stream = get_mipi_stream(pb, session, req.stream_id, is_input, &ret);
 	if (ret < 0) {
 		mutex_unlock(&pb->lock);
 		return ret;
 	}
 
+	/* A stream can not be enabled if the corresponding DMA channel is not
+	 * part of this session.
+	 */
+	if (!stream->dma_channel) {
+		dev_err(&pb->pdev->dev,
+				"%s: mipi %s stream%u: no corresponding DMA "
+				"channel\n", __func__, is_input ? "input" :
+				"output", stream->stream_id);
+		mutex_unlock(&pb->lock);
+		return -EINVAL;
+	}
+
 	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
 
-	interface = stream->interface;
+	writel(req.stream_id, pb->io_ipu.ipu_base + stream->select_offset);
 
-	writel(stream_id, pb->io_ipu.ipu_base + stream->select_offset);
-
-	strm_ctrl_set(pb, stream, MPI_STRM_EN);
-
-	stream->enabled = true;
+	enable_mipi_stream(pb, stream, req.free_running, req.frame_count,
+			is_input ? false : req.output.enable_row_sync);
 
 	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
 
-	dev_dbg(&pb->pdev->dev, "%s: mipi %s stream%u: enable stream\n",
-			__func__, is_input ? "input" : "output", stream_id);
+	dev_dbg(&pb->pdev->dev, "%s: mipi %s stream%u: enable stream free "
+			"running %d frame_count %u\n", __func__,
+			is_input ? "input" : "output", req.stream_id,
+			stream->free_running, stream->frame_count);
 
 	mutex_unlock(&pb->lock);
 
@@ -403,9 +555,7 @@ int disable_mipi_stream_ioctl(struct paintbox_data *pb,
 
 	writel(stream_id, pb->io_ipu.ipu_base + stream->select_offset);
 
-	strm_ctrl_clr(pb, stream, MPI_STRM_EN);
-
-	stream->enabled = false;
+	disable_mipi_stream(pb, stream);
 
 	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
 
@@ -415,6 +565,42 @@ int disable_mipi_stream_ioctl(struct paintbox_data *pb,
 	mutex_unlock(&pb->lock);
 
 	return 0;
+}
+
+int get_mipi_frame_number_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg)
+{
+	struct paintbox_mipi_stream *stream;
+	unsigned int stream_id = (unsigned int)arg;
+	unsigned long irq_flags;
+	uint32_t val;
+	int ret = 0;
+
+	mutex_lock(&pb->lock);
+
+	stream = get_mipi_stream(pb, session, stream_id, true, &ret);
+	if (ret < 0) {
+		mutex_unlock(&pb->lock);
+		return ret;
+	}
+
+	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
+
+	writel(stream_id, pb->io_ipu.ipu_base + stream->select_offset);
+
+	val = readl(pb->io_ipu.ipu_base + stream->ctrl_offset);
+
+	ret = (int)((val & MPI_STRM_NUM_FRAME_MASK) >>
+			MPI_STRM_NUM_FRAME_SHIFT);
+
+	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
+
+	dev_dbg(&pb->pdev->dev, "%s: mipi input stream%u: frame number %d\n",
+			__func__, stream_id, ret);
+
+	mutex_unlock(&pb->lock);
+
+	return ret;
 }
 
 static int validate_mipi_stream_setup(struct paintbox_data *pb,
@@ -467,6 +653,15 @@ static int validate_mipi_stream_setup(struct paintbox_data *pb,
 		return -EINVAL;
 	}
 
+	if (setup->enable_on_setup && !setup->free_running &&
+			setup->frame_count <= 0) {
+		dev_err(&pb->pdev->dev,
+				"%s: mipi %u: stream is not free running and "
+				"frame count is invalid, %d <= 0\n", __func__,
+				setup->stream_id, setup->frame_count);
+		return -EINVAL;
+	}
+
 	dev_dbg(&pb->pdev->dev,
 			"\tvirtual channels: %u data type: %u data proc: %u\n",
 			setup->virtual_channel, setup->data_type,
@@ -474,6 +669,8 @@ static int validate_mipi_stream_setup(struct paintbox_data *pb,
 	dev_dbg(&pb->pdev->dev, "\twidth: %u height: %u stripe height: %u\n",
 			setup->img_width, setup->img_height,
 			setup->stripe_height);
+	dev_dbg(&pb->pdev->dev, "\tfree running: %u frame count: %d\n",
+			setup->free_running, setup->frame_count);
 
 	return 0;
 }
@@ -678,12 +875,10 @@ int setup_mipi_stream_ioctl(struct paintbox_data *pb,
 		return ret;
 	}
 
-	/* TODO(ahampson):  Add support for row sync b/30276467 */
-
-	if (setup.enable_on_setup || stream->enabled) {
-		stream->enabled = true;
-		strm_ctrl_set(pb, stream, MPI_STRM_EN);
-	}
+	if (setup.enable_on_setup || stream->enabled)
+		enable_mipi_stream(pb, stream, setup.free_running,
+				setup.frame_count, stream->is_input ? false :
+				setup.output.enable_row_sync);
 
 	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
 
@@ -692,40 +887,171 @@ int setup_mipi_stream_ioctl(struct paintbox_data *pb,
 	return 0;
 }
 
-int reset_mipi_stream_ioctl(struct paintbox_data *pb,
+/* The caller to this function must hold pb->lock and pb->io_ipu.mipi_lock */
+static void reset_mipi_stream(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream)
+{
+	writel(stream->stream_id, pb->io_ipu.ipu_base + stream->select_offset);
+	writel(stream->is_input ? MPI_STRM_RST : MPO_STRM_RST,
+			pb->io_ipu.ipu_base + stream->ctrl_offset);
+	writel(0, pb->io_ipu.ipu_base + stream->ctrl_offset);
+
+	stream->enabled = false;
+
+	dev_dbg(&pb->pdev->dev, "%s: mipi %s stream%u: reset\n", __func__,
+			stream->is_input ? "input" : "output",
+			stream->stream_id);
+}
+
+/* The caller to this function must hold pb->io_ipu.mipi_lock. */
+void mipi_report_completion(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream, int err)
+{
+	signal_waiters(pb, stream->irq, err);
+}
+
+/* The caller to this function must hold pb->lock. */
+void mipi_request_cleanup(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream)
+{
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
+
+	/* If the stream has already been cleaned then there is nothing to do
+	 * here.
+	 */
+	if (stream->is_clean) {
+		spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
+		dev_dbg(&pb->pdev->dev, "%s: mipi %s stream%u: already clean\n",
+			__func__, stream->is_input ? "input" : "output",
+			stream->stream_id);
+		return;
+	}
+
+	/* If a cleanup operation has not been started then start one now. */
+	if (!stream->cleanup_in_progress) {
+		stream->cleanup_in_progress = true;
+		writel(stream->stream_id, pb->io_ipu.ipu_base +
+				stream->select_offset);
+
+		strm_ctrl_set(pb, stream, stream->is_input ?
+				MPI_STRM_CLEANUP : MPO_STRM_CLEANUP);
+	}
+
+	mipi_report_completion(pb, stream, -ECANCELED);
+
+	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
+
+	/* If the overflow interrupt started the cleanup work queue then cancel
+	 * it.  Since software is requesting the cleanup we will handle the
+	 * cleanup verification in the calling thread and do not need to handle
+	 * it asynchronously.
+	 */
+	cancel_delayed_work_sync(&stream->cleanup_work);
+
+	dev_dbg(&pb->pdev->dev, "%s: mipi %s stream%u: cleanup\n", __func__,
+			stream->is_input ? "input" : "output",
+			stream->stream_id);
+}
+
+/* The caller to this function must hold pb->lock. */
+int verify_cleanup_completion(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream)
+{
+	unsigned long irq_flags;
+#ifndef CONFIG_PAINTBOX_SIMULATOR_SUPPORT
+	uint32_t status;
+#endif
+	int ret = 0;
+
+	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
+
+	/* If a cleanup process has not been started then exit now. */
+	if (!stream->cleanup_in_progress) {
+		spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
+		return 0;
+	}
+
+	stream->cleanup_in_progress = false;
+	stream->is_clean = true;
+
+	/* TODO(ahampson):  This needs to be disabled for QEMU/Simulator for the
+	 * now.  The RTL test bench can not currently handle the wait for 200us
+	 * before reading the CLEANUP bit requirement. This will be fixed in
+	 * QEMU and the RTL testbench.  b/32338758
+	 */
+#ifndef CONFIG_PAINTBOX_SIMULATOR_SUPPORT
+	writel(stream->stream_id, pb->io_ipu.ipu_base + stream->select_offset);
+
+	status = readl(pb->io_ipu.ipu_base + stream->ctrl_offset);
+
+	/* Verify that the stream cleanup completed, if it hasn't then reset
+	 * the stream.
+	 */
+	if (status & (stream->is_input ? MPI_STRM_CLEANUP :
+			MPO_STRM_CLEANUP)) {
+		reset_mipi_stream(pb, stream);
+		ret = -EIO;
+	}
+#endif
+
+	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
+
+	if (ret < 0)
+		dev_err(&pb->pdev->dev,
+				"%s: mipi %s stream%u: cleanup failed, stream "
+				"reset\n", __func__, stream->is_input ?
+				"input" : "output", stream->stream_id);
+
+	return ret;
+}
+
+static void paintbox_cleanup_work(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct paintbox_mipi_stream *stream =
+			container_of(dwork, struct paintbox_mipi_stream,
+			cleanup_work);
+	struct paintbox_data *pb = stream->pb;
+	int ret;
+
+	mutex_lock(&pb->lock);
+
+	ret = verify_cleanup_completion(pb, stream);
+	if (ret < 0)
+		dma_reset_channel(pb, stream->dma_channel);
+
+	mutex_unlock(&pb->lock);
+}
+
+#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
+int mipi_test_stream_reset_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg,
 		bool is_input)
 {
 	struct paintbox_mipi_stream *stream;
 	unsigned int stream_id = (unsigned int)arg;
-	unsigned long irq_flags;
 	int ret = 0;
 
 	mutex_lock(&pb->lock);
 
 	stream = get_mipi_stream(pb, session, stream_id, is_input, &ret);
-	if (ret < 0) {
-		mutex_unlock(&pb->lock);
-		return ret;
+	if (ret >= 0) {
+		unsigned long irq_flags;
+
+		spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
+
+		reset_mipi_stream(pb, stream);
+
+		spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
 	}
-
-	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
-
-	writel(stream_id, pb->io_ipu.ipu_base + stream->select_offset);
-
-	strm_ctrl_toggle(pb, stream, is_input ? MPI_STRM_RST : MPO_STRM_RST);
-
-	stream->enabled = false;
-
-	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
-
-	dev_dbg(&pb->pdev->dev, "%s: mipi %s stream%u: reset\n", __func__,
-			is_input ? "input" : "output", stream_id);
 
 	mutex_unlock(&pb->lock);
 
-	return 0;
+	return ret;
 }
+#endif
 
 int cleanup_mipi_stream_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg,
@@ -733,7 +1059,6 @@ int cleanup_mipi_stream_ioctl(struct paintbox_data *pb,
 {
 	struct paintbox_mipi_stream *stream;
 	unsigned int stream_id = (unsigned int)arg;
-	unsigned long irq_flags;
 	int ret = 0;
 
 	mutex_lock(&pb->lock);
@@ -744,101 +1069,25 @@ int cleanup_mipi_stream_ioctl(struct paintbox_data *pb,
 		return ret;
 	}
 
-	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
+	/* A stream can not be cleaned up if the corresponding DMA channel is
+	 * not part of this session.
+	 */
+	if (!stream->dma_channel) {
+		dev_err(&pb->pdev->dev,
+				"%s: mipi %s stream%u: no corresponding DMA "
+				"channel\n", __func__, is_input ? "input" :
+				"output", stream_id);
+		mutex_unlock(&pb->lock);
+		return -EINVAL;
+	}
 
-	writel(stream_id, pb->io_ipu.ipu_base + stream->select_offset);
-
-	strm_ctrl_toggle(pb, stream, is_input ? MPI_STRM_CLEANUP :
-			MPO_STRM_CLEANUP);
-
-	stream->enabled = false;
-
-	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
+	/* Stop any active transfer on the corresponding DMA channel for this MIPI
+	 * stream.  This will also initiate a MIPI cleanup operation.
+	 */
+	dma_stop_transfer(pb, stream->dma_channel);
 
 	dev_dbg(&pb->pdev->dev, "%s: mipi %s stream%u: cleanup\n", __func__,
 			is_input ? "input" : "output", stream_id);
-
-	mutex_unlock(&pb->lock);
-
-	return 0;
-}
-
-int enable_mipi_interrupt_ioctl(struct paintbox_data *pb,
-		struct paintbox_session *session, unsigned long arg,
-		bool is_input)
-{
-	struct paintbox_mipi_stream *stream;
-	unsigned int stream_id = (unsigned int)arg;
-	unsigned long irq_flags;
-	int ret = 0;
-
-	mutex_lock(&pb->lock);
-
-	stream = get_mipi_stream(pb, session, stream_id, is_input, &ret);
-	if (ret < 0) {
-		mutex_unlock(&pb->lock);
-		return ret;
-	}
-
-	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
-
-	writel(stream_id, pb->io_ipu.ipu_base + stream->select_offset);
-
-	if (is_input) {
-		strm_ctrl_set(pb, stream, MPI_STRM_SOF_IMR | MPI_STRM_OVF_IMR);
-		io_enable_mipi_input_interface_interrupt(pb,
-				stream->interface->interface_id);
-	} else {
-		strm_ctrl_set(pb, stream, MPO_STRM_EOF_IMR);
-		io_enable_mipi_output_interface_interrupt(pb,
-				stream->interface->interface_id);
-	}
-
-	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
-
-	dev_dbg(&pb->pdev->dev, "%s: mipi %s stream%u: enable interrupt\n",
-			__func__, is_input ? "input" : "output", stream_id);
-
-	mutex_unlock(&pb->lock);
-
-	return 0;
-}
-
-int disable_mipi_interrupt_ioctl(struct paintbox_data *pb,
-		struct paintbox_session *session, unsigned long arg,
-		bool is_input)
-{
-	struct paintbox_mipi_stream *stream;
-	unsigned int stream_id = (unsigned int)arg;
-	unsigned long irq_flags;
-	int ret = 0;
-
-	mutex_lock(&pb->lock);
-
-	stream = get_mipi_stream(pb, session, stream_id, is_input, &ret);
-	if (ret < 0) {
-		mutex_unlock(&pb->lock);
-		return ret;
-	}
-
-	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
-
-	writel(stream_id, pb->io_ipu.ipu_base + stream->select_offset);
-
-	if (is_input) {
-		strm_ctrl_clr(pb, stream, MPI_STRM_SOF_IMR | MPI_STRM_OVF_IMR);
-		io_disable_mipi_input_interface_interrupt(pb,
-				stream->interface->interface_id);
-	} else {
-		strm_ctrl_clr(pb, stream, MPO_STRM_EOF_IMR);
-		io_disable_mipi_output_interface_interrupt(pb,
-				stream->interface->interface_id);
-	}
-
-	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
-
-	dev_dbg(&pb->pdev->dev, "%s: mipi %s stream%u: disable interrupt\n",
-			__func__, is_input ? "input" : "output", stream_id);
 
 	mutex_unlock(&pb->lock);
 
@@ -907,11 +1156,84 @@ int unbind_mipi_interrupt_ioctl(struct paintbox_data *pb,
 	return 0;
 }
 
-/* The caller to this function must hold pb->io_ipu.mipi_lock. */
-void mipi_report_completion(struct paintbox_data *pb,
-		struct paintbox_mipi_stream *stream, int err)
+static void paintbox_mipi_input_stream_interrupt(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream)
 {
-	signal_waiters(pb, stream->irq, err);
+	uint32_t status;
+
+	spin_lock(&pb->io_ipu.mipi_lock);
+
+	writel(stream->stream_id, pb->io_ipu.ipu_base + MPI_STRM_SEL);
+
+	status = readl(pb->io_ipu.ipu_base + MPI_STRM_CTRL);
+
+	/* If there are no MIPI interrupts then return immediately. */
+	if ((status & (MPI_STRM_SOF_ISR | MPI_STRM_OVF_ISR)) == 0) {
+		spin_unlock(&pb->io_ipu.mipi_lock);
+		return;
+	}
+
+	if (status & MPI_STRM_SOF_ISR) {
+		writel(status & ~MPI_STRM_SOF_ISR, pb->io_ipu.ipu_base +
+				MPI_STRM_CTRL);
+
+		stream->stats.input.sof_interrupts++;
+
+		/* If the stream is not free running and we have transferred the
+		 * the requested number of frames then disable the stream.
+		 */
+		if (!stream->free_running) {
+			if (stream->frame_count > 0)
+				stream->frame_count--;
+			else
+				disable_mipi_stream(pb, stream);
+		}
+
+		mipi_report_completion(pb, stream, 0);
+	}
+
+	if (status & MPI_STRM_OVF_ISR) {
+		writel(status & ~MPI_STRM_OVF_ISR, pb->io_ipu.ipu_base +
+				MPI_STRM_CTRL);
+
+		stream->stats.input.ovf_interrupts++;
+
+		if (status & MPI_STRM_CLEANUP) {
+			stream->cleanup_in_progress = true;
+
+			/* The hardware will also initiate a cleanup operation
+			 * on an overflow.  We don't want to wait for the
+			 * cleanup operation to complete in the interrupt
+			 * handler so we will spin off a workqueue verify that
+			 * it completed successfully.  This is unlikely to fail
+			 * but if it does then the MIPI stream will need to be
+			 * reset.
+			 */
+			queue_delayed_work(system_wq, &stream->cleanup_work,
+					usecs_to_jiffies(
+					MIPI_CLEANUP_TIMEOUT_US));
+		} else {
+			/* If the cleanup bit is not set then the cleanup
+			 * operation has already concluded or it might not have
+			 * been initiated.  The former indicates that there may
+			 * significant interrupt latency, the latter may
+			 * indicate a hardware bug.
+			 */
+			dev_alert(&pb->pdev->dev,
+				"%s: mipi input stream%u: overflow interrupt "
+				"without cleanup\n", __func__,
+				stream->stream_id);
+		}
+
+		mipi_report_completion(pb, stream, -EIO);
+
+		/* Set the MIPI error for the active transfer so the error can
+		 * be reported on the DMA EOF interrupt.
+		 */
+		dma_set_mipi_error(pb, stream->dma_channel, -EIO);
+	}
+
+	spin_unlock(&pb->io_ipu.mipi_lock);
 }
 
 irqreturn_t paintbox_mipi_input_interrupt(struct paintbox_data *pb,
@@ -923,7 +1245,6 @@ irqreturn_t paintbox_mipi_input_interrupt(struct paintbox_data *pb,
 			interface_id < pb->io_ipu.num_mipi_input_interfaces &&
 			interface_mask; interface_id++, interface_mask >>= 1) {
 		struct paintbox_mipi_interface *interface;
-		struct paintbox_mipi_stream *stream;
 
 		if (!(interface_mask & 0x01))
 			continue;
@@ -931,30 +1252,40 @@ irqreturn_t paintbox_mipi_input_interrupt(struct paintbox_data *pb,
 		interface = &pb->io_ipu.mipi_input_interfaces[interface_id];
 
 		for (stream_index = 0; stream_index < interface->num_streams;
-				stream_index++) {
-			uint32_t status;
-
-			spin_lock(&pb->io_ipu.mipi_lock);
-
-			stream = interface->streams[stream_index];
-
-			writel(stream->stream_id, pb->io_ipu.ipu_base +
-					MPI_STRM_SEL);
-
-			status = readl(pb->io_ipu.ipu_base + MPI_STRM_CTRL);
-			writel(status & ~(MPI_STRM_SOF_ISR | MPI_STRM_OVF_ISR),
-					pb->io_ipu.ipu_base + MPI_STRM_CTRL);
-
-			if (status & MPI_STRM_OVF_ISR)
-				mipi_report_completion(pb, stream, -EIO);
-			else if (status & MPI_STRM_SOF_ISR)
-				mipi_report_completion(pb, stream, 0);
-
-			spin_unlock(&pb->io_ipu.mipi_lock);
-		}
+				stream_index++)
+			paintbox_mipi_input_stream_interrupt(pb,
+					interface->streams[stream_index]);
 	}
 
 	return IRQ_HANDLED;
+}
+
+static void paintbox_mipi_output_stream_interrupt(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream)
+{
+	uint32_t status;
+
+	spin_lock(&pb->io_ipu.mipi_lock);
+
+	writel(stream->stream_id, pb->io_ipu.ipu_base + MPO_STRM_SEL);
+
+	status = readl(pb->io_ipu.ipu_base + MPO_STRM_CTRL);
+	if (status & MPO_STRM_EOF_ISR) {
+		writel(status & ~MPO_STRM_EOF_ISR, pb->io_ipu.ipu_base +
+				MPO_STRM_CTRL);
+
+		stream->stats.output.eof_interrupts++;
+
+		/* If the stream is not free running and we have transferred the
+		 * the requested number of frames then disable the stream.
+		 */
+		if (!stream->free_running && --stream->frame_count == 0)
+			disable_mipi_stream(pb, stream);
+
+		mipi_report_completion(pb, stream, 0);
+	}
+
+	spin_unlock(&pb->io_ipu.mipi_lock);
 }
 
 irqreturn_t paintbox_mipi_output_interrupt(struct paintbox_data *pb,
@@ -966,7 +1297,6 @@ irqreturn_t paintbox_mipi_output_interrupt(struct paintbox_data *pb,
 			interface_id < pb->io_ipu.num_mipi_output_interfaces &&
 			interface_mask; interface_id++, interface_mask >>= 1) {
 		struct paintbox_mipi_interface *interface;
-		struct paintbox_mipi_stream *stream;
 
 		if (!(interface_mask & 0x01))
 			continue;
@@ -974,26 +1304,9 @@ irqreturn_t paintbox_mipi_output_interrupt(struct paintbox_data *pb,
 		interface = &pb->io_ipu.mipi_output_interfaces[interface_id];
 
 		for (stream_index = 0; stream_index < interface->num_streams;
-				stream_index++) {
-			uint32_t status;
-
-			spin_lock(&pb->io_ipu.mipi_lock);
-
-			stream = interface->streams[stream_index];
-
-			writel(stream->stream_id, pb->io_ipu.ipu_base +
-					MPO_STRM_SEL);
-
-			status = readl(pb->io_ipu.ipu_base + MPO_STRM_CTRL);
-			if (status & MPO_STRM_EOF_ISR) {
-				writel(status & ~MPO_STRM_EOF_ISR,
-						pb->io_ipu.ipu_base +
-						MPO_STRM_CTRL);
-				mipi_report_completion(pb, stream, 0);
-			}
-
-			spin_unlock(&pb->io_ipu.mipi_lock);
-		}
+				stream_index++)
+			paintbox_mipi_output_stream_interrupt(pb,
+					interface->streams[stream_index]);
 	}
 
 	return IRQ_HANDLED;
@@ -1049,7 +1362,11 @@ static int paintbox_mipi_input_init(struct paintbox_data *pb)
 			stream->ctrl_offset = MPI_STRM_CTRL;
 			stream->select_offset = MPI_STRM_SEL;
 			stream->is_input = true;
+			stream->is_clean = true;
 			stream->pb = pb;
+
+			INIT_DELAYED_WORK(&stream->cleanup_work,
+					paintbox_cleanup_work);
 
 			interface->streams[i] = stream;
 
@@ -1124,7 +1441,11 @@ static int paintbox_mipi_output_init(struct paintbox_data *pb)
 			stream->ctrl_offset = MPO_STRM_CTRL;
 			stream->select_offset = MPO_STRM_SEL;
 			stream->is_input = false;
+			stream->is_clean = true;
 			stream->pb = pb;
+
+			INIT_DELAYED_WORK(&stream->cleanup_work,
+					paintbox_cleanup_work);
 
 			interface->streams[i] = stream;
 

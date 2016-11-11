@@ -121,6 +121,63 @@ int dump_ipu_register_with_value64(struct paintbox_data *pb,
 
 
 #ifdef CONFIG_DEBUG_FS
+static int debug_stats_show(struct seq_file *s, void *unused)
+{
+	struct paintbox_debug *debug = s->private;
+	struct paintbox_data *pb = debug->pb;
+	char *buf;
+	size_t len;
+	int ret = 0, written;
+
+	len = seq_get_buf(s, &buf);
+	if (!buf)
+		return -ENOMEM;
+
+	mutex_lock(&pb->lock);
+
+	if (!debug->stats_dump) {
+		mutex_unlock(&pb->lock);
+		return 0;
+	}
+
+	if (debug->resource_id >= 0)
+		written = snprintf(buf, len, "%s%u: ", debug->name,
+				debug->resource_id);
+	else
+		written = snprintf(buf, len, "%s: ", debug->name);
+	if (written < 0) {
+		mutex_unlock(&pb->lock);
+		dev_err(&pb->pdev->dev, "%s: error dumping registers %d",
+				__func__, ret);
+		return written;
+	}
+
+	ret = debug->stats_dump(debug, buf + written, len - written);
+
+	mutex_unlock(&pb->lock);
+
+	if (ret < 0)
+		return ret;
+
+	written += ret;
+
+	seq_commit(s, written);
+
+	return 0;
+}
+
+static int debug_stats_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, debug_stats_show, inode->i_private);
+}
+
+static const struct file_operations debug_stats_fops = {
+	.open = debug_stats_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
 static int debug_regs_show(struct seq_file *s, void *unused)
 {
 	struct paintbox_debug *debug = s->private;
@@ -178,7 +235,8 @@ static const struct file_operations debug_regs_fops = {
 void paintbox_debug_create_entry(struct paintbox_data *pb,
 		struct paintbox_debug *debug, struct dentry *debug_root,
 		const char *name, unsigned int resource_id,
-		register_dump_t register_dump, void *arg)
+		register_dump_t register_dump, stats_dump_t stats_dump,
+		void *arg)
 {
 	char resource_name[RESOURCE_NAME_LEN];
 	int ret;
@@ -187,6 +245,7 @@ void paintbox_debug_create_entry(struct paintbox_data *pb,
 	debug->name = name;
 	debug->resource_id = resource_id;
 	debug->register_dump = register_dump;
+	debug->stats_dump = stats_dump;
 
 	if (debug->resource_id >= 0)
 		ret = snprintf(resource_name, RESOURCE_NAME_LEN, "%s%u", name,
@@ -211,6 +270,15 @@ void paintbox_debug_create_entry(struct paintbox_data *pb,
 	if (IS_ERR(debug->reg_dump_dentry)) {
 		dev_err(&pb->pdev->dev, "%s: err = %ld", __func__,
 				PTR_ERR(debug->reg_dump_dentry));
+		return;
+	}
+
+	debug->stats_dump_dentry = debugfs_create_file("stats", S_IRUSR |
+			S_IRGRP | S_IWUSR, debug->debug_dir, debug,
+			&debug_stats_fops);
+	if (IS_ERR(debug->stats_dump_dentry)) {
+		dev_err(&pb->pdev->dev, "%s: err = %ld", __func__,
+				PTR_ERR(debug->stats_dump_dentry));
 		return;
 	}
 }

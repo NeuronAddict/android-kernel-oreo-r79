@@ -258,43 +258,48 @@ int set_dma_transfer_region_parameters(struct paintbox_data *pb,
 {
 	if (config->stripe_height > DMA_CHAN_MAX_STRIPES) {
 		dev_err(&pb->pdev->dev,
-			"%s: dma channel%u: invalid stripe height %u >= %u\n",
-			__func__, channel->channel_id, config->stripe_height,
-			DMA_CHAN_MAX_STRIPES);
+				"%s: dma channel%u: invalid stripe height %u > "
+				"%u\n", __func__, channel->channel_id,
+				config->stripe_height, DMA_CHAN_MAX_STRIPES);
 		return -EINVAL;
 	}
 
 	if (config->sheet_width > DMA_CHAN_MAX_SHEET_WIDTH) {
 		dev_err(&pb->pdev->dev,
-			"%s: dma channel%u: invalid sheet width %u >= %u",
-			__func__, channel->channel_id, config->sheet_width,
-			DMA_CHAN_MAX_SHEET_WIDTH);
+				"%s: dma channel%u: invalid sheet width %u > "
+				"%u", __func__, channel->channel_id,
+				config->sheet_width, DMA_CHAN_MAX_SHEET_WIDTH);
 		return -EINVAL;
 	}
 
 	if (config->sheet_height > DMA_CHAN_MAX_SHEET_HEIGHT) {
 		dev_err(&pb->pdev->dev,
-			"%s: dma channel%u: invalid sheet height %u >= %u\n",
-			__func__, channel->channel_id, config->sheet_height,
-			DMA_CHAN_MAX_SHEET_HEIGHT);
+				"%s: dma channel%u: invalid sheet height %u > "
+				"%u\n", __func__, channel->channel_id,
+				config->sheet_height,
+				DMA_CHAN_MAX_SHEET_HEIGHT);
 		return -EINVAL;
 	}
 
 	if (config->noc_outstanding < DMA_CHAN_NOC_OUTSTANDING_MIN ||
 		config->noc_outstanding > DMA_CHAN_NOC_OUTSTANDING_MAX) {
 		dev_err(&pb->pdev->dev,
-			"%s: dma channel%u: invalid NOC outstanding value %u, "
-			"(%u..%u)\n", __func__, channel->channel_id,
-			config->noc_outstanding, DMA_CHAN_NOC_OUTSTANDING_MIN,
-			DMA_CHAN_NOC_OUTSTANDING_MAX);
+				"%s: dma channel%u: invalid NOC outstanding "
+				"value %u, (%u..%u)\n", __func__,
+				channel->channel_id, config->noc_outstanding,
+				DMA_CHAN_NOC_OUTSTANDING_MIN,
+				DMA_CHAN_NOC_OUTSTANDING_MAX);
 		return -EINVAL;
 	}
 
-	if (config->retry_interval > DMA_CHAN_RETRY_INTERVAL_MAX) {
+	if (config->retry_interval > DMA_CHAN_RETRY_INTERVAL_MAX ||
+			config->retry_interval < DMA_CHAN_RETRY_INTERVAL_MIN) {
 		dev_err(&pb->pdev->dev,
-			"%s: dma channel%u: invalid retry interval value %u > "
-			"%u\n", __func__, channel->channel_id,
-			config->retry_interval, DMA_CHAN_RETRY_INTERVAL_MAX);
+				"%s: dma channel%u: invalid retry interval "
+				"value %u, (%u..%u\n", __func__,
+				channel->channel_id, config->retry_interval,
+				DMA_CHAN_RETRY_INTERVAL_MIN,
+				DMA_CHAN_RETRY_INTERVAL_MAX);
 		return -EINVAL;
 	}
 

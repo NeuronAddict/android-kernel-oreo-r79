@@ -34,7 +34,7 @@ static void release_all_waiters(struct paintbox_data *pb,
 		struct paintbox_irq *irq)
 {
 	if (irq->wait_count > 0) {
-		irq->error = -EPIPE;
+		irq->error[0] = -EPIPE;
 		complete_all(&irq->completion);
 	}
 }
@@ -381,9 +381,18 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 		return wait_ret;
 	}
 
-	if (irq->error) {
-		ret = irq->error;
-		irq->error = 0;
+	if (irq->error[0]) {
+		ret = irq->error[0];
+		irq->error[0] = 0;
+	}
+
+	if (!WARN_ON(irq->interrupt_count == 0)) {
+		unsigned int i, count = irq->interrupt_count--;
+		/* If there are other interrupts queued on this waiter then
+		 * shift the errors down in the queue.
+		 */
+		for (i = 0; i < count; i++)
+			irq->error[i] = irq->error[i + 1];
 	}
 
 	spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
@@ -403,7 +412,8 @@ void signal_waiters(struct paintbox_data *pb, struct paintbox_irq *irq, int err)
 		return;
 	}
 
-	irq->error = err;
+	if (!WARN_ON(irq->interrupt_count == IRQ_MAX_PER_WAIT_PERIOD))
+		irq->error[irq->interrupt_count++] = err;
 
 	complete(&irq->completion);
 
@@ -419,6 +429,10 @@ void init_waiters(struct paintbox_data *pb, struct paintbox_irq *irq)
 		return;
 
 	spin_lock_irqsave(&pb->irq_lock, irq_flags);
+
+	irq->interrupt_count = 0;
+
+	memset(&irq->error, 0, sizeof(irq->error[0]) * IRQ_MAX_PER_WAIT_PERIOD);
 
 	reinit_completion(&irq->completion);
 

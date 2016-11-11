@@ -37,7 +37,6 @@
 
 
 #define MAX_DMA_STOP_ATTEMPTS 2
-#define DMA_STOP_TIMEOUT_US 500
 
 /* The caller to this function must hold pb->dma.dma_lock. */
 void dma_select_channel(struct paintbox_data *pb, uint32_t channel_id)
@@ -114,14 +113,15 @@ static void dma_report_completion(struct paintbox_data *pb,
 		struct paintbox_dma_transfer *transfer, int err)
 {
 	if (transfer->notify_on_completion) {
-		transfer->error = err;
 		list_add_tail(&transfer->entry, &channel->completed_list);
 
 		channel->completed_count++;
+		channel->stats.reported_completions++;
 
 		signal_waiters(pb, channel->irq, err);
 	} else {
 		list_add_tail(&transfer->entry, &pb->dma.discard_list);
+		channel->stats.reported_discards++;
 	}
 }
 
@@ -184,6 +184,60 @@ int unbind_dma_interrupt_ioctl(struct paintbox_data *pb,
 	return 0;
 }
 
+/* The caller to this function must hold pb->lock and pb->dma.dma_lock */
+static void dma_reset_channel_locked(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel)
+{
+	struct paintbox_dma *dma = &pb->dma;
+	struct paintbox_dma_transfer *transfer;
+	uint32_t ctrl;
+
+	/* If there are no active transfers then there is no need to reset the
+	 * channel.
+	 */
+	if (channel->active_count == 0) {
+		/* Disable the DMA channel interrupts in the local IMR and in
+		 * the top-level IPU_IMR.
+		 */
+		writel(0, dma->dma_base + DMA_CHAN_IMR);
+		io_disable_dma_channel_interrupt(pb, channel->channel_id);
+		io_disable_dma_channel(pb, channel->channel_id);
+		return;
+	}
+
+	channel->active_count--;
+	if (WARN_ON(channel->active_count < 0))
+		channel->active_count = 0;
+
+	dma_select_channel(pb, channel->channel_id);
+
+	ctrl = readl(dma->dma_base + DMA_CHAN_CTRL_L);
+	ctrl |= 1 << channel->channel_id;
+	writel(ctrl, dma->dma_base + DMA_CHAN_CTRL_L);
+	ctrl &= ~(1 << channel->channel_id);
+	writel(ctrl, dma->dma_base + DMA_CHAN_CTRL_L);
+
+	transfer = list_entry(channel->active_list.next,
+			struct paintbox_dma_transfer, entry);
+	if (!WARN_ON(transfer == NULL)) {
+		list_del(&transfer->entry);
+		dma_report_completion(pb, channel, transfer, -ECANCELED);
+	}
+}
+
+/* The caller to this function must hold pb->lock */
+void dma_reset_channel(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel)
+{
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
+
+	dma_reset_channel_locked(pb, channel);
+
+	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
+}
+
 /* The caller to this function must hold pb->lock */
 void dma_stop_transfer(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel)
@@ -219,16 +273,27 @@ void dma_stop_transfer(struct paintbox_data *pb,
 		return;
 	}
 
+	mode = readl(dma->dma_base + DMA_CHAN_MODE_RO);
+	src = (mode & DMA_CHAN_SRC_MASK) >> DMA_CHAN_SRC_SHIFT;
+	dst = (mode & DMA_CHAN_DST_MASK) >> DMA_CHAN_DST_SHIFT;
+
+	/* If MIPI is the source or destination of the transfer then cleanup the
+	 * MIPI stream first before initiating the DMA stop request.
+	 */
+	if (src == DMA_CHAN_SRC_MIPI_IN || dst == DMA_CHAN_DST_MIPI_OUT) {
+		/* It should not be possible to program a MIPI transfer without
+		 * having a MIPI stream associated with the channel.
+		 */
+		if (!WARN_ON(!channel->mipi_stream))
+			mipi_request_cleanup(pb, channel->mipi_stream);
+	}
+
 	/* If there is an active transfer then issue a stop request. */
 	ctrl = readl(dma->dma_base + DMA_CHAN_CTRL_H);
 	ctrl |= 1 << channel->channel_id;
 	writel(ctrl, dma->dma_base + DMA_CHAN_CTRL_H);
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0)
-	INIT_COMPLETION(channel->stop_completion);
-#else
 	reinit_completion(&channel->stop_completion);
-#endif
 
 	channel->stop_request = true;
 
@@ -239,7 +304,8 @@ void dma_stop_transfer(struct paintbox_data *pb,
 	 * the DMA channel will be reset below.
 	 */
 	wait_for_completion_interruptible_timeout(&channel->stop_completion,
-			usecs_to_jiffies(DMA_STOP_TIMEOUT_US));
+			usecs_to_jiffies(max(DMA_STOP_TIMEOUT_US,
+			MIPI_CLEANUP_TIMEOUT_US)));
 
 	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
 
@@ -259,10 +325,6 @@ void dma_stop_transfer(struct paintbox_data *pb,
 	writel(0, dma->dma_base + DMA_CHAN_IMR);
 	io_disable_dma_channel_interrupt(pb, channel->channel_id);
 
-	mode = readl(dma->dma_base + DMA_CHAN_MODE_RO);
-	src = (mode & DMA_CHAN_SRC_MASK) >> DMA_CHAN_SRC_SHIFT;
-	dst = (mode & DMA_CHAN_DST_MASK) >> DMA_CHAN_DST_SHIFT;
-
 	/* If the transfer was to or from a line buffer then reset the
 	 * line buffer too.
 	 */
@@ -273,30 +335,25 @@ void dma_stop_transfer(struct paintbox_data *pb,
 				DMA_CHAN_LB_ID_SHIFT);
 	}
 
-	/* TODO(ahampson):  The MIPI cleanup sequence is TBD. b/31229407 */
+	/* If this was a MIPI related transfer then verify that the cleanup
+	 * operation completed.
+	 */
+	if (src == DMA_CHAN_SRC_MIPI_IN || dst == DMA_CHAN_DST_MIPI_OUT) {
+		/* It should not be possible to program a MIPI transfer without
+		 * having a MIPI stream associated with the channel.
+		 */
+		if (!WARN_ON(!channel->mipi_stream))
+			verify_cleanup_completion(pb, channel->mipi_stream);
+	}
 
 	/* If the channel didn't stop within the timeout then reset it.  This
 	 * situation can occur if there are no outstanding requests between the
 	 * src and dst or if the transfer has not started.
 	 */
 	if (channel->stop_request) {
-		struct paintbox_dma_transfer *transfer;
-
 		channel->stop_request = false;
-		channel->active_count--;
-		WARN_ON(channel->active_count < 0);
 
-		ctrl = readl(dma->dma_base + DMA_CHAN_CTRL_L);
-		ctrl |= 1 << channel->channel_id;
-		writel(ctrl, dma->dma_base + DMA_CHAN_CTRL_L);
-		ctrl &= ~(1 << channel->channel_id);
-		writel(ctrl, dma->dma_base + DMA_CHAN_CTRL_L);
-
-		transfer = list_entry(channel->active_list.next,
-				struct paintbox_dma_transfer, entry);
-		list_del(&transfer->entry);
-
-		dma_report_completion(pb, channel, transfer, -ECANCELED);
+		dma_reset_channel_locked(pb, channel);
 	}
 
 	/* If there are no active transfers then power down the DMA channel. */
@@ -324,8 +381,13 @@ void release_dma_channel(struct paintbox_data *pb,
 	 * notify it that the DMA channel has been released.
 	 */
 	if (channel->mipi_stream) {
-		mipi_dma_channel_released(pb, session, channel->mipi_stream);
+		mipi_handle_dma_channel_released(pb, channel->mipi_stream);
+
+		spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
+
 		channel->mipi_stream = NULL;
+
+		spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 	}
 
 	/* Remove the DMA channel from the session. */
@@ -335,26 +397,40 @@ void release_dma_channel(struct paintbox_data *pb,
 
 	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
 
-	WARN_ON(channel->active_count != 0);
-
 	/* Make sure the DMA channel is powered down. */
-	io_disable_dma_channel(pb, channel->channel_id);
+	if (!WARN_ON(channel->active_count != 0))
+		io_disable_dma_channel(pb, channel->channel_id);
 
 	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 }
 
 /* The caller to this function must hold pb->lock */
-int dma_mipi_stream_allocated(struct paintbox_data *pb,
-			struct paintbox_session *session,
-			struct paintbox_mipi_stream *stream,
-			unsigned int channel_id)
+void dma_handle_mipi_stream_released(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel)
+{
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
+
+	channel->mipi_stream = NULL;
+
+	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
+}
+
+/* The caller to this function must hold pb->lock */
+struct paintbox_dma_channel *dma_handle_mipi_stream_allocated(
+		struct paintbox_data *pb, struct paintbox_session *session,
+		struct paintbox_mipi_stream *stream, unsigned int channel_id,
+		int *ret)
 {
 	struct paintbox_dma_channel *channel;
+	unsigned long irq_flags;
 
 	if (channel_id >= pb->dma.num_channels) {
 		dev_err(&pb->pdev->dev, "%s: invalid dma channel id %d\n",
 				__func__, channel_id);
-		return -EINVAL;
+		*ret = -EINVAL;
+		return NULL;
 	}
 
 	/* If the channel has not been allocated to a session then return with
@@ -363,8 +439,10 @@ int dma_mipi_stream_allocated(struct paintbox_data *pb,
 	 * stream will be handled in mipi_dma_channel_allocated() once the DMA
 	 * channel is allocated.
 	 */
-	if (pb->dma.channels[channel_id].session == NULL)
-		return 0;
+	if (pb->dma.channels[channel_id].session == NULL) {
+		*ret = 0;
+		return NULL;
+	}
 
 	/* If the DMA channel is owned by a different session then it can not be
 	 * associated with this MIPI stream.
@@ -376,25 +454,24 @@ int dma_mipi_stream_allocated(struct paintbox_data *pb,
 				__func__, channel_id,
 				stream->is_input ? "input" : "output",
 				stream->stream_id);
-		return -EACCES;
+		*ret = -EACCES;
+		return NULL;
 	}
 
 	channel = &pb->dma.channels[channel_id];
 
+	/* There should not be a stream object already associated with this
+	 * channel.  If there is then there is a bug in cleanup.
+	 */
+	WARN_ON(channel->mipi_stream);
+
+	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
+
 	channel->mipi_stream = stream;
-	stream->dma_channel = channel;
 
-	return 0;
-}
+	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 
-/* The caller to this function must hold pb->lock */
-void dma_mipi_stream_released(struct paintbox_data *pb,
-		struct paintbox_session *session,
-		struct paintbox_dma_channel *channel)
-{
-	/* TODO(ahampson): Determine release actions */
-
-	channel->mipi_stream = NULL;
+	return channel;
 }
 
 int release_dma_channel_ioctl(struct paintbox_data *pb,
@@ -490,7 +567,8 @@ int allocate_dma_channel_ioctl(struct paintbox_data *pb,
 	 * Notify the MIPI code that this DMA channel has been allocated to the
 	 * session.
 	 */
-	mipi_dma_channel_allocated(pb, session, channel);
+	channel->mipi_stream = mipi_handle_dma_channel_allocated(pb, session,
+			channel);
 
 	mutex_unlock(&pb->lock);
 
@@ -823,33 +901,57 @@ int dma_test_channel_reset_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg)
 {
 	unsigned int channel_id = (unsigned int)arg;
-	unsigned long irq_flags;
-	uint32_t ctrl;
-	int ret;
+	struct paintbox_dma_channel *channel;
+	int ret = 0;
 
 	mutex_lock(&pb->lock);
-	ret = validate_dma_channel(pb, session, channel_id);
-	if (ret < 0) {
-		mutex_unlock(&pb->lock);
-		return ret;
-	}
-
-	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
-
-	ctrl = readl(pb->dma.dma_base + DMA_CHAN_CTRL_L);
-	ctrl |= 1 << channel_id;
-	writel(ctrl, pb->dma.dma_base + DMA_CHAN_CTRL_L);
-	ctrl &= ~(1 << channel_id);
-	writel(ctrl, pb->dma.dma_base + DMA_CHAN_CTRL_L);
-
-	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
+	channel = get_dma_channel(pb, session, channel_id, &ret);
+	if (ret >= 0)
+		dma_reset_channel(pb, channel);
 
 	mutex_unlock(&pb->lock);
 
-	return 0;
+	return ret;
 }
 #endif
 
+/* This function must be called in an interrupt context */
+void dma_set_mipi_error(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel, int err)
+{
+	struct paintbox_dma_transfer *transfer;
+
+	spin_lock(&pb->dma.dma_lock);
+
+	/* Verify that there is an active transfer. */
+	if (!channel->active_count) {
+		dev_err(&pb->pdev->dev,
+				"%s: dma channel%u unable to set error, no"
+				"active transfer\n", __func__,
+				channel->channel_id);
+		spin_unlock(&pb->dma.dma_lock);
+		return;
+	}
+
+	transfer = list_entry(channel->active_list.next,
+			struct paintbox_dma_transfer, entry);
+	if (!WARN_ON(transfer == NULL)) {
+		uint32_t src, dst;
+
+		/* Verify that the active transfer is a MIPI transfer */
+		src = (transfer->chan_mode & DMA_CHAN_SRC_MASK) >>
+				DMA_CHAN_SRC_SHIFT;
+		dst = (transfer->chan_mode & DMA_CHAN_DST_MASK) >>
+				DMA_CHAN_DST_SHIFT;
+
+		if (src == DMA_CHAN_SRC_MIPI_IN || dst == DMA_CHAN_DST_MIPI_OUT)
+			transfer->error = err;
+	}
+
+	spin_unlock(&pb->dma.dma_lock);
+}
+
+/* This function must be called in an interrupt context */
 irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 		uint32_t channel_mask)
 {
@@ -867,6 +969,7 @@ irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 		spin_lock(&pb->dma.dma_lock);
 
 		channel = &pb->dma.channels[channel_id];
+		channel->stats.irq_activations++;
 
 		transfer = list_entry(channel->active_list.next,
 				struct paintbox_dma_transfer, entry);
@@ -896,9 +999,18 @@ irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 		}
 
 		if (status & DMA_CHAN_INT_VA_ERR) {
+			channel->stats.va_interrupts++;
 			dma_report_completion(pb, channel, transfer, -EIO);
 		} else if (status & DMA_CHAN_INT_EOF) {
-			dma_report_completion(pb, channel, transfer, 0);
+			channel->stats.eof_interrupts++;
+
+			/* If the transfer error field is set then there has
+			 * been an error for this transfer reported from outside
+			 * of DMA, e.g. MIPI overflow error.
+			 */
+			dma_report_completion(pb, channel, transfer,
+					transfer->error ?
+					transfer->error : 0);
 
 			if (list_empty(&channel->pending_list)) {
 				/* If there are no active transfers then power
