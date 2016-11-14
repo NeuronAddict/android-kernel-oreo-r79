@@ -35,7 +35,7 @@
 #define REGION_2		2
 
 //#define DMA_LL_LENGTH			20 /*TODO Needs to be optimized */
-#define DMA_LL_LENGTH			5 /*TODO Needs to be optimized */
+#define DMA_LL_LENGTH			256 /*TODO Needs to be optimized */
 
 #define LL_DATA_ELEMENT			0x1
 #define LL_IRQ_DATA_ELEMENT		0x19

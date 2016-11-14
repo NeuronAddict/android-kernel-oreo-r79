@@ -64,7 +64,7 @@ int (*irq_callback)(struct mnh_pcie_irq *irq);
 int (*dma_callback)(struct mnh_dma_irq *irq);
 struct mnh_pcie_ep_device *pcie_ep_dev;
 struct delayed_work msi_work;
-struct work_struct msi_rx_work, pcie_irq_work;
+struct work_struct msi_rx_work, vm0_work, vm1_work;
 #define DEVICE_NAME "mnh_pcie_ep"
 #define CLASS_NAME "pcie_ep"
 #define MSI_DELAY (HZ/20) /* TODO: Need to understand what this should be */
@@ -514,112 +514,119 @@ static void msi_rx_worker(struct work_struct *work)
                           (0x1 << APPDEFINED_1_I)));
 		apirq = CSR_IN(PCIE_SW_INTR_TRIGG);
 	}
+	CSR_OUT(PCIE_SW_INTR_EN, MNH_PCIE_SW_IRQ_CLEAR);
 }
 
-static void pcie_irq_worker(struct work_struct *work)
+static void vm1_worker(struct work_struct *work)
 {
-	uint32_t pcieirq;
-
-	pcieirq = CSR_IN(PCIE_SS_INTR_STS);
-	if (pcieirq != 0) {
-		if (pcieirq & MNH_PCIE_MSI_SENT) {
-			dev_err(pcie_ep_dev->dev, "MSI Sent\n");
-			release_link();
-			CSR_OUT(PCIE_SS_INTR_STS,
-				(pcieirq & ~MNH_PCIE_MSI_SENT));
-		}
-		if (pcieirq & MNH_PCIE_VMSG_SENT) {
-			dev_err(pcie_ep_dev->dev, "VM Sent\n");
-			release_link();
-			CSR_OUT(PCIE_SS_INTR_STS,
-				(pcieirq & ~MNH_PCIE_VMSG_SENT));
-		}
-		if ((pcieirq & MNH_PCIE_VMSG1_RXD)
-			& (irq_callback != NULL)) {
-			dev_err(pcie_ep_dev->dev, "VM1 received\n");
-			handle_vm(1);
-			CSR_OUT(PCIE_SS_INTR_STS,
-				(pcieirq & ~MNH_PCIE_VMSG1_RXD));
-		}
-		if ((pcieirq & MNH_PCIE_VMSG0_RXD)
-			& (irq_callback != NULL)) {
-			dev_err(pcie_ep_dev->dev, "VM2 received\n");
-			handle_vm(0);
-			CSR_OUT(PCIE_SS_INTR_STS,
-				(pcieirq & ~MNH_PCIE_VMSG0_RXD));
-		}
-		if (pcieirq & MNH_PCIE_LINK_EQ_REQ_INT) {
-			dev_err(pcie_ep_dev->dev,
-			"MNH_PCIE_LINK_EQ_REQ_INT received\n");
-			CSR_OUT(PCIE_SS_INTR_STS,
-				(pcieirq & ~MNH_PCIE_LINK_EQ_REQ_INT));
-		}
-		if (pcieirq & MNH_PCIE_LINK_REQ_RST_NOT) {
-			dev_err(pcie_ep_dev->dev,
-			"MNH_PCIE_LINK_REQ_RST_NOT received\n");
-			CSR_OUT(PCIE_SS_INTR_STS,
-				(pcieirq & ~MNH_PCIE_LINK_REQ_RST_NOT));
-		}
-		if (pcieirq & MNH_PCIE_LTR_SENT) {
-			release_link();
-			CSR_OUT(PCIE_SS_INTR_STS,
-				(pcieirq & ~MNH_PCIE_LTR_SENT));
-			}
-		if (pcieirq & MNH_PCIE_COR_ERR) {
-			dev_err(pcie_ep_dev->dev,
-			"MNH_PCIE_COR_ERR received\n");
-			CSR_OUT(PCIE_SS_INTR_STS,
-				(pcieirq & ~MNH_PCIE_COR_ERR));
-		}
-		if (pcieirq & MNH_PCIE_NONFATAL_ERR) {
-			dev_err(pcie_ep_dev->dev,
-			"MNH_PCIE_NONFATAL_ERR received\n");
-			CSR_OUT(PCIE_SS_INTR_STS,
-				(pcieirq & ~MNH_PCIE_NONFATAL_ERR));
-		}
-		if (pcieirq & MNH_PCIE_FATAL_ERR) {
-			dev_err(pcie_ep_dev->dev,
-			"MNH_PCIE_FATAL_ERR received\n");
-			CSR_OUT(PCIE_SS_INTR_STS,
-				(pcieirq & ~MNH_PCIE_FATAL_ERR));
-			}
-		if (pcieirq & MNH_PCIE_RADM_MSG_UNLOCK) {
-			dev_err(pcie_ep_dev->dev,
-			"MNH_PCIE_RADM_MSG_UNLOCK received\n");
-			CSR_OUT(PCIE_SS_INTR_STS,
-				(pcieirq & ~MNH_PCIE_RADM_MSG_UNLOCK));
-		}
-		if (pcieirq & MNH_PCIE_PM_TURNOFF) {
-			dev_err(pcie_ep_dev->dev,
-			"MNH_PCIE_PM_TURNOFF received\n");
-			CSR_OUT(PCIE_SS_INTR_STS,
-				(pcieirq & ~MNH_PCIE_PM_TURNOFF));
-		}
-		if (pcieirq & MNH_PCIE_RADM_CPL_TIMEOUT) {
-			dev_err(pcie_ep_dev->dev,
-			"MNH_PCIE_RADM_CPL_TIMEOUT received\n");
-			CSR_OUT(PCIE_SS_INTR_STS,
-				(pcieirq & ~MNH_PCIE_RADM_CPL_TIMEOUT));
-		}
-		if (pcieirq & MNH_PCIE_TRGT_CPL_TIMEOUT) {
-			dev_err(pcie_ep_dev->dev,
-			"MNH_PCIE_TRGT_CPL_TIMEOUT received\n");
-			CSR_OUT(PCIE_SS_INTR_STS,
-				(pcieirq & ~MNH_PCIE_TRGT_CPL_TIMEOUT));
-			}
-	}
+	handle_vm(1);
 }
+
+static void vm0_worker(struct work_struct *work)
+{
+	handle_vm(0);
+}
+
 
 static irqreturn_t pcie_handle_cluster_irq(int irq, void *dev_id)
 {
-	schedule_work(&pcie_irq_work);
+	uint32_t pcieirq;
 
+		pcieirq = CSR_IN(PCIE_SS_INTR_STS);
+		if (pcieirq != 0) {
+			if (pcieirq & MNH_PCIE_MSI_SENT) {
+				dev_err(pcie_ep_dev->dev, "MSI Sent\n");
+				release_link();
+				CSR_OUT(PCIE_SS_INTR_STS,
+					(MNH_PCIE_MSI_SENT));
+			}
+			if (pcieirq & MNH_PCIE_VMSG_SENT) {
+				dev_err(pcie_ep_dev->dev, "VM Sent\n");
+				release_link();
+				CSR_OUT(PCIE_SS_INTR_STS,
+					(MNH_PCIE_VMSG_SENT));
+			}
+			if ((pcieirq & MNH_PCIE_VMSG1_RXD)
+				& (irq_callback != NULL)) {
+				dev_err(pcie_ep_dev->dev, "VM1 received\n");
+				schedule_work(&vm1_work);
+				CSR_OUT(PCIE_SS_INTR_STS,
+					(MNH_PCIE_VMSG1_RXD));
+			}
+			if ((pcieirq & MNH_PCIE_VMSG0_RXD)
+				& (irq_callback != NULL)) {
+				dev_err(pcie_ep_dev->dev, "VM2 received\n");
+				schedule_work(&vm0_work);
+				CSR_OUT(PCIE_SS_INTR_STS,
+					(MNH_PCIE_VMSG0_RXD));
+			}
+			if (pcieirq & MNH_PCIE_LINK_EQ_REQ_INT) {
+				dev_err(pcie_ep_dev->dev,
+				"MNH_PCIE_LINK_EQ_REQ_INT received\n");
+				CSR_OUT(PCIE_SS_INTR_STS,
+					(MNH_PCIE_LINK_EQ_REQ_INT));
+			}
+			if (pcieirq & MNH_PCIE_LINK_REQ_RST_NOT) {
+				dev_err(pcie_ep_dev->dev,
+				"MNH_PCIE_LINK_REQ_RST_NOT received\n");
+				CSR_OUT(PCIE_SS_INTR_STS,
+					(MNH_PCIE_LINK_REQ_RST_NOT));
+			}
+			if (pcieirq & MNH_PCIE_LTR_SENT) {
+				release_link();
+				CSR_OUT(PCIE_SS_INTR_STS,
+					(MNH_PCIE_LTR_SENT));
+				}
+			if (pcieirq & MNH_PCIE_COR_ERR) {
+				dev_err(pcie_ep_dev->dev,
+				"MNH_PCIE_COR_ERR received\n");
+				CSR_OUT(PCIE_SS_INTR_STS,
+					(MNH_PCIE_COR_ERR));
+			}
+			if (pcieirq & MNH_PCIE_NONFATAL_ERR) {
+				dev_err(pcie_ep_dev->dev,
+				"MNH_PCIE_NONFATAL_ERR received\n");
+				CSR_OUT(PCIE_SS_INTR_STS,
+					(MNH_PCIE_NONFATAL_ERR));
+			}
+			if (pcieirq & MNH_PCIE_FATAL_ERR) {
+				dev_err(pcie_ep_dev->dev,
+				"MNH_PCIE_FATAL_ERR received\n");
+				CSR_OUT(PCIE_SS_INTR_STS,
+					(MNH_PCIE_FATAL_ERR));
+				}
+			if (pcieirq & MNH_PCIE_RADM_MSG_UNLOCK) {
+				dev_err(pcie_ep_dev->dev,
+				"MNH_PCIE_RADM_MSG_UNLOCK received\n");
+				CSR_OUT(PCIE_SS_INTR_STS,
+					(MNH_PCIE_RADM_MSG_UNLOCK));
+			}
+			if (pcieirq & MNH_PCIE_PM_TURNOFF) {
+				dev_err(pcie_ep_dev->dev,
+				"MNH_PCIE_PM_TURNOFF received\n");
+				CSR_OUT(PCIE_SS_INTR_STS,
+					(MNH_PCIE_PM_TURNOFF));
+			}
+			if (pcieirq & MNH_PCIE_RADM_CPL_TIMEOUT) {
+				dev_err(pcie_ep_dev->dev,
+				"MNH_PCIE_RADM_CPL_TIMEOUT received\n");
+				CSR_OUT(PCIE_SS_INTR_STS,
+					(MNH_PCIE_RADM_CPL_TIMEOUT));
+			}
+			if (pcieirq & MNH_PCIE_TRGT_CPL_TIMEOUT) {
+				dev_err(pcie_ep_dev->dev,
+				"MNH_PCIE_TRGT_CPL_TIMEOUT received\n");
+				CSR_OUT(PCIE_SS_INTR_STS,
+					(MNH_PCIE_TRGT_CPL_TIMEOUT));
+				}
+		}
 	/* return interrupt handled */
 	return IRQ_HANDLED;
 }
 
 static irqreturn_t pcie_handle_sw_irq(int irq, void *dev_id)
 {
+	CSR_OUT(PCIE_SW_INTR_EN, (~MNH_PCIE_SW_IRQ_CLEAR));
 	schedule_work(&msi_rx_work);
 
 	/* return interrupt handled */
@@ -1715,8 +1722,8 @@ static int mnh_pcie_ep_probe(struct platform_device *pdev)
 
 	/* Register IRQs */
 
+	CSR_OUT(PCIE_SW_INTR_TRIGG, MNH_PCIE_SW_IRQ_CLEAR);
 	pcie_ep_dev->sw_irq = platform_get_irq(pdev, 0);
-
 	err = request_irq(pcie_ep_dev->sw_irq, pcie_handle_sw_irq,
 			IRQF_SHARED, DEVICE_NAME, pcie_ep_dev);
 	if (err) {
@@ -1738,7 +1745,8 @@ static int mnh_pcie_ep_probe(struct platform_device *pdev)
 /* declare MSI worker */
 	INIT_DELAYED_WORK(&msi_work, pcie_msi_worker);
 	INIT_WORK(&msi_rx_work, msi_rx_worker);
-	INIT_WORK(&pcie_irq_work, pcie_irq_worker);
+	INIT_WORK(&vm0_work, vm0_worker);
+	INIT_WORK(&vm1_work, vm1_worker);
 #if MNH_PCIE_DEBUG_ENABLE
 	init_sysfs();
 #endif
