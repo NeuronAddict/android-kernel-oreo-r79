@@ -18,6 +18,7 @@
 #define __MIPICSI_CHARDEV__
 
 #include <linux/cdev.h>
+#include <linux/mipibridge.h>
 
 /*
  * Character device handling

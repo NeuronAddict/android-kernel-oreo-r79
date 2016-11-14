@@ -821,6 +821,71 @@ int mipicsi_top_debug_vpg(struct mipicsi_top_vpg *vpg)
 	return -EINVAL;
 }
 
+int mipicsi_top_debug_bist_start(enum mipicsi_top_dev dev)
+{
+       void * baddr = dev_addr_map[MIPI_TOP];
+
+       if (!baddr) {
+               return -EINVAL;
+       }
+       switch (dev) {
+       case MIPI_RX0:
+               TOP_OUTf(RX0_DPHY_IOTEST, BISTON, 1);
+               break;
+       case MIPI_RX1:
+               TOP_OUTf(RX1_DPHY_IOTEST, BISTON, 1);
+               break;
+       case MIPI_RX2:
+               TOP_OUTf(RX2_DPHY_IOTEST, BISTON, 1);
+               break;
+       case MIPI_TX0:
+               TOP_OUTf(TX0_DPHY_IOTEST, BISTON, 1);
+               break;
+       case MIPI_TX1:
+               TOP_OUTf(TX1_DPHY_IOTEST, BISTON, 1);
+               break;
+       default:
+               return -EINVAL;
+       }
+       return 0;
+}
+
+int mipicsi_top_debug_bist_status(struct mipicsi_top_bist *bist)
+{
+	void * baddr = dev_addr_map[MIPI_TOP];
+	uint8_t done, ok;
+
+	if (!baddr) {
+		return -EINVAL;
+	}
+	switch (bist->dev) {
+	case MIPI_RX0:
+		bist->done = TOP_INf(RX0_DPHY_IOTEST, BISTDONE);
+		bist->ok =  TOP_INf(RX0_DPHY_IOTEST, BISTOK);
+		break;
+	case MIPI_RX1:
+		bist->done = TOP_INf(RX0_DPHY_IOTEST, BISTDONE);
+		bist->ok =  TOP_INf(RX0_DPHY_IOTEST, BISTOK);
+		break;
+	case MIPI_RX2:
+		bist->done = TOP_INf(RX0_DPHY_IOTEST, BISTDONE);
+		bist->ok =  TOP_INf(RX0_DPHY_IOTEST, BISTOK);
+		break;
+	case MIPI_TX0:
+		bist->done = TOP_INf(RX0_DPHY_IOTEST, BISTDONE);
+		bist->ok =  TOP_INf(RX0_DPHY_IOTEST, BISTOK);
+		break;
+	case MIPI_TX1:
+		bist->done = TOP_INf(RX0_DPHY_IOTEST, BISTDONE);
+		bist->ok =  TOP_INf(RX0_DPHY_IOTEST, BISTOK);
+		break;
+	default:
+		return -EINVAL;
+	}
+	return 0;
+}
+
+
 int mipicsi_top_hw_init(void)
 {
 #ifdef MNH_EMULATION

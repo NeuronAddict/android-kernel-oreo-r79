@@ -309,6 +309,69 @@ static ssize_t vpg_preset_store(struct device *dev,
 static DEVICE_ATTR(vpg_preset, S_IRUGO | S_IWUSR | S_IWGRP,
 		   vpg_preset_show, vpg_preset_store);
 
+SHOW_FMT_NA(bist_start);
+
+static ssize_t bist_start_store(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf,
+				size_t count)
+{
+	enum mipicsi_top_dev device;
+
+	if (find_device (buf, &device) >= 0) {
+		mipicsi_top_debug_bist_start(device);
+		return count;
+	}
+	pr_err ("Usage: echo\"<dev>\">bist_start\n");
+	pr_err ("dev=Rx0,Rx1,Rx2,Tx0,Tx1\n");
+	return -EINVAL;
+}
+
+static DEVICE_ATTR(bist_start, S_IRUGO | S_IWUSR | S_IWGRP,
+		   bist_start_show, bist_start_store);
+
+static ssize_t bist_status_show(struct device *dev,
+				struct device_attribute *attr,
+				char *buf)
+{
+        ssize_t strlen = 0;
+	strlen = snprintf((char *)buf, MAX_STR_COPY, "%s\n", string_data);
+	string_data[0] = '\0';
+
+	return strlen;
+}
+
+static ssize_t bist_status_store(struct device *dev,
+                                struct device_attribute *attr,
+                                const char *buf,
+                                const size_t count)
+{
+	enum mipicsi_top_dev device;
+	struct mipicsi_top_bist bist;
+
+	if (find_device (buf, &device) >= 0) {
+		mipicsi_top_debug_bist_status(&bist);
+		if (bist.done == true) {
+			if (bist.ok == true)
+				snprintf(string_data, MAX_STR_COPY,
+					 "%s\n", "BIST OK");
+			else
+				snprintf(string_data, MAX_STR_COPY,
+					 "%s\n", "BIST Failed");
+		} else {
+			snprintf(string_data, MAX_STR_COPY,
+				 "%s\n", "BIST In Progress");
+		}
+		return count;
+	}
+	pr_err ("Usage: echo\"<dev>\">bist_status\n");
+	pr_err ("dev=Rx0,Rx1,Rx2,Tx0,Tx1\n");
+	return -EINVAL;
+}
+
+static DEVICE_ATTR(bist_status, S_IRUGO | S_IWUSR | S_IWGRP,
+                  bist_status_show, bist_status_store);
+
 static ssize_t reg_read_show(struct device *dev,
 			     struct device_attribute *attr,
 			     char *buf)
@@ -447,6 +510,22 @@ int mipicsi_sysfs_init(struct device *mipicsi_top_device)
 	if (ret) {
 		dev_err(mipicsi_top_device, "Failed to create sysfs: \
                         vpg_preset\n");
+		return -EINVAL;
+	}
+
+        ret = device_create_file(mipicsi_top_device,
+				 &dev_attr_bist_start);
+	if (ret) {
+		dev_err(mipicsi_top_device, "Failed to create sysfs: \
+                        bist_start\n");
+		return -EINVAL;
+	}
+
+	ret = device_create_file(mipicsi_top_device,
+				 &dev_attr_bist_status);
+	if (ret) {
+		dev_err(mipicsi_top_device, "Failed to create sysfs: \
+                        bist_status\n");
 		return -EINVAL;
 	}
 

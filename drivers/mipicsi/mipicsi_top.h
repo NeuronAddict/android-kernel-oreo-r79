@@ -57,6 +57,12 @@ enum TX_BYP_SEL_VALUES {
 	TX_BYPASS_RX2 = 3
 };
 
+struct mipicsi_top_bist {
+	enum mipicsi_top_dev dev;     /* Rx0, Rx1, Rx2, Tx0, Tx1 */
+	bool done;
+	bool ok;
+};
+
 /* ENABLE EMULATION SUPPORT */
 #define MNH_EMULATION
 
@@ -72,7 +78,7 @@ int mipicsi_top_set_irq_mask(uint8_t mask);
 int mipicsi_top_read(struct mipicsi_top_reg *reg);
 int mipicsi_top_write(struct mipicsi_top_reg *reg);
 int mipicsi_top_debug_bist_start(enum mipicsi_top_dev dev);
-int mipicsi_top_debug_bist_status(enum mipicsi_top_dev dev);
+int mipicsi_top_debug_bist_status(struct mipicsi_top_bist *bist);
 int mipicsi_top_debug_vpg(struct mipicsi_top_vpg *vpg);
 
 void mipicsi_set_device(enum mipicsi_top_dev devid, struct mipi_dev *dev);
