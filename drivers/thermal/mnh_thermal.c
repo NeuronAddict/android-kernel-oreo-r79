@@ -21,6 +21,7 @@ struct mnh_thermal_sensor {
 	struct thermal_zone_device *tzd;
 	uint32_t id;
 	uint32_t alarm_temp;
+	uint32_t efuse;
 };
 
 struct mnh_thermal_device {
@@ -29,6 +30,28 @@ struct mnh_thermal_device {
 	struct mnh_thermal_sensor *sensors[MNH_NUM_PVT_SENSORS];
 };
 
+static void read_efuse_trim(struct mnh_thermal_device *dev)
+{
+	struct device_node *np, *child;
+	uint32_t i=0,val;
+
+
+	np = of_find_node_by_name(NULL, "thermal-zones");
+	if (!np)
+		return; /* Not able to find */
+
+	for_each_available_child_of_node(np, child) {
+		if (!of_property_read_u32(child, "dts_trim", &val)){
+			dev->sensors[i]->efuse = val;
+			dev_dbg(&dev->sensors[i]->tzd->device,
+				"read_efuse_trim[%d] :%d\n",i, val);
+		}
+		i++;
+	}
+
+	return;
+
+}
 
 /*
  * Caculate PVT_DATA output to millicelsius.
@@ -43,7 +66,6 @@ static int caculate_temp(u16 val)
 	return t;
 }
 
-
 /* The sequence of PVT sensing :
  * 1. Enable 1.2MHz Clock to PVT Sensor(PVT_CLKEN = 1)
  * 2. Wait for 2 msecs for the clock to PVT sensor to start ticking
@@ -57,6 +79,7 @@ static int caculate_temp(u16 val)
 */
 static int mnh_thermal_get_temp(void *data, int *out_temp)
 {
+
 	struct mnh_thermal_sensor *sensor = (struct mnh_thermal_sensor*)data;
 	u32 val = 0;
 
@@ -133,7 +156,6 @@ static int mnh_thermal_probe(struct platform_device *pdev)
 		sensor->tzd = thermal_zone_of_sensor_register(&pdev->dev, i,
 				sensor, &mnh_of_thermal_ops);
 
-
 		if (IS_ERR(sensor->tzd)) {
 			err = PTR_ERR(sensor->tzd);
 			dev_err(&pdev->dev, "failed to register sensor: %d\n",
@@ -142,6 +164,7 @@ static int mnh_thermal_probe(struct platform_device *pdev)
 		}
 
 		mnh_dev->sensors[i] = sensor;
+
 		dev_err(&pdev->dev, "mnh_thermal - zone register:%d\n",i);
 	}
 
@@ -149,6 +172,7 @@ static int mnh_thermal_probe(struct platform_device *pdev)
 	/* TBD : Initialize the sensor with TRIM value by readin EFUSE
 	 * (Not available yet in FPGA, will be available in silicon)
 	 */
+	read_efuse_trim(mnh_dev);
 
 	/* Enable 1.2MHz clock to PVT sensor and wait for 2msecs for the clock
 	 * to PVT sensor to start ticking
