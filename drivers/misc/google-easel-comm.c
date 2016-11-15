@@ -904,6 +904,14 @@ int easelcomm_start_cmd(
 	    sizeof(struct easelcomm_cmd_header) + command_arg_len;
 	int ret;
 
+	/*
+	 * If never enough room for the command plus an 8-byte wrap marker,
+	 * bail.
+	 */
+	if (cmdbuf_size > EASELCOMM_CMD_CHANNEL_SIZE - 8 -
+		sizeof(struct easelcomm_cmd_channel_header))
+		return -EINVAL;
+
 	ret = easelcomm_wait_channel_initialized(channel);
 	/* If no error then channel->mutex is locked */
 	if (ret)
@@ -911,7 +919,7 @@ int easelcomm_start_cmd(
 
 	/* Choose a spot for the new entry, wrap around if needed. */
 	if (channel->write_offset + cmdbuf_size >
-		EASELCOMM_CMD_CHANNEL_SIZE -
+		EASELCOMM_CMD_CHANNEL_SIZE - 8 -
 		sizeof(struct easelcomm_cmd_channel_header)) {
 		uint64_t wrap_marker = CMD_BUFFER_WRAP_MARKER;
 
