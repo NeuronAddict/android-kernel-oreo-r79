@@ -110,6 +110,7 @@ struct mnh_sg_list {
 	struct page **mypage;
 	struct scatterlist *sc_list;
 	int n_num;
+	int length;
 };
 
 

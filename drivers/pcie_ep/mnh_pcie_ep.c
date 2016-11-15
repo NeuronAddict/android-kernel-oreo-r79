@@ -700,12 +700,14 @@ int pcie_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
 	sgl->mypage = kcalloc(p_num, sizeof(struct page *), GFP_KERNEL);
 	if (!sgl->mypage) {
 		sgl->n_num = 0;
+		sgl->length = 0;
 		dev_err(pcie_ep_dev->dev, "failed to assign pages\n");
 		return -EINVAL;
 	}
 	sgl->sc_list = kcalloc(p_num, sizeof(struct scatterlist), GFP_KERNEL);
 	if (!sgl->sc_list) {
 		sgl->n_num = 0;
+		sgl->length = 0;
 		kfree(sgl->mypage);
 		dev_err(pcie_ep_dev->dev, "failed to assign sc_list\n");
 		return -EINVAL;
@@ -717,6 +719,7 @@ int pcie_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
 	up_read(&current->mm->mmap_sem);
 	if (n_num < 0) {
 		sgl->n_num = 0;
+		sgl->length = 0;
 		kfree(sgl->sc_list);
 		kfree(sgl->mypage);
 		return -EINVAL;
@@ -763,9 +766,10 @@ int pcie_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
 				dma_unmap_sg(pcie_ep_dev->dev,
 					sgl->sc_list, n_num, DMA_BIDIRECTIONAL);
 				sgl->n_num = 0;
+				sgl->length = 0;
+				put_page(*(sgl->mypage));
 				kfree(sgl->mypage);
 				kfree(sgl->sc_list);
-				put_page(*(sgl->mypage));
 				return -EINVAL;
 			}
 
@@ -776,12 +780,14 @@ int pcie_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
 		dma_unmap_sg(pcie_ep_dev->dev, sgl->sc_list,
 			sgl->n_num, DMA_BIDIRECTIONAL);
 		sgl->n_num = 0;
+		sgl->length = 0;
 		put_page(*(sgl->mypage));
 		kfree(sgl->mypage);
 		kfree(sgl->sc_list);
 		return -EINVAL;
 	}
 	sgl->n_num = n_num;
+	sgl->length = u;
 	return 0;
 }
 
