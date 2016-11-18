@@ -312,15 +312,15 @@ static void pcie_set_msi_mode(void)
  * Force single MSI for interop with MSM8998 kernel, which doesn't
  * implement multiple MSIs for an EP properly.	Google bug b/31716267.
  */
-#if 1
-	if (1)
-#else
+#ifdef CONFIG_MNH_PCIE_MULTIPLE_MSI
 	if (MSICAP_INf(MSI_CAP_PCI_MSI_CAP_ID_NEXT_CTRL,
 			PCI_MSI_MULTIPLE_MSG_EN) == 0)
-#endif
 		pcie_ep_dev->msimode = 1;
 	else
 		pcie_ep_dev->msimode = 2;
+#else
+		pcie_ep_dev->msimode = 1;
+#endif
 }
 
 

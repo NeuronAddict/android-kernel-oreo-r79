@@ -6,3 +6,8 @@ config MNH_PCIE_EP
 	def_bool n
 	help
 	  Enables the PCIe Endpoint driver
+
+config MNH_PCIE_MULTIPLE_MSI
+	def_bool n
+	help
+	  Enables PCIE multiple MSI supports
