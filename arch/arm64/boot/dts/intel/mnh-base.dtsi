@@ -211,6 +211,7 @@
 
 	thermal-zones {
 		ipu1 {
+			dts_trim = <0>;
 			polling-delay-passive = <250>;/* milliseconds */
 			polling-delay = <1000>;/* milliseconds */
 			thermal-sensors = <&soc_thermal 0>;
@@ -230,6 +231,7 @@
 		};
 
 		ipu2 {
+			dts_trim = <0>;
 			polling-delay-passive = <250>;/* milliseconds */
 			polling-delay = <1000>;/* milliseconds */
 			thermal-sensors = <&soc_thermal 1>;
@@ -246,6 +248,7 @@
 		};
 
 		cpu {
+			dts_trim = <0>;
 			polling-delay-passive = <250>;/* milliseconds */
 			polling-delay = <1000>;/* milliseconds */
 			thermal-sensors = <&soc_thermal 2>;
@@ -262,6 +265,7 @@
 		};
 
 		lpddr {
+			dts_trim = <0>;
 			polling-delay-passive = <250>;/* milliseconds */
 			polling-delay = <1000>;/* milliseconds */
 			thermal-sensors = <&soc_thermal 3>;

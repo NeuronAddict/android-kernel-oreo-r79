@@ -97,6 +97,6 @@
 			reg = <0x0 0x04120000 0x0 0x10000>;
 		};
 	};
-
+	#include "mnh-fwcfg.dtsi"
 	#include "mnh-base.dtsi"
 };
