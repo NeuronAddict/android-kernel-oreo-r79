@@ -65,79 +65,151 @@ static LIST_HEAD(devlist_global);
 
 void config_clk_data_timing(enum mipicsi_top_dev dev, uint32_t mbps)
 {
-	void * baddr = dev_addr_map[dev];
+	uint32_t ui_ps, byteclk_ps;
+	uint16_t tclk_lp_ns, tclk_prep_ns, tclk_zero_ns, tclk_trail_ns,
+		tclk_exit_ns, tclk_post_ns;
+	uint16_t ths_lp_ns, ths_prep_ns, ths_zero_ns, ths_trail_ns,
+		ths_exit_ns;
+	uint8_t value;
 
+	void * baddr = dev_addr_map[dev];
 	if (!baddr) {
 		pr_err("%s: no address for %d\n", __func__, dev);
 		return;
 	}
 
+	ui_ps = 1000*1000/mbps;
+	byteclk_ps = ui_ps*8;
+
+	TX_OUTf(PHY_IF_CFG, PHY_STOP_WAIT_TIME, 79);
+
+	/*
+	 * Calculate the target clock/data lane timings. These are based on
+	 * MIPI D-Phy 2.0 Spec minimum timing + % padding
+	 * Note: Tclk-post is higher than spec due to Synopsys limitation
+	 */
+	tclk_lp_ns = PAD_TIME(50);
+	tclk_prep_ns = PAD_TIME(38);
+	tclk_zero_ns = PAD_TIME(300-tclk_prep_ns);
+	tclk_trail_ns = PAD_TIME(60);
+	tclk_exit_ns = PAD_TIME(100);
+	tclk_post_ns = PAD_TIME(60+130*ui_ps/1000);
+
+	ths_lp_ns = PAD_TIME(50);
+	ths_prep_ns = PAD_TIME(40+4*ui_ps/1000);
+	ths_zero_ns = PAD_TIME(145+10*ui_ps/1000-ths_prep_ns);
+	ths_trail_ns = PAD_TIME(MAX(8*ui_ps/1000, 60+4*ui_ps/1000));
+	ths_exit_ns = PAD_TIME(100);
+
+	pr_info("\n\nui_ps=%ld, byteclk_ps=%ld\n", ui_ps, byteclk_ps);
+
+	pr_info("\nTarget Timings - Minimum + %dpct pad\n", PAD_PCT);
+	pr_info("TCLK: lp=%d, prep=%d, zero=%d, trail=%d, exit=%d, post=%d\n",
+		tclk_lp_ns, tclk_prep_ns, tclk_zero_ns, tclk_trail_ns,
+		tclk_exit_ns, tclk_post_ns);
+
+	pr_info("THS : lp=%d, prep=%d, zero=%d, trail=%d, exit=%d\n\n",
+		ths_lp_ns, ths_prep_ns, ths_zero_ns, ths_trail_ns,
+		ths_exit_ns);
+
 #ifdef MNH_EMULATION
 
-	/* Configure clock and data lane timings */
-	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_CLK_TLP, 0x83);
-	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_CLK_TCLK_PREP, 0x85);
-	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_CLK_TCLK_ZERO, 0x93);
-	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_CLK_TCLK_TRAIL, 0x86);
-	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_CLK_THS_EXIT, 0x2B);
-	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_CLK_TCLK_POST, 0x2C);
-	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_DATA_TLP, 0x83);
-	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_DATA_THS_PREP, 0x84);
-	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_DATA_THS_ZERO, 0x89);
-	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_DATA_THS_TRAIL, 0x85);
-	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_DATA_THS_EXIT, 0x3F);
+	/* Calculate counters for clock and data lane timings */
 
+	/* CLK LP */
+	value = ROUNDUP((tclk_lp_ns-TLP_CONST_TIME)*1000, byteclk_ps);
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_TCLK_LP, (1<<7) | value);
+
+	/* CLK Prepare */
+	value = ROUNDUP((tclk_prep_ns-PREP_CONST_TIME)*1000, byteclk_ps)-1;
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_TCLK_PREP, (1<<7) | value);
+
+	/* CLK Zero */
+	value = ROUNDUP((tclk_zero_ns-ZERO_CONST_TIME)*1000, byteclk_ps)-1;
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_TCLK_ZERO, (1<<7) | value);
+
+	/* CLK Trail */
+	value = ROUNDUP((tclk_trail_ns-TRAIL_CONST_TIME)*1000, byteclk_ps)-1;
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_TCLK_TRAIL, (1<<7) | value);
+
+	/* CLK Exit */
+	value = ROUNDUP((tclk_exit_ns-EXIT_CONST_TIME)*1000, byteclk_ps)-1;
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_TCLK_EXIT, (1<<5)
+			       | value);
+
+	/* CLK Post */
+	value = ROUNDUP((tclk_post_ns-POST_CONST_TIME)*1000, byteclk_ps)-1;
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_TCLK_POST, (1<<5)
+			       | value);
+
+	/* HS LP */
+	value = ROUNDUP((ths_lp_ns-TLP_CONST_TIME)*1000, byteclk_ps)-1;
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_THS_LP, (1<<7) | value);
+
+	/* HS Prepare */
+	value = ROUNDUP((ths_prep_ns+PREP_CONST_TIME+ui_ps/2000)
+			*1000, byteclk_ps)-1;;
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_THS_PREP, (1<<7) | value);
+
+	/* HS Zero */
+	value = ROUNDUP((ths_zero_ns-ZERO_CONST_TIME)*1000, byteclk_ps)-1;
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_THS_ZERO, (1<<7) | value);
+
+	/* HS Trail */
+	value = ROUNDUP((ths_trail_ns-TRAIL_CONST_TIME+ui_ps/2000)
+			*1000, byteclk_ps) - 1;
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_THS_TRAIL, (1<<7) | value);
+
+	/* HS Exit */
+	value = ROUNDUP((ths_exit_ns-EXIT_CONST_TIME)*1000, byteclk_ps)+1;
+	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_THS_EXIT, (1<<5) | value);
 #else
-
-#define ROUNDUP(dividend,divisor) ((dividend + (divisor/2))/divisor)
-	uint16_t value;
-	uint32_t byteclk_ps;
-
-	byteclk_ps = 1000*1000/(mbps/8);
-	pr_info("\n\nbyteclk_ps=%ld\n", byteclk_ps);
 
 	/* TO DO - Revisit formulas after simulation results */
 
 	/* Calculate and write clock lane timing values */
-	/* clock: hstxthsexit */
-	value = ROUNDUP(100*1000, byteclk_ps) + 2;
+	/* CLK Exit*/
+	value = ROUNDUP(tclk_exit_ns*1000, byteclk_ps) + 2;
 	mipicsi_dev_dphy_write(dev, 0x5B, value);
 
-	/* clock: hstxhsprpr */
-	value = ROUNDUP(38*1000, byteclk_ps);
+	/* CLK Prepare */
+	value = ROUNDUP(tclk_prep_ns*1000, byteclk_ps);
 	mipicsi_dev_dphy_write(dev, 0x5C, value);
 
-	/* clock: hstxhsrqst */
-	value = ROUNDUP(500*1000, byteclk_ps) + 2;
+	/* CLK LP */
+	value = ROUNDUP(tclk_lp_ns*1000, byteclk_ps) + 2;
 	mipicsi_dev_dphy_write(dev, 0x5D, value);
 
-	/* clock: hstxthstrail */
-	value = ROUNDUP(60*1000, byteclk_ps);
+	/* CLK Trail */
+	value = ROUNDUP(tclk_trail_ns*1000, byteclk_ps);
 	mipicsi_dev_dphy_write(dev, 0x5E, value);
 
-	/* clock: hstxthszero */
-	value = ROUNDUP((300-38)*1000, byteclk_ps) + 3;
+	/* CLK Zero */
+	value = ROUNDUP(tclk_zero_ns*1000, byteclk_ps) + 3;
 	mipicsi_dev_dphy_write(dev, 0x5F, value);
 
 	/* Calculate and write data lane timing values */
-	/* data: hstxhsrqst */
-	value = ROUNDUP((50*1000), byteclk_ps);
+	/* HS LP */
+	value = ROUNDUP(ths_lp_ns*1000), byteclk_ps);
 	mipicsi_dev_dphy_write(dev, 0x63, value);
 
-	/* data: hstxhsprpr */
-	value = ROUNDUP((40*1000), byteclk_ps) + ROUNDUP(byteclk_ps, (2*1000));
+	/* HS Prepare */
+	value = ROUNDUP((ths_prep_ns*1000), byteclk_ps) +
+		ROUNDUP(byteclk_ps, (2*1000));
 	mipicsi_dev_dphy_write(dev, 0x62, value);
 
-	/* data: hstxthszero */
-	value = ROUNDUP(105*1000, byteclk_ps) + ROUNDUP(byteclk_ps*6, (8*1000));
+	/* HS Zero */
+	value = ROUNDUP(ths_zero_ns*1000, byteclk_ps) +
+		ROUNDUP(byteclk_ps*6, (8*1000));
 	mipicsi_dev_dphy_write(dev, 0x65, value);
 
-	/* data: hstxthstrail */
-	value = ROUNDUP(60*1000, byteclk_ps) + ROUNDUP(byteclk_ps, (2*1000));
+	/* HS Trail */
+	value = ROUNDUP(ths_trail_ns*1000, byteclk_ps) +
+		ROUNDUP(byteclk_ps, (2*1000));
 	mipicsi_dev_dphy_write(dev, 0x64, value);
 
-	/* data: hstxthsexit */
-	value = ROUNDUP(100*1000, byteclk_ps) + 1;
+	/* HS Exit */
+	value = ROUNDUP(ths_exit_ns*1000, byteclk_ps)+1;
 	mipicsi_dev_dphy_write(dev, 0x61, value);
 
 	/* phy_wait_time */
@@ -160,8 +232,8 @@ void mipicsi_dev_dphy_write(enum mipicsi_top_dev dev,
 		return;
 	}
 
-	pr_info("%s: dev=0x%x @ %p, command 0x%02X data=0x%02X\n",
-		__func__, dev, baddr, command, data);
+	pr_info("%s: dev=0x%x, command 0x%02X data=0x%02X\n",
+		__func__, dev, command, data);
 
 	TX_OUT(PHY_RSTZ, 0);
 #ifdef MNH_EMULATION
@@ -261,7 +333,7 @@ int32_t mipicsi_device_set_pll(struct mipicsi_top_cfg *config)
 {
 	enum mipicsi_top_dev dev;
 	struct mipicsi_pll pll;
-	uint32_t val;
+        uint8_t val;
 
 	dev = config->dev;
 
@@ -281,10 +353,25 @@ int32_t mipicsi_device_set_pll(struct mipicsi_top_cfg *config)
 	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_CP_LOCK_BYP_ULP,
 			       (0x00 << 4) | (pll.cp_current << 0));
 
+#if 0
 	/* Program log2(output divider) to register */
 	val = ilog2(pll.output_div);
 	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_DIV_RAT_CTRL,
 			       ((0x1<<5) | (0x1<<4) | (val<<0)));
+#endif
+
+	/* Program output divider P=1 bits[1:0]=00; P=2 bits[1:0]=10 */
+	/* NOTE: This is due to a bug in daughtercards */
+	if (pll.output_div == 1)
+		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_DIV_RAT_CTRL,
+				       ((0x1<<5) | (0x1<<4) | (0x01<<2)));
+	else if (pll.output_div == 2)
+		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_DIV_RAT_CTRL,
+				       ((0x1<<5) | (0x1<<4) | (0x01<<2)
+					| (2<<0)));
+	else
+		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_DIV_RAT_CTRL,
+				       ((0x1<<5) | (0x1<<4)));
 
 	/* Program N-1 to register */
 	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_PLL_INPUT_DIV_RAT,
@@ -364,7 +451,7 @@ int mipicsi_device_vpg(struct mipicsi_top_vpg *vpg)
 
 int mipicsi_device_start(struct mipicsi_top_cfg *config)
 {
-	uint32_t data = 0, val = 0;
+	uint32_t data = 0;
 	uint8_t counter = 0;
 	enum mipicsi_top_dev dev = config->dev;
 	void * baddr = dev_addr_map[dev];
@@ -403,19 +490,18 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 	 */
 	/* Hardware controlled */
 
-       /* Set MASTERSLAVEZ = 1 for Master mode selection (1'b0 for Slave mode
-        * selection).
-        */
+	/* Set MASTERSLAVEZ = 1 for Master mode selection (1'b0 for Slave mode
+	 * selection).
+	 */
 	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_MASTER_SLAVEZ, 0x0E);
 
-	/* Enable lanes */
-	TX_OUTf(PHY_IF_CFG, LANE_EN_NUM, config->num_lanes-1);
+	/* Configure as TX per Synopsys feedback - registers not in databook */
+	mipicsi_dev_dphy_write(dev, 0xB0, 0x00);
+	udelay (10);
+	mipicsi_dev_dphy_write(dev, 0xAC, 0x03);
 
-	/* Set BASEDIR_N to the desired values */
-	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L0, DC_TX_BASEDIR_VAL);
-	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L1, DC_TX_BASEDIR_VAL);
-	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L2, DC_TX_BASEDIR_VAL);
-	mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L3, DC_TX_BASEDIR_VAL);
+	/* Enable lanes */
+	TX_OUTf(PHY_IF_CFG, LANE_EN_NUM, (config->num_lanes-1));
 
 	/* Wait for 15 ns */
 	udelay(1);
@@ -432,30 +518,19 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 	/* Wait 5 ns */
 	udelay(1);
 	TX_OUTf(LPCLK_CTRL, PHY_TXREQCLKHS_CON, 0);
-	/* Configure Test Code 0x22
-	 * Bitrate configuration
-	 * Band Gap reference voltage
-	 * BIASEXTR internal resistor control
-	 * LPTX bias current control
-	 */
-	val = 0x04 | (1<<7) | (0x3<<11) | (0x6<<15);
-	if (config->mbps > 1000)
-		val |= (1<<10);
 
-	mipicsi_dev_dphy_write_set(dev, R_CSI2_DCPHY_AFE_BYPASS_BANDGAP,
-				   ((val >> 12) & 0x3F), 2, 2);
-	mipicsi_dev_dphy_write_set(dev, R_CSI2_DCPHY_AFE_BYPASS_BANDGAP,
-				   ((val >> 6) & 0x3F), 1, 2);
-	mipicsi_dev_dphy_write_set(dev, R_CSI2_DCPHY_AFE_BYPASS_BANDGAP,
-				   ((val >> 0) & 0x3F), 0, 2);
-
-	//mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_LP_TX_PWR_CTRL_CLK, 0x0F);
+	/* Stay in high power so LP->Tx is faster */
+	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_LP_TX_PWR_CTRL_CLK, 0x03);
+	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_PWR_CTRL_CLK, 0x0C);
+	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_PWR_CTRL_L0, 0x0C);
+	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_PWR_CTRL_L1, 0x0C);
+	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_PWR_CTRL_L2, 0x0C);
+	mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_PWR_CTRL_L3, 0x0C);
 
 	config_clk_data_timing (config->dev, config->mbps);
 
 	TX_OUT(PHY_RSTZ, 0x07);
 	udelay(1);
-
 #else
 	TX_OUTf(CSI2_RESETN,    CSI2_RESETN_RW, 1);
 	/* Set rstz = 1'b0 */
@@ -485,7 +560,7 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 
 	/* Wait for 15ns */
 	/* Enable lanes */
-	TX_OUTf(PHY_IF_CFG, LANE_EN_NUM, config->num_lanes-1);
+	TX_OUTf(PHY_IF_CFG, LANE_EN_NUM, (config->num_lanes-1));
 
 	/* Enableclk=1'b1; Wait 5ns; Set shutdownz=1'b1;  Wait 5ns; Set rstz=1'b1; */
 	TX_OUTf(PHY_RSTZ, PHY_ENABLECLK, 0x01);

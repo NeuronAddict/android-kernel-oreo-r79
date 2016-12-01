@@ -45,6 +45,7 @@
 #include <linux/string.h>
 #include "mipi_dev.h"
 #include "mipicsi_top.h"
+#include "mipicsi_device.h"
 #include "mipicsi_host.h"
 #include "mipicsi_pll.h"
 #include "mipicsi_util.h"
@@ -188,8 +189,8 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 {
 
 	uint8_t counter = 0;
-	uint32_t data, val;
-	uint8_t hsfreq;
+	uint32_t data, ui_ps, ths_setl_ns;
+	uint8_t hsfreq, value;
 	enum mipicsi_top_dev dev = config->dev;
 	const uint32_t stop_mask =
 	  RX_MASK(PHY_STOPSTATE, PHY_STOPSTATEDATA_0) |
@@ -228,15 +229,10 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 	mipicsi_host_dphy_write(dev, R_CSI2_DCPHY_MASTER_SLAVEZ,
 				DC_SLAVE_VAL);
 
-	/* Set BASEDIR_N to the desired values(lane direction) */
-	mipicsi_host_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L0,
-				DC_RX_BASEDIR_VAL);
-	mipicsi_host_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L1,
-				DC_RX_BASEDIR_VAL);
-	mipicsi_host_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L2,
-				DC_RX_BASEDIR_VAL);
-	mipicsi_host_dphy_write(dev, R_CSI2_DCPHY_BASEDIR_L3,
-				DC_RX_BASEDIR_VAL);
+	/* Configure as RX per Synopsys feedback - registers not in databook */
+	mipicsi_dev_dphy_write(dev, 0xB0, 0x1E);
+	udelay (10);
+	mipicsi_dev_dphy_write(dev, 0xAC, 0x03);
 
 	/* Set all REQUEST inputs to zero */
 	/* Hardware controls */
@@ -266,20 +262,18 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 	/* Wait 5ns */
 	udelay(1);
 
-	/* Configure Test Code 0x22
-	 * BIASEXTR internal resistor control
-	 * LPTX bias current control
+	/*
+	 * RX THS Settle
+	 * NOTE: THS target settle time is a little higher than MIPI spec due
+	 * to Synopsys feedback
 	 */
-	val = 0x04;
-	if (config->mbps > 1000)
-		val |= (1<<10);
+	ui_ps = 1000*1000/config->mbps;
+	ths_setl_ns = PAD_TIME(115+6*ui_ps/1000);
+	pr_info("THS : RX setl=%d\n",ths_setl_ns);
+	value = ROUNDUP((ths_setl_ns-SETL_CONST_TIME),
+		      (MIPI_DDR_CLOCK/(config->mbps/2)))-1;
+	mipicsi_host_dphy_write(dev, R_CSI2_DCPHY_RX_THS_SETL, (1<<7) | value);
 
-	mipicsi_host_dphy_write_set(dev, R_CSI2_DCPHY_AFE_BYPASS_BANDGAP,
-				   ((val >> 0) & 0x3F), 0, 2);
-	mipicsi_host_dphy_write_set(dev, R_CSI2_DCPHY_AFE_BYPASS_BANDGAP,
-				   ((val >> 6) & 0x3F), 1, 2);
-
-	mipicsi_host_dphy_write (dev, R_CSI2_DCPHY_HS_RX_DATA_THS_SETL, 0xA5);
 #else
 	mipicsi_pll pll;
 	/* Set TESTCLR to logic low */
