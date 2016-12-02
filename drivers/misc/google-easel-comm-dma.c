@@ -8,13 +8,13 @@
  * published by the Free Software Foundation.
  */
 
-// #define DEBUG
+/* #define DEBUG */
 
 #include <uapi/linux/google-easel-comm.h>
 #include "google-easel-comm-shared.h"
 #include "google-easel-comm-private.h"
 
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <linux/completion.h>
 #include <linux/device.h>
 #include <linux/kernel.h>
@@ -54,7 +54,7 @@ void easelcomm_handle_cmd_dma_sg(
 		msg_metadata =
 			easelcomm_find_remote_message(
 				service, sg_header->message_id);
-        }
+	}
 
 	if (!msg_metadata) {
 		dev_err(easelcomm_miscdev.this_device,
@@ -132,7 +132,7 @@ void easelcomm_handle_cmd_dma_xfer(
 		msg_metadata =
 			easelcomm_find_remote_message(
 				service, dma_xfer->message_id);
-        }
+	}
 
 	if (!msg_metadata) {
 		dev_err(easelcomm_miscdev.this_device,
@@ -181,7 +181,7 @@ void easelcomm_handle_cmd_dma_done(
 		msg_metadata =
 			easelcomm_find_remote_message(
 				service, dma_done_arg->message_id);
-        }
+	}
 
 	if (!msg_metadata) {
 		dev_err(easelcomm_miscdev.this_device,
@@ -286,8 +286,7 @@ static int easelcomm_send_dma_xfer(
 		service, &dma_xfer, sizeof(struct easelcomm_dma_xfer_arg));
 	if (ret)
 		return ret;
-	dev_dbg(easelcomm_miscdev.this_device, "send cmd DMA_XFER"
-		" msg %u:%s%llu type=%u saddr=%llx\n",
+	dev_dbg(easelcomm_miscdev.this_device, "send cmd DMA_XFER msg %u:%s%llu type=%u saddr=%llx\n",
 		service->service_id,
 		easelcomm_msgid_prefix(msg_metadata),
 		msg_metadata->msg->desc.message_id,
@@ -319,7 +318,7 @@ static int easelcomm_server_handle_dma_request(
 	if (ret || msg_metadata->dma_xfer.aborting)
 		goto abort;
 
-	if (! msg_metadata->dma_xfer.sg_remote_size) {
+	if (!msg_metadata->dma_xfer.sg_remote_size) {
 		dev_dbg(easelcomm_miscdev.this_device,
 			"client discards DMA for msg %u:%s%llu\n",
 			service->service_id,
@@ -460,8 +459,7 @@ static int easelcomm_client_perform_dma_sblk(
 	uint64_t client_addr = easelcomm_hw_scatterlist_sblk_addr(
 		msg_metadata->dma_xfer.sg_local);
 
-	dev_dbg(easelcomm_miscdev.this_device, "sblk dma msg %u:%s%llu"
-		" dir=%d size=%u local=%llx saddr=%llx\n",
+	dev_dbg(easelcomm_miscdev.this_device, "sblk dma msg %u:%s%llu dir=%d size=%u local=%llx saddr=%llx\n",
 		service->service_id, easelcomm_msgid_prefix(msg_metadata),
 		msg_metadata->msg->desc.message_id, dir,
 		msg_metadata->msg->desc.dma_buf_size, client_addr,
@@ -478,8 +476,7 @@ static int easelcomm_client_perform_dma_mblk(
 	struct easelcomm_message_metadata *msg_metadata,
 	enum easelcomm_dma_direction dir)
 {
-	dev_dbg(easelcomm_miscdev.this_device, "mblk dma msg %u:%s%llu"
-		" dir=%d size=%u ll=%llx\n",
+	dev_dbg(easelcomm_miscdev.this_device, "mblk dma msg %u:%s%llu dir=%d size=%u ll=%llx\n",
 		service->service_id, easelcomm_msgid_prefix(msg_metadata),
 		msg_metadata->msg->desc.message_id, dir,
 		msg_metadata->msg->desc.dma_buf_size,
@@ -577,9 +574,8 @@ int easelcomm_receive_dma(
 	if (buf_desc->buf_size &&
 	    buf_desc->buf_size != msg_metadata->msg->desc.dma_buf_size) {
 		dev_err(easelcomm_miscdev.this_device,
-			"RECVDMA descriptor buffer size %u doesn't"
-			" match msg r%llu size %u\n", buf_desc->buf_size,
-			buf_desc->message_id,
+			"RECVDMA descriptor buffer size %u doesn't match msg r%llu size %u\n",
+			buf_desc->buf_size, buf_desc->message_id,
 			msg_metadata->msg->desc.dma_buf_size);
 		ret = -EINVAL;
 		goto out;
@@ -657,8 +653,7 @@ int easelcomm_send_dma(
 	if (buf_desc->buf_size &&
 		buf_desc->buf_size != msg_metadata->msg->desc.dma_buf_size) {
 		dev_err(easelcomm_miscdev.this_device,
-			"SENDDMA descriptor buffer size %u doesn't"
-			" match message l%llu size %u\n",
+			"SENDDMA descriptor buffer size %u doesn't match message l%llu size %u\n",
 			buf_desc->buf_size, buf_desc->message_id,
 			msg_metadata->msg->desc.dma_buf_size);
 		ret = -EINVAL;

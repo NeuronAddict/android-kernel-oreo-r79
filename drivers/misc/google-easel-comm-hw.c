@@ -8,7 +8,7 @@
  * published by the Free Software Foundation.
  */
 
-// #define DEBUG
+/* #define DEBUG */
 
 #ifdef CONFIG_GOOGLE_EASEL_AP
 #define EASELCOMM_AP 1
@@ -26,7 +26,7 @@
 #include "google-easel-comm-shared.h"
 #include "google-easel-comm-private.h"
 
-#include <asm/io.h>
+#include <linux/io.h>
 #include <linux/compiler.h>
 #include <linux/completion.h>
 #include <linux/dma-mapping.h>
@@ -84,11 +84,11 @@ static void easelcomm_hw_cmdchan_wrap(struct work_struct *work)
 static DECLARE_WORK(cmdchan_wrap, easelcomm_hw_cmdchan_wrap);
 
 /* AP/client cmdchan setup. */
-int easelcomm_hw_ap_setup_cmdchans()
+int easelcomm_hw_ap_setup_cmdchans(void)
 {
 #ifdef EASELCOMM_AP
-	struct mnh_inb_window inb;
-	struct mnh_outb_region outb;
+	struct mnh_inb_window inbound;
+	struct mnh_outb_region outbound;
 	int ret;
 
 	ret = mnh_get_rb_base(&easel_cmdchan_dma_addr);
@@ -99,28 +99,28 @@ int easelcomm_hw_ap_setup_cmdchans()
 		 easel_cmdchan_dma_addr);
 
 	/* Inbound region 0 BAR4 match map to Easel cmdchan phys addr */
-	inb.region = 0;
-	inb.mode = BAR_MATCH;
-	inb.bar = 4;
+	inbound.region = 0;
+	inbound.mode = BAR_MATCH;
+	inbound.bar = 4;
 	/* Align target address for 4MB BAR size */
 	/*
 	 * TODO: Want a carveout dedicated for this so no chance of 4MB
 	 * boundary crossed.  b/32782918.
 	 */
-	inb.target_mth_address =
+	inbound.target_mth_address =
 		easel_cmdchan_dma_addr & ~(MNH_BAR4_MASK);
 	easel_cmdchan_pcie_offset = easel_cmdchan_dma_addr & (MNH_BAR4_MASK);
-	ret = mnh_set_inbound_iatu(&inb);
+	ret = mnh_set_inbound_iatu(&inbound);
 	if (WARN_ON(ret))
 		return ret;
 
 	/* Outbound region 1 map to AP cmdchan DMA addr */
-	outb.region = 1;
-	outb.base_address = HW_MNH_PCIE_OUTBOUND_BASE;
-	outb.limit_address = HW_MNH_PCIE_OUTBOUND_BASE +
+	outbound.region = 1;
+	outbound.base_address = HW_MNH_PCIE_OUTBOUND_BASE;
+	outbound.limit_address = HW_MNH_PCIE_OUTBOUND_BASE +
 		EASELCOMM_CMD_CHANNEL_SIZE - 1;
-	outb.target_pcie_address = local_cmdchan_dma_addr;
-	ret = mnh_set_outbound_iatu(&outb);
+	outbound.target_pcie_address = local_cmdchan_dma_addr;
+	ret = mnh_set_outbound_iatu(&outbound);
 	if (WARN_ON(ret))
 		return ret;
 	return 0;
@@ -235,6 +235,7 @@ EXPORT_SYMBOL(easelcomm_hw_init);
 static void easelcomm_hw_ap_server_ready(struct work_struct *work)
 {
 	int ret = easelcomm_client_remote_cmdchan_ready_handler();
+
 	if (ret)
 		pr_debug("easelcomm: remote_cmdchan_ready_handler returns %d\n",
 			ret);
@@ -260,7 +261,7 @@ static int easelcomm_hw_ap_msi_callback(uint32_t msi)
 		pr_warn("easelcomm: MSI %u ignored\n", msi);
 	}
 
-	return ret;
+	return 0;
 }
 
 /* AP/client MNH API DMA IRQ callback */
@@ -304,6 +305,7 @@ static int easelcomm_hw_ap_pcie_ready(void)
 static int easelcomm_hw_ap_hotplug_callback(enum mnh_hotplug_event_t event)
 {
 	int ret = 0;
+
 	switch (event) {
 	case MNH_HOTPLUG_IN:
 		pr_debug("easelcomm: mnh hotplug in\n");

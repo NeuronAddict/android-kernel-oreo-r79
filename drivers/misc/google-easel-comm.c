@@ -8,13 +8,12 @@
  * published by the Free Software Foundation.
  */
 
-// #define DEBUG
+/* #define DEBUG */
 
 #include <uapi/linux/google-easel-comm.h>
 #include "google-easel-comm-shared.h"
 #include "google-easel-comm-private.h"
 
-#include <asm/uaccess.h>
 #include <linux/compat.h>
 #include <linux/completion.h>
 #include <linux/delay.h>
@@ -29,6 +28,7 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/types.h>
+#include <linux/uaccess.h>
 
 /* retry delay in msec for retrying flush of a message being processed */
 #define MSG_FLUSH_RETRY_DELAY 10
@@ -111,8 +111,8 @@ static void easelcomm_dump_message(
 	struct easelcomm_message_metadata *msg_metadata)
 {
 	struct easelcomm_kmsg *msg = msg_metadata->msg;
-	dev_dbg(easelcomm_miscdev.this_device, "msg: id=%s%llu msgsize=%u dmasize=%u"
-		" needreply=%d inreplyto=%llu replycode=%d\n",
+
+	dev_dbg(easelcomm_miscdev.this_device, "msg: id=%s%llu msgsize=%u dmasize=%u needreply=%d inreplyto=%llu replycode=%d\n",
 		easelcomm_msgid_prefix(msg_metadata),
 		msg->desc.message_id, msg->desc.message_size,
 		msg->desc.dma_buf_size, msg->desc.need_reply,
@@ -240,7 +240,7 @@ static struct easelcomm_message_metadata *easelcomm_add_metadata(
 	msg_metadata->reply_metadata = NULL;
 
 	spin_lock(&service->lock);
-	switch(msg_metadata->msg_type) {
+	switch (msg_metadata->msg_type) {
 	case TYPE_LOCAL:
 		/* add to the local list */
 		list_add_tail(&msg_metadata->list, &service->local_list);
@@ -289,10 +289,8 @@ static void easelcomm_free_message(
 	if (msg_metadata->queued)
 		list_del(&msg_metadata->rcvq_list);
 	kfree(msg_metadata->msg);
-	if (msg_metadata->dma_xfer.sg_local)
-		kfree(msg_metadata->dma_xfer.sg_local);
-	if (msg_metadata->dma_xfer.sg_remote)
-		kfree(msg_metadata->dma_xfer.sg_remote);
+	kfree(msg_metadata->dma_xfer.sg_local);
+	kfree(msg_metadata->dma_xfer.sg_remote);
 	kfree(msg_metadata);
 }
 
@@ -487,8 +485,8 @@ static void easelcomm_handle_cmd_send_msg(
 				service, orig_msg_metadata, false);
 		} else {
 			dev_dbg(easelcomm_miscdev.this_device,
-				"reply msg %u:r%llu reply-to msg %u:l%llu"
-				" not found\n", service->service_id,
+				"reply msg %u:r%llu reply-to msg %u:l%llu not found\n",
+				service->service_id,
 				msg_metadata->msg->desc.message_id,
 				service->service_id,
 				msg_metadata->msg->desc.in_reply_to);
@@ -641,7 +639,7 @@ static void easelcomm_handle_command(struct easelcomm_cmd_header *cmdhdr)
 	}
 	service = &easelcomm_service[cmdhdr->service_id];
 
-	switch(cmdhdr->command_code) {
+	switch (cmdhdr->command_code) {
 	case EASELCOMM_CMD_LINK_INIT:
 		easelcomm_handle_cmd_link_init(
 			cmdargs, cmdhdr->command_arg_len);
@@ -718,8 +716,7 @@ void easelcomm_cmd_channel_data_handler(void)
 		struct easelcomm_cmd_header *cmdhdr =
 			(struct easelcomm_cmd_header *)channel->readp;
 
-		dev_dbg(easelcomm_miscdev.this_device, "cmdchan consumer loop"
-			" prodseq=%llu consseq=%llu off=%lx\n",
+		dev_dbg(easelcomm_miscdev.this_device, "cmdchan consumer loop prodseq=%llu consseq=%llu off=%lx\n",
 			channel_buf_hdr->producer_seqnbr_next,
 			channel->consumer_seqnbr_next,
 			channel->readp - channel->buffer);
@@ -745,8 +742,7 @@ void easelcomm_cmd_channel_data_handler(void)
 		}
 
 		dev_dbg(easelcomm_miscdev.this_device,
-			"cmdchan recv cmd seq=%llu svc=%u"
-			" cmd=%u len=%u off=%lx\n",
+			"cmdchan recv cmd seq=%llu svc=%u cmd=%u len=%u off=%lx\n",
 			cmdhdr->sequence_nbr, cmdhdr->service_id,
 			cmdhdr->command_code, cmdhdr->command_arg_len,
 			channel->readp - channel->buffer);
@@ -754,8 +750,7 @@ void easelcomm_cmd_channel_data_handler(void)
 			cmdhdr->command_arg_len >
 			EASELCOMM_CMD_CHANNEL_SIZE) {
 			dev_err(easelcomm_miscdev.this_device,
-				"command channel corruption detected:"
-				" seq=%llu svc=%u cmd=%u len=%u off=%lx\n",
+				"command channel corruption detected: seq=%llu svc=%u cmd=%u len=%u off=%lx\n",
 				cmdhdr->sequence_nbr, cmdhdr->service_id,
 				cmdhdr->command_code, cmdhdr->command_arg_len,
 				channel->readp - channel->buffer);
@@ -765,8 +760,7 @@ void easelcomm_cmd_channel_data_handler(void)
 		if (cmdhdr->sequence_nbr !=
 			channel->consumer_seqnbr_next) {
 			dev_err(easelcomm_miscdev.this_device,
-				"command channel corruption detected:"
-				" expected seq# %llu, got %llu\n",
+				"command channel corruption detected: expected seq# %llu, got %llu\n",
 				channel->consumer_seqnbr_next,
 				cmdhdr->sequence_nbr);
 			break;
@@ -781,8 +775,7 @@ void easelcomm_cmd_channel_data_handler(void)
 			channel->readp += 8 - ((uintptr_t)channel->readp & 0x7);
 		easelcomm_cmd_channel_bump_consumer_seqnbr(channel);
 	}
-	dev_dbg(easelcomm_miscdev.this_device, "cmdchan consumer exiting"
-		" prodseq=%llu consseq=%llu off=%lx\n",
+	dev_dbg(easelcomm_miscdev.this_device, "cmdchan consumer exiting prodseq=%llu consseq=%llu off=%lx\n",
 		channel_buf_hdr->producer_seqnbr_next,
 		channel->consumer_seqnbr_next,
 		channel->readp - channel->buffer);
@@ -924,8 +917,7 @@ int easelcomm_start_cmd(
 		uint64_t wrap_marker = CMD_BUFFER_WRAP_MARKER;
 
 		/* Write the "buffer wrapped" marker in place of sequence # */
-		dev_dbg(easelcomm_miscdev.this_device, "cmdchan producer wrap"
-			" at off=%llx seq=%llu\n",
+		dev_dbg(easelcomm_miscdev.this_device, "cmdchan producer wrap at off=%llx seq=%llu\n",
 			channel->write_offset, channel->write_seqnbr);
 		ret = easelcomm_hw_remote_write(
 			&wrap_marker, sizeof(wrap_marker),
@@ -958,8 +950,7 @@ int easelcomm_start_cmd(
 			goto error;
 	}
 
-	dev_dbg(easelcomm_miscdev.this_device, "cmdchan producer sending cmd"
-		" seq#%llu svc=%u cmd=%u arglen=%u off=%llx\n",
+	dev_dbg(easelcomm_miscdev.this_device, "cmdchan producer sending cmd seq#%llu svc=%u cmd=%u arglen=%u off=%llx\n",
 		channel->write_seqnbr, service->service_id, command_code,
 		command_arg_len, channel->write_offset);
 	cmdhdr.service_id = service->service_id;
@@ -1129,9 +1120,8 @@ static int easelcomm_send_message_ioctl(
 
 		if (!orig_msg_metadata) {
 			dev_dbg(easelcomm_miscdev.this_device,
-				"msg %u:l%llu replied-to msg r%llu"
-				" not found\n", service->service_id,
-				msg_desc->message_id,
+				"msg %u:l%llu replied-to msg r%llu not found\n",
+				service->service_id, msg_desc->message_id,
 				msg_metadata->msg->desc.in_reply_to);
 		} else {
 			dev_dbg(easelcomm_miscdev.this_device,
@@ -1167,8 +1157,7 @@ static int easelcomm_wait_message(
 		    (easelcomm_is_client() && service->shutdown_remote)) {
 			/* Service shutdown initiated locally or remotely. */
 			dev_dbg(easelcomm_miscdev.this_device,
-				"WAITMSG svc %u returning shutdown"
-				" local=%d remote=%d\n",
+				"WAITMSG svc %u returning shutdown local=%d remote=%d\n",
 				service->service_id, service->shutdown_local,
 				service->shutdown_remote);
 			service->shutdown_remote = false;
@@ -1297,6 +1286,7 @@ static void easelcomm_flush_service(struct easelcomm_service *service)
 static int easelcomm_register(struct easelcomm_user_state *user_state,
 			unsigned int service_id) {
 	struct easelcomm_service *service;
+
 	if (service_id >= EASELCOMM_SERVICE_COUNT)
 		return -EINVAL;
 	service = &easelcomm_service[service_id];
@@ -1355,9 +1345,9 @@ static int easelcomm_read_msgdata(
 	if (buf_desc->buf_size &&
 		buf_desc->buf_size != msg_metadata->msg->desc.message_size) {
 		dev_err(easelcomm_miscdev.this_device,
-			"READDATA descriptor buffer size %u doesn't"
-			" match message %u:r%llu size %u\n", buf_desc->buf_size,
-			service->service_id, buf_desc->message_id,
+			"READDATA descriptor buffer size %u doesn't match message %u:r%llu size %u\n",
+			buf_desc->buf_size, service->service_id,
+			buf_desc->message_id,
 			msg_metadata->msg->desc.message_size);
 		ret = -EINVAL;
 		goto out;
@@ -1415,8 +1405,7 @@ static int easelcomm_write_msgdata(
 	if (buf_desc->buf_size &&
 	    buf_desc->buf_size != msg_metadata->msg->desc.message_size) {
 		dev_err(easelcomm_miscdev.this_device,
-			"WRITEDATA descriptor buffer size %u doesn't"
-			" match message %u:l%llu size %u\n",
+			"WRITEDATA descriptor buffer size %u doesn't match message %u:l%llu size %u\n",
 			buf_desc->buf_size, service->service_id,
 			buf_desc->message_id,
 			msg_metadata->msg->desc.message_size);
@@ -1774,15 +1763,16 @@ static void __exit easelcomm_exit(void)
 {
 	int i;
 
-	// TODO-LATER: Grab mutex for remote channel, disallow further messages
-	// TODO-LATER: Set local shutdown flag, disallow further activity
+	/* TODO: Grab mutex for remote channel, disallow further messages */
+	/* TODO: Set local shutdown flag, disallow further activity */
 
 	for (i = 0; i < EASELCOMM_SERVICE_COUNT; i++) {
 		struct easelcomm_service *service = &easelcomm_service[i];
+
 		easelcomm_flush_local_service(service);
 	}
 
-	// TODO-LATER: Send link shutdown command, wait for remote ACK
+	/* TODO-LATER: Send link shutdown command, wait for remote ACK */
 
 	kfree(cmd_channel_local.buffer);
 	misc_deregister(&easelcomm_miscdev);

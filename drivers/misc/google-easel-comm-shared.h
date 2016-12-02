@@ -52,7 +52,7 @@
 
 /* Alternatively can use this data structure for local access */
 struct easelcomm_cmd_channel_header {
-        uint64_t producer_seqnbr_next; /* next cmd seq# to be produced */
+	uint64_t producer_seqnbr_next; /* next cmd seq# to be produced */
 };
 
 /* Size of command channel header in bytes */
@@ -60,16 +60,16 @@ struct easelcomm_cmd_channel_header {
 
 /* easelcomm driver command codes */
 enum {
-        EASELCOMM_CMD_LINK_INIT = 0,      /* link partner init */
-        EASELCOMM_CMD_LINK_SHUTDOWN,      /* link partner shutdown */
-        EASELCOMM_CMD_ACK_SHUTDOWN,       /* link shutdown acknowledge */
-        EASELCOMM_CMD_SEND_MSG,           /* send message */
-        EASELCOMM_CMD_DMA_SG,             /* DMA scatter-gather list */
-        EASELCOMM_CMD_DMA_XFER,           /* DMA transfer request */
-        EASELCOMM_CMD_DMA_DONE,           /* inform DMA transfer done */
-        EASELCOMM_CMD_FLUSH_SERVICE,      /* flush service messages */
-        EASELCOMM_CMD_FLUSH_SERVICE_DONE, /* flush service done */
-        EASELCOMM_CMD_CLOSE_SERVICE,      /* remote service handler closed */
+	EASELCOMM_CMD_LINK_INIT = 0,      /* link partner init */
+	EASELCOMM_CMD_LINK_SHUTDOWN,      /* link partner shutdown */
+	EASELCOMM_CMD_ACK_SHUTDOWN,       /* link shutdown acknowledge */
+	EASELCOMM_CMD_SEND_MSG,           /* send message */
+	EASELCOMM_CMD_DMA_SG,             /* DMA scatter-gather list */
+	EASELCOMM_CMD_DMA_XFER,           /* DMA transfer request */
+	EASELCOMM_CMD_DMA_DONE,           /* inform DMA transfer done */
+	EASELCOMM_CMD_FLUSH_SERVICE,      /* flush service messages */
+	EASELCOMM_CMD_FLUSH_SERVICE_DONE, /* flush service done */
+	EASELCOMM_CMD_CLOSE_SERVICE,      /* remote service handler closed */
 };
 
 /* Command channel producer wraparound marked by this invalid sequence # */
@@ -77,16 +77,16 @@ enum {
 
 /* Command header, precedes command-specific params (if any) */
 struct easelcomm_cmd_header {
-        uint64_t sequence_nbr;    /* seq# of command, or wrap marker */
-        uint32_t service_id;      /* destination Easel service ID */
-        uint32_t command_code;    /* easelcomm driver command code */
-        uint32_t command_arg_len; /* # of bytes of command args that follow */
+	uint64_t sequence_nbr;    /* seq# of command, or wrap marker */
+	uint32_t service_id;      /* destination Easel service ID */
+	uint32_t command_code;    /* easelcomm driver command code */
+	uint32_t command_arg_len; /* # of bytes of command args that follow */
 };
 
 /* Kernel-layer Easel message descriptor plus appended message data */
 struct easelcomm_kmsg {
-        struct easelcomm_kmsg_desc desc;
-        char message_data;             /* message data starts here */
+	struct easelcomm_kmsg_desc desc;
+	char message_data;             /* message data starts here */
 };
 
 /* SEND_MSG command argument is a struct easelcomm_msg */
@@ -99,36 +99,36 @@ struct easelcomm_kmsg {
  * driver.
  */
 enum easelcomm_dma_direction {
-        EASELCOMM_DMA_DIR_TO_CLIENT,
-        EASELCOMM_DMA_DIR_TO_SERVER,
+	EASELCOMM_DMA_DIR_TO_CLIENT,
+	EASELCOMM_DMA_DIR_TO_SERVER,
 };
 
 /* DMA_SG command argument header */
 struct easelcomm_dma_sg_header {
-        easelcomm_msgid_t message_id; /* which message this SG list is for */
-        uint32_t dma_dir;             /* which DMA direction */
-        uint32_t scatterlist_size;    /* length of scatterlist that follows */
+	easelcomm_msgid_t message_id; /* which message this SG list is for */
+	uint32_t dma_dir;             /* which DMA direction */
+	uint32_t scatterlist_size;    /* length of scatterlist that follows */
 };
 /* Above header is followed by a MNH driver scatter-gather list */
 
 /* DMA_XFER command argument */
 enum {
-        EASELCOMM_DMA_XFER_SBLK,      /* single-block DMA request */
-        EASELCOMM_DMA_XFER_MBLK,      /* multi-block DMA request */
-        EASELCOMM_DMA_XFER_ABORT,     /* abort DMA request, error or discard */
+	EASELCOMM_DMA_XFER_SBLK,      /* single-block DMA request */
+	EASELCOMM_DMA_XFER_MBLK,      /* multi-block DMA request */
+	EASELCOMM_DMA_XFER_ABORT,     /* abort DMA request, error or discard */
 };
 struct easelcomm_dma_xfer_arg {
-        easelcomm_msgid_t message_id; /* local or remote message ID */
-        uint32_t dma_dir;             /* DMA direction tells local/remote */
-        uint32_t xfer_type;           /* DMA transfer type */
-        uint64_t server_addr;         /* MBLK LL addr or SBLK dest paddr */
+	easelcomm_msgid_t message_id; /* local or remote message ID */
+	uint32_t dma_dir;             /* DMA direction tells local/remote */
+	uint32_t xfer_type;           /* DMA transfer type */
+	uint64_t server_addr;         /* MBLK LL addr or SBLK dest paddr */
 };
 
 /* DMA_DONE command argument */
 struct easelcomm_dma_done_arg {
-        easelcomm_msgid_t message_id; /* local or remote message ID */
-        uint32_t dma_dir;             /* DMA direction tells local/remote */
-        int32_t errcode;              /* DMA error code or zero if OK */
+	easelcomm_msgid_t message_id; /* local or remote message ID */
+	uint32_t dma_dir;             /* DMA direction tells local/remote */
+	int32_t errcode;              /* DMA error code or zero if OK */
 };
 
 #endif /* _GOOGLE_EASEL_COMM_SHARED_H */
