@@ -684,7 +684,7 @@ int pcie_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
 {
 
 	struct scatterlist *in_sg;
-	int i, u, fp_offset, count;
+	int i, u, z, fp_offset, count;
 	int n_num, p_num;
 	dma_addr_t test_addr;
 	int test_len;
@@ -767,7 +767,8 @@ int pcie_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
 					sgl->sc_list, n_num, DMA_BIDIRECTIONAL);
 				sgl->n_num = 0;
 				sgl->length = 0;
-				put_page(*(sgl->mypage));
+				for (z = 0; z < n_num; z++)
+					put_page(*(sgl->mypage + z));
 				kfree(sgl->mypage);
 				kfree(sgl->sc_list);
 				return -EINVAL;
@@ -781,7 +782,8 @@ int pcie_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
 			sgl->n_num, DMA_BIDIRECTIONAL);
 		sgl->n_num = 0;
 		sgl->length = 0;
-		put_page(*(sgl->mypage));
+		for (z = 0; z < n_num; z++)
+			put_page(*(sgl->mypage + z));
 		kfree(sgl->mypage);
 		kfree(sgl->sc_list);
 		return -EINVAL;
@@ -801,11 +803,14 @@ static int pcie_sg_sync(struct mnh_sg_list *sgl)
 
 static int pcie_sg_destroy(struct mnh_sg_list *sgl)
 {
+	int i;
+
 	//dma_sync_sg_for_cpu(pcie_ep_dev->dev, sgl->sc_list,
 	//		sgl->n_num, DMA_BIDIRECTIONAL);
 	dma_unmap_sg(pcie_ep_dev->dev, sgl->sc_list,
 			sgl->n_num, DMA_BIDIRECTIONAL);
-	put_page(*(sgl->mypage));
+	for (i = 0; i < sgl->n_num; i++)
+		put_page(*(sgl->mypage + i));
 	kfree(sgl->mypage);
 	kfree(sgl->sc_list);
 	sgl->n_num = 0;
