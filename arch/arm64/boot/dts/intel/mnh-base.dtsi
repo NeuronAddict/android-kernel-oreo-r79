@@ -212,72 +212,29 @@
 	thermal-zones {
 		ipu1 {
 			dts_trim = <0>;
-			polling-delay-passive = <250>;/* milliseconds */
-			polling-delay = <1000>;/* milliseconds */
+			polling-delay-passive = <1000>;/* milliseconds */
+			polling-delay = <0>;/* milliseconds */
 			thermal-sensors = <&soc_thermal 0>;
-
-			trips {
-				trip@0 {
-					temperature = <101000>; /* milliCelsius  - TBD need to be adjusted*/
-					hysteresis = <0>; /* milliCelsius  - TBD need to be adjusted*/
-					type = "critical";
-                };
-			};
-			cooling-maps {
-			/* TBD : cooling device needs to be defined to bind this this thermal zone */
-			};
-
-
 		};
 
 		ipu2 {
 			dts_trim = <0>;
-			polling-delay-passive = <250>;/* milliseconds */
-			polling-delay = <1000>;/* milliseconds */
+			polling-delay-passive = <1000>;/* milliseconds */
+			polling-delay = <0>;/* milliseconds */
 			thermal-sensors = <&soc_thermal 1>;
-			trips {
-				trip@0 {
-					temperature = <101000>; /* milliCelsius  - TBD need to be adjusted*/
-					hysteresis = <0>; /* milliCelsius  - TBD need to be adjusted*/
-					type = "critical";
-                };
-			};
-			cooling-maps {
-			/* TBD : cooling device needs to be defined to bind this this thermal zone */
-			};
 		};
 
 		cpu {
 			dts_trim = <0>;
-			polling-delay-passive = <250>;/* milliseconds */
-			polling-delay = <1000>;/* milliseconds */
+			polling-delay-passive = <1000>;/* milliseconds */
+			polling-delay = <0>;/* milliseconds */
 			thermal-sensors = <&soc_thermal 2>;
-			trips {
-				trip@0 {
-					temperature = <101000>; /* milliCelsius  - TBD need to be adjusted*/
-					hysteresis = <0>; /* milliCelsius  - TBD need to be adjusted*/
-					type = "critical";
-                };
-			};
-			cooling-maps {
-			/* TBD : cooling device needs to be defined to bind this this thermal zone */
-			};
 		};
 
 		lpddr {
 			dts_trim = <0>;
-			polling-delay-passive = <250>;/* milliseconds */
-			polling-delay = <1000>;/* milliseconds */
+			polling-delay-passive = <1000>;/* milliseconds */
+			polling-delay = <0>;/* milliseconds */
 			thermal-sensors = <&soc_thermal 3>;
-			trips {
-				trip@0 {
-					temperature = <101000>; /* milliCelsius  - TBD need to be adjusted*/
-					hysteresis = <0>; /* milliCelsius  - TBD need to be adjusted*/
-					type = "critical";
-                };
-			};
-			cooling-maps {
-			/* TBD : cooling device needs to be defined to bind this this thermal zone */
-			};
 		};
 	};
