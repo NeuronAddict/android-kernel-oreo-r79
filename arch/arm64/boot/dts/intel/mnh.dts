@@ -26,6 +26,7 @@
 		linux,initrd-start = <0x40890040>;
 		linux,initrd-end = <0x41C90000>;
 		stdout-path = "serial0:115200n8";
+		emulation = <0x00000000>;
 	};
 
 	cpus {
