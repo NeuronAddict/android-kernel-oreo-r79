@@ -10,6 +10,7 @@
 #include <linux/platform_device.h>
 #include <linux/reset.h>
 #include <linux/thermal.h>
+#include <linux/timer.h>
 #include <linux/intel-hwio.h>
 #include <soc/mnh/mnh-hwio-scu.h>
 
@@ -82,6 +83,7 @@ static int mnh_thermal_get_temp(void *data, int *out_temp)
 
 	struct mnh_thermal_sensor *sensor = (struct mnh_thermal_sensor*)data;
 	u32 val = 0;
+	unsigned long timeout = jiffies + msecs_to_jiffies(500);
 
 	/* Program VSAMPLE/PSAMPLE for temperature evaulation */
 	HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id, PSAMPLE, 0);
@@ -92,14 +94,16 @@ static int mnh_thermal_get_temp(void *data, int *out_temp)
 
 	/* Wait for conversion cycle time or poll for PVT_DATA[x]. DATAVALID to
 	 * be 1 or wait for SCU interrupt if enabled for PVT_SENSx_DV
-	 * interrupt reason
+	 * interrupt reason.
+	 * Conversion cycle time should be 376 PVT_SENSOR_CLK cycles
 	 */
-	while(1){
+	do {
 		val = HW_INxf(sensor->dev->regs, SCU, PVT_DATA,
 			sensor->id, DATAVALID);
 		if(val == 1)
 			break;
-	}
+		msleep(20);
+	} while (time_before(jiffies, timeout));
 
 	/* Read PVT_DATA[x].DATA_OUT status register to read temperature */
 	val = HW_INxf(sensor->dev->regs, SCU, PVT_DATA, sensor->id, DATA);
