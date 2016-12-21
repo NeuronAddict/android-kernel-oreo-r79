@@ -248,7 +248,7 @@ static int pcie_check_msi_mask(uint32_t msi)
 		CSR_OUT(PCIE_MSI_PEND, CSR_IN(PCIE_MSI_PEND) | vmask);
 		if (pcie_ep_dev->msimode == 1)
 			pcie_ep_dev->pendingmsi = msi;
-		cancel_delayed_work_sync(&msi_work);
+		cancel_delayed_work(&msi_work);
 		schedule_delayed_work(&msi_work, MSI_DELAY);
 		return 1;
 	}
@@ -300,7 +300,7 @@ static void pcie_msi_worker(struct work_struct *work)
 	send_pending_msi();
 	pend = CSR_IN(PCIE_MSI_PEND);
 	if (pend) {
-		cancel_delayed_work_sync(&msi_work);
+		cancel_delayed_work(&msi_work);
 		schedule_delayed_work(&msi_work, MSI_DELAY);
 	}
 
