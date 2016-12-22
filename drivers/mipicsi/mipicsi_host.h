@@ -5,6 +5,8 @@
 #include "mipicsi_top.h"
 
 
+void mipicsi_host_dphy_write(enum mipicsi_top_dev dev,
+			     uint16_t command, uint8_t data);
 void mipicsi_host_dphy_reset(enum mipicsi_top_dev dev);
 void mipicsi_host_reset(enum mipicsi_top_dev dev);
 int  mipicsi_host_start(struct mipicsi_top_cfg *config);

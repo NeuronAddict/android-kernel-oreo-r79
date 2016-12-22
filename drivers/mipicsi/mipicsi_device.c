@@ -148,7 +148,7 @@ void config_clk_data_timing(enum mipicsi_top_dev dev, uint32_t mbps)
 }
 
 void mipicsi_dev_dphy_write(enum mipicsi_top_dev dev,
-			    uint8_t command, uint8_t data)
+			    uint16_t command, uint8_t data)
 {
 	/* Consider passing in the base address
 	 * rather than a lookup in a table.
@@ -164,6 +164,7 @@ void mipicsi_dev_dphy_write(enum mipicsi_top_dev dev,
 		__func__, dev, baddr, command, data);
 
 	TX_OUT(PHY_RSTZ, 0);
+#ifdef MNH_EMULATION
 	TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLR, 0);
 	TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 1);
 	TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTDIN, command);
@@ -174,13 +175,30 @@ void mipicsi_dev_dphy_write(enum mipicsi_top_dev dev,
 	TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTDIN, data);
 
 	TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 1);
-	/*
-	  I thought we needed one more TESTCLK to low
-	  but tested scripts don't have it.
-	  TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 0);
-	*/
-	//pr_info("%s: X\n", __func__);
+#else
+	/* Write 4-bit testcode MSB */
+	TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 0);
+	TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  0);
+	TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  1);
+	TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 1);
+	TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTDIN, 0);
+	TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 0);
+	TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  0);
+	TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTDIN, ((command & 0xF00)>>8));
+	TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 1);
 
+	/* Write 8-bit testcode LSB */
+	TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 0);
+	TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  1);
+	TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 1);
+	TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTDIN, (command & 0xFF));
+	TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 0);
+	TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  0);
+
+	/* Write the data */
+	TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTDIN, data);
+	TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 1);
+#endif
 	udelay(1);
 }
 

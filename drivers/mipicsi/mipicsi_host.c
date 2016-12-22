@@ -78,7 +78,7 @@ struct dphy_freq_range {
 
 
 void mipicsi_host_dphy_write(enum mipicsi_top_dev dev,
-			     uint8_t command, uint8_t data)
+			     uint16_t command, uint8_t data)
 {
 	void * baddr = dev_addr_map[dev];
 	if (!baddr) {
@@ -89,9 +89,9 @@ void mipicsi_host_dphy_write(enum mipicsi_top_dev dev,
 	/* Gen 2 Daughtercard specific sequence */
 	pr_info("%s: dev=%d, command 0x%02X data=0x%02X\n",
 		__func__, dev, command, data);
-
 	RX_OUTf(PHY_SHUTDOWNZ, PHY_SHUTDOWNZ, 0);
 	RX_OUTf(DPHY_RSTZ,     DPHY_RSTZ,     0);
+#ifdef MNH_EMULATION
 	RX_OUT(PHY_TEST_CTRL0, 0);
 	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
 	/* set the desired test code in the input 8-bit bus TESTDIN[7:0] */
@@ -100,12 +100,34 @@ void mipicsi_host_dphy_write(enum mipicsi_top_dev dev,
 	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN, 1);
 
 	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 0);
-
 	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN, 0);
 	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, data);
 
 	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
+	//#else
+	/* Write 4-bit testcode MSB */
+	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 0);
+	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN,  0);
+	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN , 1);
+	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
+	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, 0);
+	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 0);
+	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN,  0);
+	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, ((command & 0xF00)>>8));
+	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
 
+	/* Write 8-bit testcode LSB */
+	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 0);
+	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN,  1);
+	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
+	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, (command & 0xFF));
+	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 0);
+	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN,  0);
+
+	/* Write the data */
+	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, data);
+	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
+#endif
 	pr_info("%s: X\n", __func__);
 }
 
