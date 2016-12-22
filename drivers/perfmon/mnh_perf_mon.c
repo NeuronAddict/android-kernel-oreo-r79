@@ -36,6 +36,7 @@
 #include <linux/interrupt.h>
 #include <linux/workqueue.h>
 #include <linux/io.h>
+#include <linux/of.h>
 #include <linux/uaccess.h>
 #include <linux/sysfs.h>
 #include <linux/slab.h>
@@ -53,65 +54,82 @@
 struct mnh_perf_mon_device *perf_mon_dev;
 static uint32_t perfmon_stop_free_test(void);
 
+static uint32_t read_emulation_setting(void)
+{
+	uint32_t val;
+	struct device_node *node =
+		of_find_node_by_name(NULL, "chosen");
+
+	if (node && !of_property_read_u32(node, "emulation", &val))
+		return val;
+	else
+		return 0;
+}
+
+
+
 static void set_axi_clk(void)
 {
-#ifdef EMULATION
-	perf_mon_dev->axi_speed = FPGA_AXI_SPEED;
-#else
-
 	int fsp, fbdiv, sys200, axi_clk_div, ref_clk, axi_clk;
 
-	fsp = SCU_INf(LPDDR4_LOW_POWER_STS, LPDDR4_CUR_FSP);
-	switch (fsp) {
-	case 0x0:
-		/* read from LPDDR4_FSP0_SETTINGS */
-		fbdiv = SCU_INf(LPDDR4_FSP0_SETTING, FSP0_FBDIV);
-		sys200 = SCU_INf(LPDDR4_FSP0_SETTING, FSP0_SYS200_MODE);
-		axi_clk_div = SCU_INf(LPDDR4_FSP0_SETTING,
-					FSP0_AXI_FABRIC_CLK_DIV);
-		break;
-	case 0x1:
-		/* read from LPDDR4_FSP1_SETTINGS */
-		fbdiv = SCU_INf(LPDDR4_FSP1_SETTING, FSP1_FBDIV);
-		sys200 = SCU_INf(LPDDR4_FSP1_SETTING, FSP1_SYS200_MODE);
-		axi_clk_div = SCU_INf(LPDDR4_FSP1_SETTING,
-					FSP1_AXI_FABRIC_CLK_DIV);
-		break;
-	case 0x2:
-		/* read from LPDDR4_FSP2_SETTINGS */
-		fbdiv = SCU_INf(LPDDR4_FSP2_SETTING, FSP2_FBDIV);
-		sys200 = SCU_INf(LPDDR4_FSP2_SETTING, FSP2_SYS200_MODE);
-		axi_clk_div = SCU_INf(LPDDR4_FSP2_SETTING,
-					FSP2_AXI_FABRIC_CLK_DIV);
-		break;
-	case 0x3:
-		/* read from LPDDR4_FSP3_SETTINGS */
-		fbdiv = SCU_INf(LPDDR4_FSP3_SETTING, FSP3_FBDIV);
-		sys200 = SCU_INf(LPDDR4_FSP3_SETTING, FSP3_SYS200_MODE);
-		axi_clk_div = SCU_INf(LPDDR4_FSP3_SETTING,
-					FSP3_AXI_FABRIC_CLK_DIV);
-		break;
-	case 0x7:
-		fbdiv = SCU_INf(LPDDR4_REFCLK_PLL_INTGR_DIV, FBDIV);
-		sys200 = SCU_INf(CCU_CLK_CTL, LP4_AXI_SYS200_MODE);
-		axi_clk_div = SCU_INf(CCU_CLK_DIV, AXI_FABRIC_CLK_DIV);
-		break;
-	default:
-		sys200 = 1;
-		axi_clk_div = 1;
-		fbdiv = 1;
-		break;
-	}
-	ref_clk = ((SCU_INf(HW_STRAP, HW_STRAP) & REF_FREQ_MASK)
-			== REF_FREQ_MASK) ? 24000000 : 19200000;
-	if (sys200 == 1)
-		axi_clk = (200000000) / (axi_clk_div + 1);
-	else
-		axi_clk = (ref_clk * (fbdiv / 2)) / (axi_clk_div + 1);
 
-	perf_mon_dev->axi_speed = axi_clk / AXI_SPD_DIV;
-#endif
+	if (read_emulation_setting() == 1)
+		perf_mon_dev->axi_speed = GAMMA_AXI_SPEED;
+	else if (read_emulation_setting() == 2)
+		perf_mon_dev->axi_speed = DELTA_AXI_SPEED;
+	else {
+		fsp = SCU_INf(LPDDR4_LOW_POWER_STS, LPDDR4_CUR_FSP);
+		switch (fsp) {
+		case 0x0:
+			/* read from LPDDR4_FSP0_SETTINGS */
+			fbdiv = SCU_INf(LPDDR4_FSP0_SETTING, FSP0_FBDIV);
+			sys200 = SCU_INf(LPDDR4_FSP0_SETTING, FSP0_SYS200_MODE);
+			axi_clk_div = SCU_INf(LPDDR4_FSP0_SETTING,
+						FSP0_AXI_FABRIC_CLK_DIV);
+			break;
+		case 0x1:
+			/* read from LPDDR4_FSP1_SETTINGS */
+			fbdiv = SCU_INf(LPDDR4_FSP1_SETTING, FSP1_FBDIV);
+			sys200 = SCU_INf(LPDDR4_FSP1_SETTING, FSP1_SYS200_MODE);
+			axi_clk_div = SCU_INf(LPDDR4_FSP1_SETTING,
+						FSP1_AXI_FABRIC_CLK_DIV);
+			break;
+		case 0x2:
+			/* read from LPDDR4_FSP2_SETTINGS */
+			fbdiv = SCU_INf(LPDDR4_FSP2_SETTING, FSP2_FBDIV);
+			sys200 = SCU_INf(LPDDR4_FSP2_SETTING, FSP2_SYS200_MODE);
+			axi_clk_div = SCU_INf(LPDDR4_FSP2_SETTING,
+						FSP2_AXI_FABRIC_CLK_DIV);
+			break;
+		case 0x3:
+			/* read from LPDDR4_FSP3_SETTINGS */
+			fbdiv = SCU_INf(LPDDR4_FSP3_SETTING, FSP3_FBDIV);
+			sys200 = SCU_INf(LPDDR4_FSP3_SETTING, FSP3_SYS200_MODE);
+			axi_clk_div = SCU_INf(LPDDR4_FSP3_SETTING,
+						FSP3_AXI_FABRIC_CLK_DIV);
+			break;
+		case 0x7:
+			fbdiv = SCU_INf(LPDDR4_REFCLK_PLL_INTGR_DIV, FBDIV);
+			sys200 = SCU_INf(CCU_CLK_CTL, LP4_AXI_SYS200_MODE);
+			axi_clk_div = SCU_INf(CCU_CLK_DIV, AXI_FABRIC_CLK_DIV);
+			break;
+		default:
+			sys200 = 1;
+			axi_clk_div = 1;
+			fbdiv = 1;
+			break;
+		}
+		ref_clk = ((SCU_INf(HW_STRAP, HW_STRAP) & REF_FREQ_MASK)
+				== REF_FREQ_MASK) ? 24000000 : 19200000;
+		if (sys200 == 1)
+			axi_clk = (200000000) / (axi_clk_div + 1);
+		else
+			axi_clk = (ref_clk * (fbdiv / 2)) / (axi_clk_div + 1);
+
+		perf_mon_dev->axi_speed = axi_clk / AXI_SPD_DIV;
+	}
 }
+
 
 static uint32_t config_prmu(void)
 {

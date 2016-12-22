@@ -35,7 +35,9 @@
 #define READ_MODE	0
 #define WRITE_MODE	1
 
-#define FPGA_AXI_SPEED	50000
+#define GAMMA_AXI_SPEED	50000
+#define DELTA_AXI_SPEED	6000
+
 #define AXI_SPD_DIV	1000
 #define REF_FREQ_MASK	0x8
 
