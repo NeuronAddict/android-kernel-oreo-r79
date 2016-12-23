@@ -50,6 +50,7 @@
 #include "mipicsi_pll.h"
 #include "mipicsi_util.h"
 #include "mipicsi_dc_dphy.h"
+#include "mipicsi_rx_dphy.h"
 
 #include <linux/intel-hwio.h>
 #include <soc/mnh/mnh-hwio-mipi-rx.h>

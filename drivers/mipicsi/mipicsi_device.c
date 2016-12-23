@@ -46,6 +46,7 @@
 #include "mipicsi_device.h"
 #include "mipicsi_util.h"
 #include "mipicsi_dc_dphy.h"
+#include "mipicsi_tx_dphy.h"
 #include "mipicsi_pll.h"
 
 #include <linux/intel-hwio.h>
