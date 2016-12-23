@@ -5,7 +5,8 @@
 
 enum mipicsi_debug_vpg_res {
 	VPG_VGA,
-	VPG_1080P
+	VPG_1080P,
+	VPG_12MP
 };
 
 int mipicsi_debug_vpg_preset(struct mipicsi_top_vpg *vpg,

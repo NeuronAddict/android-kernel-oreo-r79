@@ -31,6 +31,28 @@ enum mipicsi_top_dev {
 	MIPI_MAX = MIPI_IPU
 };
 
+enum csi2_data_type {
+	CSI2_INVALID          = -1,
+	CSI2_YUV420_8         = 0x18,
+	CSI2_YUV420_10        = 0x19,
+	CSI2_YUV420_8_LEG     = 0x1A,
+	CSI2_YUV420_8_CSPS    = 0x1C,
+	CSI2_YUV420_10_CSPS   = 0x1D,
+	CSI2_YUV422_8         = 0x1E,
+	CSI2_YUV422_10        = 0x1F,
+	CSI2_RGB444           = 0x20,
+	CSI2_RGB555           = 0x21,
+	CSI2_RGB565           = 0x22,
+	CSI2_RGB666           = 0x23,
+	CSI2_RGB888           = 0x24,
+	CSI2_RAW6             = 0x28,
+	CSI2_RAW7             = 0x29,
+	CSI2_RAW8             = 0x2A,
+	CSI2_RAW10            = 0x2B,
+	CSI2_RAW12            = 0x2C,
+	CSI2_RAW14            = 0x2D
+};
+
 /* Interrupts */
 /* Host int */
 struct mipi_host_irq_st {

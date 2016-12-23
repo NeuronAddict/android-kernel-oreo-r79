@@ -291,18 +291,22 @@ static ssize_t vpg_preset_store(struct device *dev,
 		vpg.dev = device;
 		token = strsep((char **)&buf, delim);
 		if (token) {
-			if (strcmp (token, "VGA")) {
+			if (!strncmp (token, "VGA", 3)) {
 				mipicsi_debug_vpg_preset(&vpg, VPG_VGA);
 				return count;
 			}
-			else if (strcmp (token, "1080P")) {
+			else if (!strncmp (token, "1080P", 5)) {
 				mipicsi_debug_vpg_preset(&vpg, VPG_1080P);
+				return count;
+			}
+			else if (!strncmp (token, "12MP", 4)) {
+				mipicsi_debug_vpg_preset(&vpg, VPG_12MP);
 				return count;
 			}
 		}
 	}
 	pr_err ("Usage: echo\"<dev>;<resolution>\">vpg_preset\n");
-	pr_err ("dev=Tx0,Tx1, resolution=VGA,1080P\n");
+	pr_err ("dev=Tx0,Tx1, resolution=VGA,1080P,12MP\n");
 	return -EINVAL;
 }
 

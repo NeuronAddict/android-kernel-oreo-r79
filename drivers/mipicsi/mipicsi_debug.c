@@ -46,10 +46,14 @@ int mipicsi_debug_vpg_preset(struct mipicsi_top_vpg *vpg,
 
 	pr_info("%s: E\n", __func__);
 
+	/* Frame and line numbers increment by 1 */
+	vpg->pkt_cfg = (0x1<<11) | (0x01<<9) | CSI2_RAW10;
+	pr_info("%s: VPG  pkt=0x%x", __func__, vpg->pkt_cfg);
+
 	if (res == VPG_VGA) {
 		/* VGA Settings */
+		pr_info("%s: VGA ", __func__);
 		vpg->mode_cfg = 1;
-		vpg->pkt_cfg = 0xA24;
 		vpg->pkt_size = 640;
 		vpg->hsa_time = 120;
 		vpg->hbp_time = 40;
@@ -62,9 +66,9 @@ int mipicsi_debug_vpg_preset(struct mipicsi_top_vpg *vpg,
 		vpg->start_line = 0;
 		vpg->step_line = 0;
 	} else if (res == VPG_1080P) {
-		/* VGA Settings */
+		/* 1080P Settings */
+		pr_info("%s: 1080P", __func__);
 		vpg->mode_cfg = 0;
-		vpg->pkt_cfg = 0xA24;
 		vpg->pkt_size = 1920;
 		vpg->hsa_time = 53;
 		vpg->hbp_time = 10;
@@ -73,6 +77,21 @@ int mipicsi_debug_vpg_preset(struct mipicsi_top_vpg *vpg,
 		vpg->vbp_lines = 20;
 		vpg->vfp_lines = 20;
 		vpg->act_lines = 1080;
+		vpg->max_frame = 5;
+		vpg->start_line = 0;
+		vpg->step_line = 0;
+	} else if (res == VPG_12MP) {
+		/* 12MP Settings */
+		pr_info("%s: 12MP", __func__);
+		vpg->mode_cfg = 0;
+		vpg->pkt_size = 4320;
+		vpg->hsa_time = 50;
+		vpg->hbp_time = 20;
+		vpg->hline_time = 4600;
+		vpg->vsa_lines = 80;
+		vpg->vbp_lines = 20;
+		vpg->vfp_lines = 20;
+		vpg->act_lines = 2880;
 		vpg->max_frame = 5;
 		vpg->start_line = 0;
 		vpg->step_line = 0;
