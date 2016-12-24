@@ -393,7 +393,7 @@ static ssize_t reg_read_store(struct device *dev,
 			      const char *buf,
 			      size_t count)
 {
-        uint64_t val;
+        uint32_t val;
 	enum mipicsi_top_dev device;
         uint8_t *token;
         const char *delim = ";";
@@ -403,8 +403,8 @@ static ssize_t reg_read_store(struct device *dev,
         if ( (token) && (find_device (token, &device) >= 0) ) {
 		reg.dev = device;
 		token = strsep((char **)&buf, delim);
-		if ((token) && (!(kstrtoul(token, 0, &val)))
-		    && (val >= 0) && (val <= 0xFF)) {
+		if ((token) && (!(kstrtou32(token, 0, &val)))
+		    && (val >= 0) && (val <= 0xFFFF)) {
 			reg.offset = val;
 			mipicsi_top_read(&reg);
 			read_data = reg.value;
@@ -426,7 +426,7 @@ static ssize_t reg_write_store(struct device *dev,
 			       const char *buf,
 			       size_t count)
 {
-        uint64_t val;
+        uint32_t val;
 	enum mipicsi_top_dev device;
         uint8_t *token;
         const char *delim = ";";
@@ -437,11 +437,11 @@ static ssize_t reg_write_store(struct device *dev,
 		reg.dev = device;
 		token = strsep((char **)&buf, delim);
 
-		if ((token) && (!(kstrtoul(token, 0, &val)))
-		    && (val >= 0) && (val <= 0xFF)) {
+		if ((token) && (!(kstrtou32(token, 0, &val)))
+		    && (val >= 0) && (val <= 0xFFFF)) {
 			reg.offset = val;
 			token = strsep((char **)&buf, delim);
-			if ((token) && (!(kstrtoul(token, 0, &val)))) {
+			if ((token) && (!(kstrtou32(token, 0, &val)))) {
 				reg.value = val;
 				mipicsi_top_write(&reg);
 				return count;

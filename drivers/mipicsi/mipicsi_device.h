@@ -8,6 +8,7 @@
 #define PAD_PCT 20
 #define PAD_TIME(time) (((time)*(100+PAD_PCT))/100)
 #define MAX(a,b) (((a)>(b))?(a):(b))
+#define MIN(a,b) (((a)<(b))?(a):(b))
 
 #define TLP_CONST_TIME 23
 #define PREP_CONST_TIME 20
@@ -16,6 +17,7 @@
 #define EXIT_CONST_TIME -80 /* TBD */
 #define POST_CONST_TIME 160
 #define SETL_CONST_TIME 35  /* TBD */
+#define ANLG_FCTR 0         /* TBD */
 #define MIPI_DDR_CLOCK 1000 /* TBD */
 
 void mipicsi_dev_dphy_write(enum mipicsi_top_dev dev,

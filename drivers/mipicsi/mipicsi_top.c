@@ -56,6 +56,76 @@
 #include <linux/intel-hwio.h>
 #include <soc/mnh/mnh-hwio-mipi-top.h>
 
+/* these macros assume a void * in scope named baddr */
+#define TOP_IN(reg)             HW_IN(baddr,   MIPI_TOP, reg)
+#define TOP_INf(reg, fld)       HW_INf(baddr,  MIPI_TOP, reg, fld)
+#define TOP_OUT(reg, val)       HW_OUT(baddr,  MIPI_TOP, reg, val)
+#define TOP_OUTf(reg, fld, val) HW_OUTf(baddr, MIPI_TOP, reg, fld, val)
+
+#define TOP_MASK(reg, fld)      HWIO_MIPI_TOP_##reg##_##fld##_FLDMASK
+#define TOP_OUTf_LOCAL(reg, fld, val, curr) \
+                 ( (curr & ~HWIO_MIPI_TOP_##reg##_##fld##_FLDMASK) | \
+		   ((val << HWIO_MIPI_TOP_##reg##_##fld##_FLDSHFT) & \
+		    HWIO_MIPI_TOP_##reg##_##fld##_FLDMASK) )
+
+
+
+#define DEVICE_NAME "mipicsitop"
+
+/*
+ * Linked list that contains the installed devices
+ */
+static LIST_HEAD(devlist_global);
+
+/* External Clocks */
+#define AHB_APB_CLK_MHZ       100
+#define FPCLK_MHZ             100
+#define REFCLK_MHZ            25
+#define EXTCLK_MHZ            1000
+#define CLKP_MIN_MHZ          40
+#define CLKP_MAX_MHZ          1250
+
+/* Internal Clocks */
+#ifdef MNH_EMULATION
+#define RXCLK_MIN_MHZ         80
+#define RXCLK_MAX_MHZ         2000
+#else
+#define RXCLK_MIN_MHZ         40
+#define RXCLK_MAX_MHZ         1250
+#endif
+#define TXCLK_MIN_MHZ         RXCLK_MIN_MHZ
+#define TXCLK_MAX_MHZ         RXCLK_MAX_MHZ
+#define PLLCLK_MIN_MHZ        RXCLK_MIN_MHZ
+#define PLLCLK_MAX_MHZ        RXCLK_MIN_MHZ
+
+/* Bitrates */
+#ifdef MNH_EMULATION
+#define MIN_BITRATE           RXCLK_MIN_MHZ
+#define MAX_BITRATE           RXCLK_MAX_MHZ
+#else
+#define MIN_BITRATE           (RXCLK_MIN_MHZ*2)
+#define MAX_BITRATE           (RXCLK_MAX_MHZ*2)
+#endif
+
+/* CSI Device Controller Parameters */
+#define CSI2_DEVICE_DATAINTERFACE       IDI
+#define CSI2_DEVICE_NUM_OF_LANES        4
+#define CSI2_DEVICE_DFLT_F_SYNC_TYPE    2
+#define CSI2_DEVICE_IDI_PLD_FIFO_DEPTH  4096
+#define CSI2_DEVICE_IDI_PLD_RAM_DEPTH   4096
+#define CSI2_DEVICE_IDI_HD_FIFO_DEPTH   8
+
+/* CSI Host Controller Parameters */
+#define CSI2_DATAINTERFACE              2
+#define IDI_64_DATA_IF                  1
+#define CSI2_HOST_NUM_OF_LANES          4
+#define CSI2_HOST_DFLT_F_SYNC_TYPE      2
+#define CSI2_HOST_N_DATA_IDS            1
+#define CSI2_HOST_SNPS_PHY              1
+#define CSI2_EXT_PPIP                   0
+#define CSI2_PPI_PD                     2
+#define CSI2_PCLK_FREE                  1
+
 void * dev_addr_map[MIPI_MAX] = { NULL };
 
 void mipicsi_util_save_virt_addr(enum mipicsi_top_dev dev, void *base_addr)
@@ -95,66 +165,10 @@ enum mipicsi_top_dev get_device_id(const char *device_name)
 	else if (strcmp(device_name, "IPU") == 0)
 		return MIPI_IPU;
 
-	pr_err("Invalid MIPI device name %s\ņ", device_name);
+	pr_err("Invalid MIPI device name %s\n", device_name);
 	return -EINVAL;
 }
 
-
-/* these macros assume a void * in scope named baddr */
-#define TOP_IN(reg)             HW_IN(baddr,   MIPI_TOP, reg)
-#define TOP_INf(reg, fld)       HW_INf(baddr,  MIPI_TOP, reg, fld)
-#define TOP_OUT(reg, val)       HW_OUT(baddr,  MIPI_TOP, reg, val)
-#define TOP_OUTf(reg, fld, val) HW_OUTf(baddr, MIPI_TOP, reg, fld, val)
-
-#define TOP_MASK(reg, fld)      HWIO_MIPI_TOP_##reg##_##fld##_FLDMASK
-#define TOP_OUTf_LOCAL(reg, fld, val, curr) \
-                 ( (curr & ~HWIO_MIPI_TOP_##reg##_##fld##_FLDMASK) | \
-		   ((val << HWIO_MIPI_TOP_##reg##_##fld##_FLDSHFT) & \
-		    HWIO_MIPI_TOP_##reg##_##fld##_FLDMASK) )
-
-
-
-#define DEVICE_NAME "mipicsitop"
-
-/*
- * Linked list that contains the installed devices
- */
-static LIST_HEAD(devlist_global);
-
-/* External Clocks */
-#define AHB_APB_CLK_MHZ       100
-#define FPCLK_MHZ             100
-#define REFCLK_MHZ            25
-#define EXTCLK_MHZ            1000
-#define CLKP_MIN_MHZ          40
-#define CLKP_MAX_MHZ          1250
-
-/* Internal Clocks */
-#define RXCLK_MIN_MHZ         40
-#define RXCLK_MAX_MHZ         1250
-#define TXCLK_MIN_MHZ         RX_MIN_MHZ
-#define TXCLK_MAX_MHZ         RX_MAX_MHZ
-#define PLLCLK_MIN_MHZ        RX_MIN_MHZ
-#define PLLCLK_MAX_MHZ        RX_MAX_MHZ
-
-/* CSI Device Controller Parameters */
-#define CSI2_DEVICE_DATAINTERFACE       IDI
-#define CSI2_DEVICE_NUM_OF_LANES        4
-#define CSI2_DEVICE_DFLT_F_SYNC_TYPE    2
-#define CSI2_DEVICE_IDI_PLD_FIFO_DEPTH  4096
-#define CSI2_DEVICE_IDI_PLD_RAM_DEPTH   4096
-#define CSI2_DEVICE_IDI_HD_FIFO_DEPTH   8
-
-/* CSI Host Controller Parameters */
-#define CSI2_DATAINTERFACE              2
-#define IDI_64_DATA_IF                  1
-#define CSI2_HOST_NUM_OF_LANES          4
-#define CSI2_HOST_DFLT_F_SYNC_TYPE      2
-#define CSI2_HOST_N_DATA_IDS            1
-#define CSI2_HOST_SNPS_PHY              1
-#define CSI2_EXT_PPIP                   0
-#define CSI2_PPI_PD                     2
-#define CSI2_PCLK_FREE                  1
 
 void top_dphy_reset(enum mipicsi_top_dev dev)
 {
@@ -184,6 +198,13 @@ int top_start_rx(struct mipicsi_top_cfg *config)
 		return -EINVAL;
 	}
 
+	if ((config->mbps < MIN_BITRATE) ||
+	    (config->mbps > MAX_BITRATE))
+	    return -EINVAL;
+
+	    if (config->num_lanes > CSI2_HOST_NUM_OF_LANES)
+		return -EINVAL;
+
 	if (config->dev == MIPI_RX0)
 		TOP_OUTf(CSI_CLK_CTRL, CSI2_RX0_CG, 1);
 	else if (config->dev == MIPI_RX1)
@@ -191,17 +212,8 @@ int top_start_rx(struct mipicsi_top_cfg *config)
 	else
 		TOP_OUTf(CSI_CLK_CTRL, CSI2_RX2_CG, 1);
 
-#ifdef MNH_EMULATION
 	mipicsi_host_hw_init(config->dev);
 	mipicsi_host_start(config);
-#else /* MNH_EMULATION */
-	if (config->mbps >= (RXCLK_MAX_MHZ*2))
-		return -EINVAL;
-
-	if (config->lanes >= CSI2_HOST_NUM_OF_LANES)
-		return -EINVAL;
-
-#endif /* MNH_EMULATION */
 
 	return 0;
 }
@@ -214,34 +226,29 @@ int top_start_tx(struct mipicsi_top_cfg *config)
 		return -EINVAL;
 	}
 
+	if ((config->mbps < MIN_BITRATE) ||
+	    (config->mbps > MAX_BITRATE))
+	    return -EINVAL;
+
+	if (config->num_lanes > CSI2_DEVICE_NUM_OF_LANES)
+		return -EINVAL;
+
 	if (config->dev == MIPI_TX0)
 		TOP_OUTf(CSI_CLK_CTRL, CSI2_TX0_CG, 1);
 	else
 		TOP_OUTf(CSI_CLK_CTRL, CSI2_TX1_CG, 1);
 
-#ifdef MNH_EMULATION
 	mipicsi_device_hw_init(config->dev);
 	mipicsi_device_start(config);
-#else /* MNH_EMULATION */
-	struct mipi_csi_dev dev;
 
-	if (config->mbps >= (TXCLK_MAX_MHZ*2))
-		return -EINVAL;
+	/* Enable TOP level interrupt */
+	if (config->dev == MIPI_TX0) {
+		TOP_OUTf(TX0_BYPINT, TX0_INT_EN, 1);
+	} else {
+		TOP_OUTf(TX1_BYPINT, TX1_INT_EN, 1);
+	}
 
-	if (config->lanes >= CSI2_DEVICE_NUM_OF_LANES)
-		return -EINVAL;
-
-	top_dphy_reset(config->dev);
-
-#endif /* MNH_EMULATION */
-
-       if (config->dev == MIPI_TX0) {
-               /* Enable TOP level interrupt */
-               TOP_OUTf(TX0_BYPINT, TX0_INT_EN, 1);
-       } else {
-               /* Enable TOP level interrupt */
-               TOP_OUTf(TX1_BYPINT, TX1_INT_EN, 1);
-       }
+	return 0;
 }
 
 int mipicsi_top_write(struct mipicsi_top_reg *reg)
@@ -459,6 +466,8 @@ int mipicsi_top_reset_all()
 	mipicsi_top_stop(MIPI_RX2);
 	mipicsi_top_stop(MIPI_TX0);
 	mipicsi_top_stop(MIPI_TX1);
+
+	return 0;
 }
 
 int mipicsi_top_set_mux(struct mipicsi_top_mux *mux)
@@ -853,7 +862,6 @@ int mipicsi_top_debug_bist_start(enum mipicsi_top_dev dev)
 int mipicsi_top_debug_bist_status(struct mipicsi_top_bist *bist)
 {
 	void * baddr = dev_addr_map[MIPI_TOP];
-	uint8_t done, ok;
 
 	if (!baddr) {
 		return -EINVAL;

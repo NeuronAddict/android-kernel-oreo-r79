@@ -2,13 +2,14 @@
 #define MIPICSI_PLL_H_
 
 #ifdef MNH_EMULATION
-#define MIPICSI_PLL_INP_FREQ 25
 #define MIPICSI_PLL_MIN_FREQ 80
 #define MIPICSI_PLL_MAX_FREQ 2000
 #else
 #define MIPICSI_PLL_MIN_FREQ 40
 #define MIPICSI_PLL_MAX_FREQ 1250
 #endif
+
+#define MIPICSI_PLL_INP_FREQ 25
 
 struct mipicsi_pll {
 	uint16_t  output_freq;      /* Active output frequency */
@@ -27,6 +28,7 @@ struct mipicsi_pll {
 };
 
 int mipicsi_pll_get_hsfreq (uint16_t mbps, uint8_t *hsfreq);
+int mipicsi_pll_get_stop_wait (uint16_t mbps, uint8_t *stop_wait);
 int mipicsi_pll_calc(uint16_t mbps, struct mipicsi_pll *pll);
 
 #endif /* MIPICSI_PLL_H_ */
