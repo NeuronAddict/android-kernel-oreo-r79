@@ -16,12 +16,12 @@
 #ifndef __PAINTBOX_COMMON_H__
 #define __PAINTBOX_COMMON_H__
 
-
+#include <linux/dma-buf.h>
 #include <linux/dma-mapping.h>
 #include <linux/miscdevice.h>
 #include <linux/paintbox.h>
 #include <linux/platform_device.h>
-
+#include <linux/scatterlist.h>
 
 #define IRQ_NO_DMA_CHANNEL   0xFF
 #define DMA_NO_INTERRUPT     0xFF
@@ -56,6 +56,7 @@ struct paintbox_session {
 	struct list_head lbp_list;
 	struct list_head mipi_input_list;
 	struct list_head mipi_output_list;
+	struct list_head wait_list;
 };
 
 struct paintbox_debug_reg_entry;
@@ -163,23 +164,40 @@ struct paintbox_mipi_stream {
 	unsigned int stream_id;
 	union {
 		struct {
-			unsigned int sof_interrupts;
-			unsigned int ovf_interrupts;
+			/* protected by pb->io_ipu.mipi_lock */
+			unsigned int missed_sof_interrupt;
+			unsigned int missed_ovf_interrupt;
+			int32_t last_frame_number;
+			bool frame_in_progress;
+
+			struct {
+				unsigned int sof_interrupts;
+				unsigned int ovf_interrupts;
+				unsigned int missed_sof_interrupts;
+				unsigned int missed_ovf_interrupts;
+			} stats;
 		} input;
 		struct {
-			unsigned int eof_interrupts;
+			/* protected by pb->io_ipu.mipi_lock */
+			unsigned int missed_eof_interrupt;
+
+			struct {
+				unsigned int eof_interrupts;
+				unsigned int missed_eof_interrupts;
+			} stats;
 		} output;
-	} stats;
+	};
 	uint32_t ctrl_offset;
 	uint32_t select_offset;
 	int32_t frame_count;
 	int error;
 	bool is_input;
-	bool enabled;
-	bool free_running;
 
 	/* protected by pb->io_ipu.mipi_lock */
 	bool cleanup_in_progress;
+	bool free_running;
+	bool last_frame;
+	bool enabled;
 	bool is_clean;
 };
 
@@ -246,9 +264,8 @@ struct paintbox_irq {
 	};
 
 	/* The fields below are protected by pb->irq_lock */
-	unsigned int interrupt_count;
-	int error[IRQ_MAX_PER_WAIT_PERIOD];
-	int wait_count;
+	unsigned int data_count;
+	int data[IRQ_MAX_PER_WAIT_PERIOD];
 };
 
 /* Per transfer information is stored in this structure. Transfers are stored in
@@ -256,8 +273,12 @@ struct paintbox_irq {
  */
 struct paintbox_dma_transfer {
 	struct list_head entry;
-	dma_addr_t buf_paddr;
+	enum dma_dram_buffer_type buffer_type;
+	dma_addr_t dma_addr;
 	void *buf_vaddr;
+	struct sg_table *sg_table;
+	struct dma_buf *dma_buf;
+	struct dma_buf_attachment *attach;
 	size_t len_bytes;
 
 	/* Register shadows for channel registers.  These fields are set during
@@ -419,6 +440,12 @@ struct paintbox_lbp {
 	uint32_t max_rptrs;
 	uint32_t max_channels;
 	unsigned int pool_id;
+};
+
+struct paintbox_waiter {
+	struct list_head session_entry;
+	struct interrupt_wait *wait;
+	struct completion completion;
 };
 
 struct paintbox_data {

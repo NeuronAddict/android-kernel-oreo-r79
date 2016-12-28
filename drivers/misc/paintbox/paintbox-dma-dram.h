@@ -20,12 +20,17 @@
 
 #include "paintbox-common.h"
 
+/* The caller to this function must hold pb->lock */
+int ipu_dma_attach_buffer(struct paintbox_data *pb,
+		struct paintbox_dma_transfer *transfer,
+		struct dma_dram_config *config, enum dma_data_direction dir);
 
-int dma_map_buffer_cma(struct paintbox_data *pb,
-		struct paintbox_dma_transfer *transfer, void __user *buf,
-		size_t len_bytes, enum dma_data_direction dir);
+/* The caller to this function must hold pb->lock */
+void ipu_dma_release_buffer(struct paintbox_data *pb,
+		struct paintbox_dma_transfer *transfer);
 
-int dma_unmap_buffer_cma(struct paintbox_data *pb,
+/* The caller to this function must hold pb->lock */
+int ipu_dma_release_and_copy_buffer(struct paintbox_data *pb,
 		struct paintbox_dma_transfer *transfer, void __user *buf,
 		size_t len_bytes);
 

@@ -255,7 +255,8 @@ int dump_mipi_input_stream_registers(struct paintbox_debug *debug, char *buf,
 			val & MPI_VC_MASK,
 			(val & MPI_DT_IN_MASK) >> MPI_DT_IN_SHIFT,
 			(val & MPI_DT_PROC_MASK) >> MPI_DT_PROC_SHIFT,
-			(val & MPI_STRP_HEIGHT_MASK) >> MPI_STRP_HEIGHT_SHIFT);
+			((val & MPI_STRP_HEIGHT_MASK) >>
+			MPI_STRP_HEIGHT_SHIFT) + 1);
 	if (ret < 0)
 		return ret;
 
@@ -271,7 +272,7 @@ int dump_mipi_input_stream_registers(struct paintbox_debug *debug, char *buf,
 	ret = dump_io_ipu_reg_verbose(pb, MPI_STRM_CNFG1_L, val, buf, &written,
 			len, "\tSEG_START %u SEG_END %u\n",
 			val & MPI_SEG_START_MASK,
-			(val & MPI_SEG_END_MASK) >> MPI_SEG_END_SHIFT);
+			((val & MPI_SEG_END_MASK) >> MPI_SEG_END_SHIFT) + 1);
 	if (ret < 0)
 		return ret;
 
@@ -279,19 +280,21 @@ int dump_mipi_input_stream_registers(struct paintbox_debug *debug, char *buf,
 			MPI_STRM_BLOCK_START)];
 	ret = dump_io_ipu_reg_verbose(pb, MPI_STRM_CNFG1_H, val, buf, &written,
 			len, "\tSEGS_PER_ROW %u SEG_WORDS_PER_ROW %u\n",
-			val & MPI_SEGS_PER_ROW_MASK, (val &
-			MPI_SEG_WORDS_PER_ROW_MASK) >>
-			MPI_SEG_WORDS_PER_ROW_SHIFT );
+			(val & MPI_SEGS_PER_ROW_MASK) + 1,
+			((val & MPI_SEG_WORDS_PER_ROW_MASK) >>
+			MPI_SEG_WORDS_PER_ROW_SHIFT) + 1);
 	if (ret < 0)
 		return ret;
 
 	val = mipi_registers[REG_INDEX(MPI_STRM_CNFG0_L_RO -
 			MPI_STRM_BLOCK_START)];
 	ret = dump_io_ipu_reg_verbose(pb, MPI_STRM_CNFG0_L_RO, val, buf,
-			&written, len, "\tVC %u DT_IN %u DT_PROC %u\n",
-			val & MPI_VC_MASK,
+			&written, len, "\tVC %u DT_IN %u DT_PROC %u STRP_HEIGHT"
+			"%u\n", val & MPI_VC_MASK,
 			(val & MPI_DT_IN_MASK) >> MPI_DT_IN_SHIFT,
-			(val & MPI_DT_PROC_MASK) >> MPI_DT_PROC_SHIFT);
+			(val & MPI_DT_PROC_MASK) >> MPI_DT_PROC_SHIFT,
+			((val & MPI_STRP_HEIGHT_MASK) >>
+			MPI_STRP_HEIGHT_SHIFT) + 1);
 	if (ret < 0)
 		return ret;
 
@@ -307,7 +310,7 @@ int dump_mipi_input_stream_registers(struct paintbox_debug *debug, char *buf,
 	ret = dump_io_ipu_reg_verbose(pb, MPI_STRM_CNFG1_L_RO, val, buf,
 			&written, len, "\tSEG_START %u SEG_END %u\n",
 			val & MPI_SEG_START_MASK,
-			(val & MPI_SEG_END_MASK) >> MPI_SEG_END_SHIFT);
+			((val & MPI_SEG_END_MASK) >> MPI_SEG_END_SHIFT) + 1);
 	if (ret < 0)
 		return ret;
 
@@ -316,9 +319,9 @@ int dump_mipi_input_stream_registers(struct paintbox_debug *debug, char *buf,
 	ret = dump_io_ipu_reg_verbose(pb, MPI_STRM_CNFG1_H_RO, val, buf,
 			&written, len,
 			"\tSEGS_PER_ROW %u SEG_WORDS_PER_ROW %u\n",
-			val & MPI_SEGS_PER_ROW_MASK, (val &
-			MPI_SEG_WORDS_PER_ROW_MASK) >>
-			MPI_SEG_WORDS_PER_ROW_SHIFT );
+			(val & MPI_SEGS_PER_ROW_MASK) + 1,
+			((val & MPI_SEG_WORDS_PER_ROW_MASK) >>
+			MPI_SEG_WORDS_PER_ROW_SHIFT) + 1);
 	if (ret < 0)
 		return ret;
 
@@ -371,7 +374,8 @@ int dump_mipi_output_stream_registers(struct paintbox_debug *debug, char *buf,
 			val & MPO_VC_MASK,
 			(val & MPO_DT_OUT_MASK) >> MPO_DT_OUT_SHIFT,
 			(val & MPO_DT_PROC_MASK) >> MPO_DT_PROC_SHIFT,
-			(val & MPO_STRP_HEIGHT_MASK) >> MPO_STRP_HEIGHT_SHIFT);
+			((val & MPO_STRP_HEIGHT_MASK) >>
+			MPO_STRP_HEIGHT_SHIFT) + 1);
 	if (ret < 0)
 		return ret;
 
@@ -385,8 +389,9 @@ int dump_mipi_output_stream_registers(struct paintbox_debug *debug, char *buf,
 	val = mipi_registers[REG_INDEX(MPO_STRM_CNFG1 - MPO_STRM_BLOCK_START)];
 	ret = dump_io_ipu_reg_verbose(pb, MPO_STRM_CNFG1, val, buf, &written,
 			len, "\tSEG_END %u SEGS_PER_ROW %u\n",
-			val & MPO_SEG_END_MASK, (val & MPO_SEGS_PER_ROW_MASK) >>
-			MPO_SEGS_PER_ROW_SHIFT);
+			(val & MPO_SEG_END_MASK) + 1,
+			((val & MPO_SEGS_PER_ROW_MASK) >>
+			MPO_SEGS_PER_ROW_SHIFT) + 1);
 	if (ret < 0)
 		return ret;
 
@@ -398,7 +403,8 @@ int dump_mipi_output_stream_registers(struct paintbox_debug *debug, char *buf,
 			val & MPO_VC_MASK,
 			(val & MPO_DT_OUT_MASK) >> MPO_DT_OUT_SHIFT,
 			(val & MPO_DT_PROC_MASK) >> MPO_DT_PROC_SHIFT,
-			(val & MPO_STRP_HEIGHT_MASK) >> MPO_STRP_HEIGHT_SHIFT);
+			((val & MPO_STRP_HEIGHT_MASK) >>
+			MPO_STRP_HEIGHT_SHIFT) + 1);
 
 	val = mipi_registers[REG_INDEX(MPO_STRM_CNFG0_H_RO -
 			MPO_STRM_BLOCK_START)];
@@ -464,18 +470,22 @@ int dump_mipi_input_stream_stats(struct paintbox_debug *debug, char *buf,
 	struct paintbox_mipi_interface *interface = stream->interface;
 	int ret, written;
 
-	ret = snprintf(buf, len, "interrupts INF %u SOF %u OVF %u\n",
-			interface->inf_interrupts,
-			stream->stats.input.sof_interrupts,
-			stream->stats.input.ovf_interrupts);
+	ret = snprintf(buf, len,
+			"interrupts INF %u SOF %u OVF %u Missed SOF %u Missed "
+			"OVF %u\n", interface->inf_interrupts,
+			stream->input.stats.sof_interrupts,
+			stream->input.stats.ovf_interrupts,
+			stream->input.stats.missed_sof_interrupts,
+			stream->input.stats.missed_ovf_interrupts);
 	if (ret < 0)
 		return ret;
 
 	written = ret;
 
 	ret = snprintf(buf + written, len - written,
-			"\tfree running %d frames remaining %d\n",
-			stream->free_running, stream->frame_count);
+			"\tenabled %d free running %d frames remaining %d last "
+			"frame %d\n", stream->enabled, stream->free_running,
+			stream->frame_count, stream->last_frame);
 	if (ret < 0)
 		return ret;
 
@@ -490,17 +500,19 @@ int dump_mipi_output_stream_stats(struct paintbox_debug *debug, char *buf,
 	struct paintbox_mipi_interface *interface = stream->interface;
 	int ret, written;
 
-	ret = snprintf(buf, len, "interrupts INF %u EOF %u\n",
+	ret = snprintf(buf, len, "interrupts INF %u EOF %u Missed EOF %u\n",
 			interface->inf_interrupts,
-			stream->stats.output.eof_interrupts);
+			stream->output.stats.eof_interrupts,
+			stream->output.stats.missed_eof_interrupts);
 	if (ret < 0)
 		return ret;
 
 	written = ret;
 
 	ret = snprintf(buf + written, len - written,
-			"\tfree running %d frames remaining %d\n",
-			stream->free_running, stream->frame_count);
+			"\tenabled %d free running %d frames remaining %d last "
+			"frame %d\n", stream->enabled, stream->free_running,
+			stream->frame_count, stream->last_frame);
 	if (ret < 0)
 		return ret;
 

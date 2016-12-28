@@ -17,6 +17,7 @@ obj-$(CONFIG_PAINTBOX)				+= paintbox-irq.o
 obj-$(CONFIG_PAINTBOX)				+= paintbox-lbp.o
 obj-$(CONFIG_PAINTBOX)				+= paintbox-mipi.o
 obj-$(CONFIG_PAINTBOX)				+= paintbox-mipi-debug.o
+obj-$(CONFIG_PAINTBOX_V1)			+= paintbox-mipi-v1.o
 obj-$(CONFIG_PAINTBOX)				+= paintbox-sram.o
 obj-$(CONFIG_PAINTBOX)				+= paintbox-stp.o
 obj-$(CONFIG_PAINTBOX_SIMULATOR_SUPPORT)	+= paintbox-stp-sim.o

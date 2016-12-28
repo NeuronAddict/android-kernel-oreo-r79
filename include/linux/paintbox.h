@@ -76,8 +76,18 @@ enum dma_transfer_type {
 	DMA_SRC_DST_PAIRS
 };
 
+enum dma_dram_buffer_type {
+	DMA_DRAM_BUFFER_UNUSED = 0,
+	DMA_DRAM_BUFFER_USER,
+	DMA_DRAM_BUFFER_DMA_BUF
+};
+
 struct dma_dram_config {
-	void __user *host_vaddr;
+	enum dma_dram_buffer_type buffer_type;
+	union {
+		void __user *host_vaddr;
+		int dma_buf_fd;
+	};
 	uint64_t len_bytes;
 };
 
@@ -205,8 +215,20 @@ struct dma_interrupt_config {
 };
 
 struct interrupt_wait {
-	unsigned int interrupt_id;
+	/* inputs */
+	uint64_t interrupt_mask_all;
+	uint64_t interrupt_mask_any;
 	int64_t timeout_ns;
+
+	/* outputs */
+	uint64_t interrupt_mask_fired;
+	int32_t interrupt_id_error;
+	int32_t error;
+
+	/* actual size of array depends on number of stps */
+	uint16_t interrupt_code[1];
+
+	/* interrupt_code MUST BE LAST MEMBER */
 };
 
 struct stp_config {
@@ -277,14 +299,10 @@ struct sram_vector_coordinate_read {
 
 struct mipi_input_stream_setup {
 	uint32_t seg_start;
-	uint32_t seg_end;
 	uint32_t seg_words_per_row;
-	uint32_t segs_per_row;
 };
 
 struct mipi_output_stream_setup {
-	uint32_t seg_end;
-	uint32_t segs_per_row;
 	bool enable_row_sync;
 };
 
@@ -298,6 +316,8 @@ struct mipi_stream_setup {
 	uint32_t unpacked_data_type;
 	uint32_t img_width;
 	uint32_t img_height;
+	uint32_t seg_end;
+	uint32_t segs_per_row;
 	uint32_t stripe_height;
 
 	union {
@@ -367,7 +387,7 @@ struct mipi_interrupt_config {
 #define PB_UNBIND_DMA_INTERRUPT      _IOW('p', 6, unsigned int)
 #define PB_RELEASE_DMA_CHANNEL       _IOW('p', 7, unsigned int)
 #define PB_ALLOCATE_INTERRUPT        _IOW('p', 8, unsigned int)
-#define PB_WAIT_FOR_INTERRUPT        _IOW('p', 11, struct interrupt_wait)
+#define PB_WAIT_FOR_INTERRUPT        _IOWR('p', 11, struct interrupt_wait)
 #define PB_RELEASE_INTERRUPT         _IOW('p', 12, unsigned int)
 #define PB_ALLOCATE_LINE_BUFFER_POOL _IOW('p', 13, unsigned int)
 #define PB_SETUP_LINE_BUFFER         _IOW('p', 14, struct line_buffer_config)

@@ -96,8 +96,7 @@ static void drain_queue(struct paintbox_data *pb,
 
 		spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 
-		if (transfer->buf_vaddr)
-			dma_unmap_buffer_cma(pb, transfer, NULL, 0);
+		ipu_dma_release_buffer(pb, transfer);
 
 		kfree(transfer);
 
@@ -702,7 +701,8 @@ int read_dma_transfer_ioctl(struct paintbox_data *pb,
 
 	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 
-	ret = dma_unmap_buffer_cma(pb, transfer, req.host_vaddr, req.len_bytes);
+	ret = ipu_dma_release_and_copy_buffer(pb, transfer, req.host_vaddr,
+			req.len_bytes);
 
 	kfree(transfer);
 
@@ -961,7 +961,7 @@ irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 			channel_id++, channel_mask >>= 1) {
 		struct paintbox_dma_channel *channel;
 		struct paintbox_dma_transfer *transfer;
-		uint32_t status;
+		uint32_t status, mode, src;
 
 		if (!(channel_mask & 0x01))
 			continue;
@@ -982,6 +982,16 @@ irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 
 		status = readl(pb->dma.dma_base + DMA_CHAN_ISR);
 		writel(status, pb->dma.dma_base + DMA_CHAN_ISR);
+
+		mode = readl(pb->dma.dma_base + DMA_CHAN_MODE_RO);
+		src = (mode & DMA_CHAN_SRC_MASK) >> DMA_CHAN_SRC_SHIFT;
+
+		/* If this is a MIPI_IN transfer then notify the MIPI code that
+		 * the DMA transfer has completed.
+		 */
+		if (src == DMA_CHAN_SRC_MIPI_IN)
+			mipi_input_handle_dma_completed(pb,
+					channel->mipi_stream);
 
 		/* If there is a stop request then stop the current transfers
 		 * and signal the waiters if there are any.  Do not load any

@@ -818,7 +818,7 @@ static int lbp_sram_write_word(struct paintbox_data *pb,
 {
 	unsigned int attempts = 0;
 
-	writel(sram_config->core_id | LBP_SEL_LBP_SEL_MASK, pb->lbp_base +
+	writel(sram_config->core_id & LBP_SEL_LBP_SEL_MASK, pb->lbp_base +
 			LBP_SEL);
 
 	write_ram_data_registers(pb, buf, pb->lbp_base + LBP_RAM_DATA0,
@@ -847,7 +847,7 @@ static int lbp_sram_read_word(struct paintbox_data *pb,
 {
 	unsigned int attempts = 0;
 
-	writel(sram_config->core_id | LBP_SEL_LBP_SEL_MASK, pb->lbp_base +
+	writel(sram_config->core_id & LBP_SEL_LBP_SEL_MASK, pb->lbp_base +
 			LBP_SEL);
 
 	writel(LBP_RAM_CTRL_RUN_MASK | ram_ctrl_addr, pb->lbp_base +

@@ -53,9 +53,8 @@ int dma_setup_mipi_to_dram_transfer(struct paintbox_data *pb,
 		return -EINVAL;
 	}
 
-	/* TODO(ahampson): This needs to be conditionalized for IOMMU or CMA. */
-	ret = dma_map_buffer_cma(pb, transfer, config->dst.dram.host_vaddr,
-			config->dst.dram.len_bytes, DMA_FROM_DEVICE);
+	ret = ipu_dma_attach_buffer(pb, transfer, &config->dst.dram,
+			DMA_FROM_DEVICE);
 	if (ret < 0)
 		return ret;
 
@@ -70,17 +69,16 @@ int dma_setup_mipi_to_dram_transfer(struct paintbox_data *pb,
 	if (ret < 0)
 		goto err_exit;
 
-	set_dma_dram_parameters(pb, channel, transfer);
-
 	dev_dbg(&pb->pdev->dev,
-			"%s: dma%u: mipi input -> va %p pa %pa %llu bytes\n",
-			__func__, config->channel_id, transfer->buf_vaddr,
-			&transfer->buf_paddr, config->dst.dram.len_bytes);
+			"%s: dma channel%u: mipi input -> va %p dma addr %pad "
+			"%llu bytes\n", __func__, config->channel_id,
+			transfer->buf_vaddr, &transfer->dma_addr,
+			config->dst.dram.len_bytes);
 
 	return 0;
 
 err_exit:
-	dma_unmap_buffer_cma(pb, transfer, NULL, 0);
+	ipu_dma_release_buffer(pb, transfer);
 
 	return ret;
 }

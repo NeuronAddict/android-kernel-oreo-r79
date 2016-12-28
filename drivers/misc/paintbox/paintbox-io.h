@@ -34,6 +34,11 @@ void io_disable_dma_channel_interrupt(struct paintbox_data *pb,
 		unsigned int channel_id);
 void io_enable_stp_interrupt(struct paintbox_data *pb, unsigned int stp_id);
 void io_disable_stp_interrupt(struct paintbox_data *pb, unsigned int stp_id);
+
+bool get_mipi_input_interface_interrupt_state(struct paintbox_data *pb,
+		unsigned int interface_id);
+bool get_mipi_output_interface_interrupt_state(struct paintbox_data *pb,
+		unsigned int interface_id);
 void io_enable_mipi_input_interface_interrupt(struct paintbox_data *pb,
 		unsigned int interface_id);
 void io_disable_mipi_input_interface_interrupt(struct paintbox_data *pb,

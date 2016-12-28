@@ -29,10 +29,6 @@ int set_dma_image_parameters(struct paintbox_data *pb,
 		struct paintbox_dma_transfer *transfer,
 		struct dma_image_config *config);
 
-void set_dma_dram_parameters(struct paintbox_data *pb,
-		struct paintbox_dma_channel *channel,
-		struct paintbox_dma_transfer *transfer);
-
 int set_dma_transfer_region_parameters(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel,
 		struct paintbox_dma_transfer *transfer,

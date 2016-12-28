@@ -228,29 +228,6 @@ int set_dma_image_parameters(struct paintbox_data *pb,
 }
 
 /* The caller to this function must hold pb->lock */
-void set_dma_dram_parameters(struct paintbox_data *pb,
-		struct paintbox_dma_channel *channel,
-		struct paintbox_dma_transfer *transfer)
-{
-	/* TODO(ahampson):  Only physical addresses to contiguous allocations
-	 * are supported right now.  Once the IOMMU is ready, virtual addresses
-	 * to non-contiguous memory will be supported.
-	 */
-#ifndef CONFIG_PAINTBOX_IOMMU
-	transfer->chan_va_low = (uint32_t)transfer->buf_paddr;
-	transfer->chan_va_high = (uint32_t)((uint64_t)transfer->buf_paddr >>
-			32);
-#endif
-
-	/* VA_BDRY is the virtual address boundary for the DMA transfer.  The
-	 * memory transferred by DMA is [VA, VA + VA_BDRY].
-	 */
-	transfer->chan_va_bdry_low = (uint32_t)transfer->len_bytes;
-	transfer->chan_va_bdry_high = (uint32_t)(transfer->len_bytes >>
-			32);
-}
-
-/* The caller to this function must hold pb->lock */
 int set_dma_transfer_region_parameters(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel,
 		struct paintbox_dma_transfer *transfer,

@@ -78,6 +78,10 @@ void mipi_request_cleanup(struct paintbox_data *pb,
 int verify_cleanup_completion(struct paintbox_data *pb,
 		struct paintbox_mipi_stream *stream);
 
+/* This function must be called from an interrupt context */
+void mipi_input_handle_dma_completed(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream);
+
 /* This function must be called from an interrupt context. */
 irqreturn_t paintbox_mipi_input_interrupt(struct paintbox_data *pb,
 		uint32_t stream_mask);

@@ -422,6 +422,20 @@ void io_disable_stp_interrupt(struct paintbox_data *pb, unsigned int stp_id)
 	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
 }
 
+bool get_mipi_input_interface_interrupt_state(struct paintbox_data *pb,
+		unsigned int interface_id)
+{
+	return !!(readl(pb->io.apb_base + IPU_ISR) & (pb->io.mipi_input_start +
+			interface_id));
+}
+
+bool get_mipi_output_interface_interrupt_state(struct paintbox_data *pb,
+		unsigned int interface_id)
+{
+	return !!(readl(pb->io.apb_base + IPU_ISR) & (pb->io.mipi_output_start +
+			interface_id));
+}
+
 static void io_enable_mipi_interface_interrupt(struct paintbox_data *pb,
 		unsigned int interface_offset)
 {

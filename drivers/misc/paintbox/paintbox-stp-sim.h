@@ -22,8 +22,7 @@
 
 /* The caller to these functions must hold pb->lock */
 int sim_wait_for_idle(struct paintbox_data *pb, struct paintbox_stp *stp);
-int sim_execute(struct paintbox_data *pb, struct paintbox_irq *irq,
-		uint64_t timeout_ns);
+int sim_execute(struct paintbox_data *pb, const struct interrupt_wait *wait);
 
 int sim_get_stp_idle_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);

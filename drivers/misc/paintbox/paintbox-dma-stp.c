@@ -212,8 +212,8 @@ int dma_setup_dram_to_stp_transfer(struct paintbox_data *pb,
 			config->src.dram.len_bytes))
 		return -EFAULT;
 
-	ret = dma_map_buffer_cma(pb, transfer, config->src.dram.host_vaddr,
-			config->src.dram.len_bytes, DMA_TO_DEVICE);
+	ret = ipu_dma_attach_buffer(pb, transfer, &config->src.dram,
+			DMA_TO_DEVICE);
 	if (ret < 0)
 		return ret;
 
@@ -237,12 +237,10 @@ int dma_setup_dram_to_stp_transfer(struct paintbox_data *pb,
 	if (ret < 0)
 		goto err_exit;
 
-	set_dma_dram_parameters(pb, channel, transfer);
-
 	return 0;
 
 err_exit:
-	dma_unmap_buffer_cma(pb, transfer, NULL, 0);
+	ipu_dma_release_buffer(pb, transfer);
 
 	return ret;
 }

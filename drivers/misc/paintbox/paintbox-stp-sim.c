@@ -29,46 +29,19 @@
 #include "paintbox-stp.h"
 #include "paintbox-stp-sim.h"
 
-
 /* This function will cause the simulator to begin executing the IPU program.
  * Execution will continue until either the specified interrupt triggers or the
  * specified timeout expires.
  *
  * The caller to this function must hold pb->lock
  */
-int sim_execute(struct paintbox_data *pb, struct paintbox_irq *irq,
-		uint64_t timeout_ns)
+int sim_execute(struct paintbox_data *pb, const struct interrupt_wait *wait)
 {
-	uint32_t val;
+	writeq(wait->timeout_ns, pb->sim_base + SIM_TIMEOUT);
+	writeq(wait->interrupt_mask_all, pb->sim_base + SIM_INTERRUPT_MASK_ALL);
+	writeq(wait->interrupt_mask_any, pb->sim_base + SIM_INTERRUPT_MASK_ANY);
 
-	writel((uint32_t)(timeout_ns & 0xFFFFFFFF), pb->sim_base +
-			SIM_TIMEOUT_L);
-	writel((uint32_t)(timeout_ns >> 32), pb->sim_base + SIM_TIMEOUT_H);
-
-	switch (irq->source) {
-	case IRQ_SRC_DMA_CHANNEL:
-		val = irq->dma_channel->channel_id << SIM_INT_ID_SHIFT;
-		val |= SIM_INT_SRC_DMA << SIM_INT_SRC_SHIFT;
-		break;
-	case IRQ_SRC_MIPI_IN_STREAM:
-		val = irq->mipi_stream->stream_id << SIM_INT_ID_SHIFT;
-		val |= SIM_INT_SRC_MIPI_IN << SIM_INT_SRC_SHIFT;
-		break;
-	case IRQ_SRC_MIPI_OUT_STREAM:
-		val = irq->mipi_stream->stream_id << SIM_INT_ID_SHIFT;
-		val |= SIM_INT_SRC_MIPI_OUT << SIM_INT_SRC_SHIFT;
-		break;
-	case IRQ_SRC_STP:
-		val = irq->stp->stp_id << SIM_INT_ID_SHIFT;
-		val |= SIM_INT_SRC_STP << SIM_INT_SRC_SHIFT;
-		break;
-	default:
-		dev_err(&pb->pdev->dev, "%s: invalid interrupt source\n",
-				__func__);
-		return -EINVAL;
-	};
-
-	writel(val | SIM_RUN, pb->sim_base + SIM_CTRL);
+	writel(SIM_RUN, pb->sim_base + SIM_CTRL);
 
 	return 0;
 }

@@ -826,7 +826,18 @@
 #define MPI_DT_IN_DEF         42
 #define MPI_DT_PROC_MAX       MPI_DT_PROC_M
 #define MPI_DT_PROC_DEF       46
-#define MPI_STRP_HEIGHT_MAX   63
+#define MPI_STRP_HEIGHT_MIN   1
+
+/* Easel Errata b/32334151
+ * MIPI input stripe height is restricted to 28 on V1 IPU
+ */
+#ifdef CONFIG_PAINTBOX_V1
+#define MPI_STRP_HEIGHT_MAX   28
+#else
+#define MPI_STRP_HEIGHT_MAX   32
+#endif
+
+#define MPI_STRP_HEIGHT_ROW_ALIGN 4
 #define MPI_STRP_HEIGHT_DEF   3
 
 /* MPI_STRM_CNFG0_H Register Bits */
@@ -847,7 +858,8 @@
 #define MPI_SEG_END_MASK      (MPI_SEG_END_M << MPI_SEG_END_SHIFT)
 
 #define MPI_SEG_START_MAX     MPI_SEG_START_MASK
-#define MPI_SEG_END_MAX       MPI_SEG_END_M
+#define MPI_SEG_END_MIN       1
+#define MPI_SEG_END_MAX       128
 
 /* MPI_STRM_CNFG1_H Register Bits */
 #define MPI_SEGS_PER_ROW_MASK 0x7F
@@ -856,8 +868,11 @@
 #define MPI_SEG_WORDS_PER_ROW_MASK (MPI_SEG_WORDS_PER_ROW_M <<                 \
 		MPI_SEG_WORDS_PER_ROW_SHIFT)
 
-#define MPI_SEGS_PER_ROW_MAX  127
-#define MPI_SEG_WORDS_PER_ROW_MAX MPI_SEG_WORDS_PER_ROW_M
+#define MPI_SEGS_PER_ROW_MIN  1
+#define MPI_SEGS_PER_ROW_MAX  128
+
+#define MPI_SEG_WORDS_PER_ROW_MIN 1
+#define MPI_SEG_WORDS_PER_ROW_MAX 4096
 #define MPI_SEG_WORDS_PER_ROW_DEF 39
 
 /* MPO_CAP Register Bits */
@@ -892,6 +907,9 @@
 
 #define MPO_DT_OUT_DEF        42
 #define MPO_DT_PROC_DEF       46
+
+#define MPO_STRP_HEIGHT_MIN   1
+#define MPO_STRP_HEIGHT_MAX   32
 #define MPO_STRP_HEIGHT_DEF   3
 
 /* MPO_STRM_CNFG0_H Register Bits */
@@ -909,9 +927,11 @@
 #define MPO_SEGS_PER_ROW_SHIFT 16
 #define MPO_SEGS_PER_ROW_MASK (MPO_SEGS_PER_ROW_M << MPO_SEGS_PER_ROW_SHIFT)
 
-#define MPO_SEG_END_MAX       127
+#define MPO_SEG_END_MIN       1
+#define MPO_SEG_END_MAX       128
 
-#define MPO_SEGS_PER_ROW_MAX  MPO_SEGS_PER_ROW_M
+#define MPO_SEGS_PER_ROW_MIN  1
+#define MPO_SEGS_PER_ROW_MAX  128
 #define MPO_SEGS_PER_ROW_DEF  2
 
 /* DMA Register Group Offsets */

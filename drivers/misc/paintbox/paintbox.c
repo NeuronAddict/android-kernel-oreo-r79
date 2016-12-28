@@ -73,11 +73,15 @@ static int paintbox_open(struct inode *ip, struct file *fp)
 	INIT_LIST_HEAD(&session->lbp_list);
 	INIT_LIST_HEAD(&session->mipi_input_list);
 	INIT_LIST_HEAD(&session->mipi_output_list);
+	INIT_LIST_HEAD(&session->wait_list);
 
 	fp->private_data = session;
 
 	return 0;
 }
+
+#define SESSION_WAIT_MIN_SLEEP_US 10
+#define SESSION_WAIT_MAX_SLEEP_US 100
 
 static int paintbox_release(struct inode *ip, struct file *fp)
 {
@@ -132,6 +136,16 @@ static int paintbox_release(struct inode *ip, struct file *fp)
 #ifdef CONFIG_PAINTBOX_FPGA_SUPPORT
 	paintbox_fpga_soft_reset(pb);
 #endif
+
+	/* release_interrupt above should have woken up all sleeping threads.
+	 * block here until all threads have removed themselves from
+	 * session->wait_list
+	 */
+	while (!list_empty(&session->wait_list)) {
+		mutex_unlock(&pb->lock);
+		usleep_range(SESSION_WAIT_MIN_SLEEP_US, SESSION_WAIT_MAX_SLEEP_US);
+		mutex_lock(&pb->lock);
+	}
 
 	mutex_unlock(&pb->lock);
 
