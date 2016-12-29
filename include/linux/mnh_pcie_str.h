@@ -60,7 +60,7 @@
 /* definitions to test Scatter gather API */
 
 #define SGL_BUFFER 256
-#define SGL_SIZE 256
+#define SGL_SIZE 16384
 
 struct mnh_pcie_ep_device {
 	struct device *dev;
