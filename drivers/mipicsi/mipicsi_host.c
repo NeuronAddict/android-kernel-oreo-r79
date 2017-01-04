@@ -283,6 +283,22 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 	/* Set TESTCLR to logic low */
 	RX_OUT(PHY_TEST_CTRL0, 0);
 
+	/* TEMP - Hardcode 640 Settings */
+	if (config->mbps ==640) {
+		mipicsi_host_dphy_write(dev, 0x01, 0x20);
+		mipicsi_host_dphy_write(dev, 0x02, 0x18);
+
+		mipicsi_host_dphy_write(dev, 0xE2, 0xb6);
+		mipicsi_host_dphy_write(dev, 0xE3, 0x1);
+		mipicsi_host_dphy_write(dev, 0xE4, 0x1);
+
+		mipicsi_host_dphy_write(dev, 0x08, 0x20);
+		udelay (1);
+
+		RX_OUTf(N_LANES, N_LANES, 3);
+		udelay(1);
+	} else {  // TEMP
+
 	/* Set hsfreqrange[6:0] */
 	if (mipicsi_pll_calc(config->mbps, &pll) != 0)
 		return -EINVAL;
@@ -327,6 +343,8 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 	/* Set enable_0/1/2/3, and enableclk=1'b1; 15. Wait 5ns */
 	RX_OUTf(N_LANES, N_LANES, (config->num_lanes-1));
 	udelay(1);
+	} //TEMP
+
 #endif
 
 	/* Set SHUTDOWNZ=1'b1 */
