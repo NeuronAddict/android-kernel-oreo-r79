@@ -25,6 +25,42 @@
 #include "mipicsi_dc_dphy.h"
 #include "mipi_dev.h"
 
+/* External Clocks */
+#define AHB_APB_CLK_MHZ       100
+#define FPCLK_MHZ             100
+#define REFCLK_MHZ            25
+#define CFGCLK_MHZ            50
+#define EXTCLK_MHZ            1000
+
+/* PLL and Bitrates for Daughtercard and Gen3 DPhy*/
+#define DC_PLL_MIN_MHZ     80
+#define DC_PLL_MAX_MHZ     2000
+#define DC_MIN_BITRATE     DC_PLL_MIN_MHZ
+#define DC_MAX_BITRATE     DC_PLL_MAX_MHZ
+#define G3_PLL_MIN_MHZ     40
+#define G3_PLL_MAX_MHZ     1250
+#define G3_MIN_BITRATE     (G3_PLL_MIN_MHZ*2)
+#define G3_MAX_BITRATE     (G3_PLL_MAX_MHZ*2)
+
+/* CSI Device Controller Parameters */
+#define CSI2_DEVICE_DATAINTERFACE       IDI
+#define CSI2_DEVICE_NUM_OF_LANES        4
+#define CSI2_DEVICE_DFLT_F_SYNC_TYPE    2
+#define CSI2_DEVICE_IDI_PLD_FIFO_DEPTH  4096
+#define CSI2_DEVICE_IDI_PLD_RAM_DEPTH   4096
+#define CSI2_DEVICE_IDI_HD_FIFO_DEPTH   8
+
+/* CSI Host Controller Parameters */
+#define CSI2_DATAINTERFACE              2
+#define IDI_64_DATA_IF                  1
+#define CSI2_HOST_NUM_OF_LANES          4
+#define CSI2_HOST_DFLT_F_SYNC_TYPE      2
+#define CSI2_HOST_N_DATA_IDS            1
+#define CSI2_HOST_SNPS_PHY              1
+#define CSI2_EXT_PPIP                   0
+#define CSI2_PPI_PD                     2
+#define CSI2_PCLK_FREE                  1
+
 #define BIT0_MASK 0x0001
 #define BIT1_MASK 0x0002
 #define BIT2_MASK 0x0004
@@ -63,8 +99,6 @@ struct mipicsi_top_bist {
 	bool ok;
 };
 
-/* ENABLE EMULATION SUPPORT */
-#define MNH_EMULATION
 
 int mipicsi_top_start(struct mipicsi_top_cfg *config);
 int mipicsi_top_stop(enum mipicsi_top_dev dev);

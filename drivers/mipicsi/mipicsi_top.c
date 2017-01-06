@@ -69,7 +69,6 @@
 		    HWIO_MIPI_TOP_##reg##_##fld##_FLDMASK) )
 
 
-
 #define DEVICE_NAME "mipicsitop"
 
 /*
@@ -77,65 +76,13 @@
  */
 static LIST_HEAD(devlist_global);
 
-/* External Clocks */
-#define AHB_APB_CLK_MHZ       100
-#define FPCLK_MHZ             100
-#define REFCLK_MHZ            25
-#define EXTCLK_MHZ            1000
-#define CLKP_MIN_MHZ          40
-#define CLKP_MAX_MHZ          1250
 
-/* Internal Clocks */
-#ifdef MNH_EMULATION
-#define RXCLK_MIN_MHZ         80
-#define RXCLK_MAX_MHZ         2000
-#else
-#define RXCLK_MIN_MHZ         40
-#define RXCLK_MAX_MHZ         1250
-#endif
-#define TXCLK_MIN_MHZ         RXCLK_MIN_MHZ
-#define TXCLK_MAX_MHZ         RXCLK_MAX_MHZ
-#define PLLCLK_MIN_MHZ        RXCLK_MIN_MHZ
-#define PLLCLK_MAX_MHZ        RXCLK_MIN_MHZ
-
-/* Bitrates */
-#ifdef MNH_EMULATION
-#define MIN_BITRATE           RXCLK_MIN_MHZ
-#define MAX_BITRATE           RXCLK_MAX_MHZ
-#else
-#define MIN_BITRATE           (RXCLK_MIN_MHZ*2)
-#define MAX_BITRATE           (RXCLK_MAX_MHZ*2)
-#endif
-
-/* CSI Device Controller Parameters */
-#define CSI2_DEVICE_DATAINTERFACE       IDI
-#define CSI2_DEVICE_NUM_OF_LANES        4
-#define CSI2_DEVICE_DFLT_F_SYNC_TYPE    2
-#define CSI2_DEVICE_IDI_PLD_FIFO_DEPTH  4096
-#define CSI2_DEVICE_IDI_PLD_RAM_DEPTH   4096
-#define CSI2_DEVICE_IDI_HD_FIFO_DEPTH   8
-
-/* CSI Host Controller Parameters */
-#define CSI2_DATAINTERFACE              2
-#define IDI_64_DATA_IF                  1
-#define CSI2_HOST_NUM_OF_LANES          4
-#define CSI2_HOST_DFLT_F_SYNC_TYPE      2
-#define CSI2_HOST_N_DATA_IDS            1
-#define CSI2_HOST_SNPS_PHY              1
-#define CSI2_EXT_PPIP                   0
-#define CSI2_PPI_PD                     2
-#define CSI2_PCLK_FREE                  1
-
-void * dev_addr_map[MIPI_MAX] = { NULL };
-
-void mipicsi_util_save_virt_addr(enum mipicsi_top_dev dev, void *base_addr)
-{
-  dev_addr_map[dev] = base_addr;
-}
+void *dev_addr_map[MIPI_MAX] = { NULL };
 
 static struct device *mipi_dev;
 
 struct mipi_dev *dev_map[MIPI_MAX] = { NULL };
+
 
 void mipicsi_set_device(enum mipicsi_top_dev devid, struct mipi_dev *dev)
 {
@@ -248,14 +195,15 @@ int mipicsi_top_dphy_read(struct mipicsi_top_reg *reg)
 
 int top_start_rx(struct mipicsi_top_cfg *config)
 {
-	void * baddr = dev_addr_map[MIPI_TOP];
+	void *baddr = dev_addr_map[MIPI_TOP];
+
 	if (!baddr) {
 		pr_err("%s missing address for top\n", __func__);
 		return -EINVAL;
 	}
 
-	if ((config->mbps < MIN_BITRATE) ||
-	    (config->mbps > MAX_BITRATE))
+	if ((config->mbps < mipicsi_util_get_min_bitrate()) ||
+	    (config->mbps > mipicsi_util_get_max_bitrate()))
 	    return -EINVAL;
 
 	    if (config->num_lanes > CSI2_HOST_NUM_OF_LANES)
@@ -276,14 +224,15 @@ int top_start_rx(struct mipicsi_top_cfg *config)
 
 int top_start_tx(struct mipicsi_top_cfg *config)
 {
-	void * baddr = dev_addr_map[MIPI_TOP];
+	void *baddr = dev_addr_map[MIPI_TOP];
+
 	if (!baddr) {
 		pr_err("%s missing address for top\n", __func__);
 		return -EINVAL;
 	}
 
-	if ((config->mbps < MIN_BITRATE) ||
-	    (config->mbps > MAX_BITRATE))
+	if ((config->mbps < mipicsi_util_get_min_bitrate()) ||
+	    (config->mbps > mipicsi_util_get_max_bitrate()))
 	    return -EINVAL;
 
 	if (config->num_lanes > CSI2_DEVICE_NUM_OF_LANES)
@@ -934,9 +883,8 @@ int mipicsi_top_debug_bist_status(struct mipicsi_top_bist *bist)
 
 int mipicsi_top_hw_init(void)
 {
-#ifdef MNH_EMULATION
-	/* Assuming two daughter cards are present and configuring
-	 * Bypass mode from RX0 to TX0 by default
+	/*
+	 * TEMP - Bypass mode from RX0 to TX0 by default
 	 */
 
 	struct mipicsi_top_cfg cfg;
@@ -957,7 +905,6 @@ int mipicsi_top_hw_init(void)
 	mux.ss_stream_off = true;
 	mipicsi_top_set_mux(&mux);
 
-#endif
 	return 0;
 }
 
@@ -1001,7 +948,7 @@ static irqreturn_t mipicsi_top_irq(int irq, void *dev_id)
 {
 
 	struct mipi_dev *dev = dev_id;
-	u32 status, ind_status;
+	u32 status;
 	void *baddr = dev->base_address;
 	int ret = IRQ_NONE;
 
@@ -1071,6 +1018,7 @@ int mipicsi_top_probe(struct platform_device *pdev)
 		goto free_mem;
 	}
 
+
 	/* Initialize character device */
 	ret = mipicsi_top_init_chardev(dev);
 
@@ -1078,6 +1026,9 @@ int mipicsi_top_probe(struct platform_device *pdev)
 		 dev->base_address);
 
 	mipicsi_util_save_virt_addr(MIPI_TOP, dev->base_address);
+
+	/* Read emulation vs silicon setting */
+	mipicsi_util_read_emulation ();
 
 	/* dev_info(&pdev->dev, "Intel Device at 0x%08x\n",
 	 * (unsigned int)dev->base_address);
@@ -1111,6 +1062,7 @@ int mipicsi_top_probe(struct platform_device *pdev)
 		dev->device_id = get_device_id(device_id_name);
 		mipicsi_set_device(dev->device_id, dev);
 	}
+
 
 	/* Now that everything is fine, let's add it to device list */
 	list_add_tail(&dev->devlist, &devlist_global);

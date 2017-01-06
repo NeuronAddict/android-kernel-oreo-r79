@@ -835,19 +835,21 @@ int mipicsi_debug_dump(enum mipicsi_top_dev device)
 		       reg.offset, reg.value);
 	}
 
-#ifdef MNH_EMULATION
-	pr_err("\nDaughtercard DPhy Reads\n");
-	for (i = 0; i <= 0xF4; i++) {
-		reg.offset = i;
-		mipicsi_top_dphy_read(&reg);
+	if (mipicsi_util_is_emulation()) {
+
+		pr_err("\nDaughtercard DPhy Reads\n");
+		for (i = 0; i <= 0xF4; i++) {
+			reg.offset = i;
+			mipicsi_top_dphy_read(&reg);
+		}
+	} else {
+		pr_err("\nGen3 DPhy Reads\n");
+		for (i = 0; i <= dphy_sz; i++) {
+			reg.offset = dphy[i];
+			mipicsi_top_dphy_read(&reg);
+		}
 	}
-#else
-	pr_err("\nGen3 DPhy Reads\n");
-	for (i = 0; i <= dphy_sz; i++) {
-		reg.offset = dphy[i];
-		mipicsi_top_dphy_read(&reg);
-	}
-#endif
+
 	/* Take the device out of shutdown */
 	if ((reg.dev == MIPI_TX0) ||
 	    (reg.dev == MIPI_TX1)) {

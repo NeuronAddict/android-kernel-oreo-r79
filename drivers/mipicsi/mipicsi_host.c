@@ -93,43 +93,44 @@ void mipicsi_host_dphy_write(enum mipicsi_top_dev dev,
 		__func__, dev, command, data);
 	RX_OUTf(PHY_SHUTDOWNZ, PHY_SHUTDOWNZ, 0);
 	RX_OUTf(DPHY_RSTZ,     DPHY_RSTZ,     0);
-#ifdef MNH_EMULATION
-	/* Set the desired testcode */
-	RX_OUT(PHY_TEST_CTRL0, 0);
-	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
-	RX_OUT(PHY_TEST_CTRL1, 0);
-	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, command);
-	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN, 1);
-	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 0);
 
-	/* Enter the test data */
-	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN, 0);
-	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, data);
-	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
-#else
-	/* Write 4-bit testcode MSB */
-	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 0);
-	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN,  0);
-	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN , 1);
-	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
-	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, 0);
-	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 0);
-	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN,  0);
-	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, ((command & 0xF00)>>8));
-	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
+	if (mipicsi_util_is_emulation()) {
+		/* Set the desired testcode */
+		RX_OUT(PHY_TEST_CTRL0, 0);
+		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
+		RX_OUT(PHY_TEST_CTRL1, 0);
+		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, command);
+		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN, 1);
+		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 0);
 
-	/* Write 8-bit testcode LSB */
-	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 0);
-	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN,  1);
-	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
-	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, (command & 0xFF));
-	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 0);
-	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN,  0);
+		/* Enter the test data */
+		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN, 0);
+		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, data);
+		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
+	} else {
+		/* Write 4-bit testcode MSB */
+		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 0);
+		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN,  0);
+		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN , 1);
+		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
+		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, 0);
+		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 0);
+		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN,  0);
+		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, ((command & 0xF00)>>8));
+		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
 
-	/* Write the data */
-	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, data);
-	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
-#endif
+		/* Write 8-bit testcode LSB */
+		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 0);
+		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN,  1);
+		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
+		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, (command & 0xFF));
+		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 0);
+		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN,  0);
+
+		/* Write the data */
+		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, data);
+		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
+	}
 }
 
 uint8_t mipicsi_host_dphy_read(enum mipicsi_top_dev dev, uint16_t command)
@@ -249,147 +250,145 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 	//RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLR, 1);
 	RX_OUT(PHY_TEST_CTRL0, 1);
 
-#ifdef MNH_EMULATION
-	/* Apply CFG_CLK signal with the appropriate frequency; for
-	 * correct values, refer to Table 12-5
-	 */
-	/* Note: Hardware controlled */
+	if (mipicsi_util_is_emulation()) {
+		/* Apply CFG_CLK signal with the appropriate frequency; for
+		 * correct values, refer to Table 12-5
+		 */
+		/* Note: Hardware controlled */
 
-	/* Set MASTERSLAVEZ for SLAVE */
-	mipicsi_host_dphy_write(dev, R_CSI2_DCPHY_MASTER_SLAVEZ,
-				DC_SLAVE_VAL);
+		/* Set MASTERSLAVEZ for SLAVE */
+		mipicsi_host_dphy_write(dev, R_CSI2_DCPHY_MASTER_SLAVEZ,
+					DC_SLAVE_VAL);
 
-	/* Configure as RX per Synopsys feedback - registers not in databook */
-	mipicsi_dev_dphy_write(dev, 0xB0, 0x1E);
-	udelay (10);
-	mipicsi_dev_dphy_write(dev, 0xAC, 0x03);
+		/* Configure as RX per Synopsys feedback - registers not in databook */
+		mipicsi_dev_dphy_write(dev, 0xB0, 0x1E);
+		udelay (10);
+		mipicsi_dev_dphy_write(dev, 0xAC, 0x03);
 
-	/* Set all REQUEST inputs to zero */
-	/* Hardware controls */
+		/* Set all REQUEST inputs to zero */
+		/* Hardware controls */
 
-	/* Wait for 15 ns */
-	udelay(1);
-
-	/* Set TESTCLR to low */
-	//RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLR, 0);
-	RX_OUT(PHY_TEST_CTRL0, 0);
-	/* Wait for 15 ns */
-	udelay(1);
-
-	/* Configure hsfreqrange according to table Frequency Ranges
-	 * and Defaults in "PLL Locking Mode and AFE Initialization"
-	 * on page 74
-	 */
-	if (mipicsi_pll_get_hsfreq(config->mbps, &hsfreq) != 0)
-		return -EINVAL;
-
-	mipicsi_host_dphy_write(dev, R_CSI2_DCPHY_HS_RX_CTRL_L0,
-			       (hsfreq << 1));
-
-
-	RX_OUTf(N_LANES, N_LANES, (config->num_lanes-1));
-
-	/* Wait 5ns */
-	udelay(1);
-
-	/*
-	 * RX THS Settle
-	 * NOTE: THS target settle time is a little higher than MIPI spec due
-	 * to Synopsys feedback
-	 */
-	ui_ps = 1000*1000/config->mbps;
-	ths_setl_ns = MIN(PAD_TIME(115+6*ui_ps/1000), 145+10*ui_ps/1000);
-	pr_info("THS : RX setl=%d\n",ths_setl_ns);
-	value = ROUNDUP((ths_setl_ns-SETL_CONST_TIME),
-		      (MIPI_DDR_CLOCK/(config->mbps/2)))-1;
-	mipicsi_host_dphy_write(dev, R_CSI2_DCPHY_RX_THS_SETL, (1<<7) | value);
-
-#else
-	struct mipicsi_pll pll;
-
-	/* Wait for 15ns */
-	udelay (1);
-
-	/* Set TESTCLR to logic low */
-	RX_OUT(PHY_TEST_CTRL0, 0);
-
-	/* TEMP - Hardcode 640 Settings */
-	if (config->mbps == 640) {
-		mipicsi_host_dphy_write(dev, 0x01, 0x20);
-		mipicsi_host_dphy_write(dev, 0x02, 0x18);
-
-		mipicsi_host_dphy_write(dev, 0xE2, 0xb6);
-		mipicsi_host_dphy_write(dev, 0xE3, 0x1);
-		mipicsi_host_dphy_write(dev, 0xE4, 0x1);
-
-		mipicsi_host_dphy_write(dev, 0x08, 0x20);
-		udelay (1);
-
-		RX_OUTf(N_LANES, N_LANES, 3);
+		/* Wait for 15 ns */
 		udelay(1);
 
-	} else if (config->mbps == 1296) {
-		mipicsi_host_dphy_write(dev, 0x01, 0x20);
-		mipicsi_host_dphy_write(dev, 0x02, 0x2B);
+		/* Set TESTCLR to low */
+		//RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLR, 0);
+		RX_OUT(PHY_TEST_CTRL0, 0);
+		/* Wait for 15 ns */
+		udelay(1);
 
-		mipicsi_host_dphy_write(dev, 0xE2, 0xB6);
-		mipicsi_host_dphy_write(dev, 0xE3, 0x1);
-		mipicsi_host_dphy_write(dev, 0xE4, 0x1);
+		/* Configure hsfreqrange according to table Frequency Ranges
+		 * and Defaults in "PLL Locking Mode and AFE Initialization"
+		 * on page 74
+		 */
+		if (mipicsi_pll_get_hsfreq(config->mbps, &hsfreq) != 0)
+			return -EINVAL;
 
-		mipicsi_host_dphy_write(dev, 0x08, 0x20);
+		mipicsi_host_dphy_write(dev, R_CSI2_DCPHY_HS_RX_CTRL_L0,
+					(hsfreq << 1));
+
+
+		RX_OUTf(N_LANES, N_LANES, (config->num_lanes-1));
+
+		/* Wait 5ns */
+		udelay(1);
+
+		/*
+		 * RX THS Settle
+		 * NOTE: THS target settle time is a little higher than MIPI spec due
+		 * to Synopsys feedback
+		 */
+		ui_ps = 1000*1000/config->mbps;
+		ths_setl_ns = MIN(PAD_TIME(115+6*ui_ps/1000), 145+10*ui_ps/1000);
+		pr_info("THS : RX setl=%d\n",ths_setl_ns);
+		value = ROUNDUP((ths_setl_ns-SETL_CONST_TIME),
+				(MIPI_DDR_CLOCK/(config->mbps/2)))-1;
+		mipicsi_host_dphy_write(dev, R_CSI2_DCPHY_RX_THS_SETL, (1<<7) | value);
+	} else {
+		struct mipicsi_pll pll;
+
+		/* Wait for 15ns */
 		udelay (1);
 
-		RX_OUTf(N_LANES, N_LANES, 3);
+		/* Set TESTCLR to logic low */
+		RX_OUT(PHY_TEST_CTRL0, 0);
+
+		/* TEMP - Hardcode 640 Settings */
+		if (config->mbps == 640) {
+			mipicsi_host_dphy_write(dev, 0x01, 0x20);
+			mipicsi_host_dphy_write(dev, 0x02, 0x18);
+
+			mipicsi_host_dphy_write(dev, 0xE2, 0xb6);
+			mipicsi_host_dphy_write(dev, 0xE3, 0x1);
+			mipicsi_host_dphy_write(dev, 0xE4, 0x1);
+
+			mipicsi_host_dphy_write(dev, 0x08, 0x20);
+			udelay (1);
+
+			RX_OUTf(N_LANES, N_LANES, 3);
+			udelay(1);
+		} else if (config->mbps == 1296) {
+			mipicsi_host_dphy_write(dev, 0x01, 0x20);
+			mipicsi_host_dphy_write(dev, 0x02, 0x2B);
+
+			mipicsi_host_dphy_write(dev, 0xE2, 0xB6);
+			mipicsi_host_dphy_write(dev, 0xE3, 0x1);
+			mipicsi_host_dphy_write(dev, 0xE4, 0x1);
+
+			mipicsi_host_dphy_write(dev, 0x08, 0x20);
+			udelay (1);
+
+			RX_OUTf(N_LANES, N_LANES, 3);
+			udelay(1);
+		} else { //TEMP
+
+		/* Set hsfreqrange[6:0] */
+		if (mipicsi_pll_calc(config->mbps, &pll) != 0)
+			return -EINVAL;
+
+		mipicsi_host_dphy_write(dev, R_DPHY_RDWR_RX_SYS_0, 1<<5);
+		mipicsi_host_dphy_write(dev, R_DPHY_RDWR_RX_SYS_1, pll.hsfreq);
+
+		/* Refer to "Frequency Ranges and Default" on page 141 and configure
+		 * registers 0xe2, 0xe3 with the appropriate DDL target oscillation
+		 * frequency. Enable override to configure the DDL target oscillation
+		 * frequency on bit 0 of register 0xe4.
+		 */
+		if (pll.sr_osc_freq_tgt != 0){
+			mipicsi_host_dphy_write(dev, R_DPHY_RDWR_RX_RX_STARTUP_OVR_2,
+						pll.sr_osc_freq_tgt & 0xFF);
+			mipicsi_host_dphy_write(dev, R_DPHY_RDWR_RX_RX_STARTUP_OVR_3,
+						(pll.sr_osc_freq_tgt>>8) & 0xFF);
+			mipicsi_host_dphy_write(dev, R_DPHY_RDWR_RX_RX_STARTUP_OVR_4,
+						0x01);
+		}
+
+		/*  Configure register 0x8 to set deskew_polarity_rw signal
+		 * (bit 5) to 1'b1
+		 */
+		mipicsi_host_dphy_write (dev, R_DPHY_RDWR_RX_SYS_7, 1<<5);
+
+		/* Set cfgclkfreqrange[7:0] = round[ (Fcfg_clk(MHz)-17)*4]
+		 * = 8'b10000100, assuming cfg_clk = 50MHz */
+		/* Hardware controlled */
+
+		/* Apply cfg_clk signal with 50Mhz frequency */
+		/* Hardware controlled */
+
+		/* Set basedir_0 = 1'b1; 12. Set all requests inputs to zero; The
+		 * purpose is to ensure that the following signals are set to low 
+		 * logic level: txrequestesc_0 and turnrequest_0; */
+		/* Hardware controlled */
+
+		/*  Wait for 15 ns */
+		udelay (1);
+
+		/* Set enable_0/1/2/3, and enableclk=1'b1; 15. Wait 5ns */
+		RX_OUTf(N_LANES, N_LANES, (config->num_lanes-1));
 		udelay(1);
-	} else {  // TEMP
-
-	/* Set hsfreqrange[6:0] */
-	if (mipicsi_pll_calc(config->mbps, &pll) != 0)
-		return -EINVAL;
-
-	mipicsi_host_dphy_write(dev, R_DPHY_RDWR_RX_SYS_0, 1<<5);
-	mipicsi_host_dphy_write(dev, R_DPHY_RDWR_RX_SYS_1, pll.hsfreq);
-
-	/* Refer to "Frequency Ranges and Default" on page 141 and configure
-	 * registers 0xe2, 0xe3 with the appropriate DDL target oscillation
-	 * frequency. Enable override to configure the DDL target oscillation
-	 * frequency on bit 0 of register 0xe4.
-	 */
-	if (pll.sr_osc_freq_tgt != 0){
-		mipicsi_host_dphy_write(dev, R_DPHY_RDWR_RX_RX_STARTUP_OVR_2,
-					pll.sr_osc_freq_tgt & 0xFF);
-		mipicsi_host_dphy_write(dev, R_DPHY_RDWR_RX_RX_STARTUP_OVR_3,
-					(pll.sr_osc_freq_tgt>>8) & 0xFF);
-		mipicsi_host_dphy_write(dev, R_DPHY_RDWR_RX_RX_STARTUP_OVR_4,
-					0x01);
-	}
-
-	/*  Configure register 0x8 to set deskew_polarity_rw signal
-	 * (bit 5) to 1'b1
-	 */
-	mipicsi_host_dphy_write (dev, R_DPHY_RDWR_RX_SYS_7, 1<<5);
-
-	/* Set cfgclkfreqrange[7:0] = round[ (Fcfg_clk(MHz)-17)*4]
-	 * = 8'b10000100, assuming cfg_clk = 50MHz */
-	/* Hardware controlled */
-
-	/* Apply cfg_clk signal with 50Mhz frequency */
-	/* Hardware controlled */
-
-	/* Set basedir_0 = 1'b1; 12. Set all requests inputs to zero; The 
-	 * purpose is to ensure that the following signals are set to low 
-	 * logic level: txrequestesc_0 and turnrequest_0; */
-	/* Hardware controlled */
-
-	/*  Wait for 15 ns */
-	udelay (1);
-
-	/* Set enable_0/1/2/3, and enableclk=1'b1; 15. Wait 5ns */
-	RX_OUTf(N_LANES, N_LANES, (config->num_lanes-1));
-	udelay(1);
 	} //TEMP
 
-#endif
+        }
 
 	/* Set SHUTDOWNZ=1'b1 */
 	RX_OUTf(PHY_SHUTDOWNZ, PHY_SHUTDOWNZ, 1);
@@ -662,6 +661,9 @@ int mipicsi_host_probe(struct platform_device *pdev)
 		 dev->base_address);
 
 	mipicsi_util_save_virt_addr(MIPI_RX0, dev->base_address);
+
+	/* Read emulation vs silicon setting */
+	mipicsi_util_read_emulation ();
 
 	/* dev_info(&pdev->dev, "SNPS Device at 0x%08x\n",
 	 * (unsigned int)dev->base_address);
