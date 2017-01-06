@@ -77,6 +77,8 @@ int mipicsi_top_reset_all(void);
 int mipicsi_top_set_irq_mask(uint8_t mask);
 int mipicsi_top_read(struct mipicsi_top_reg *reg);
 int mipicsi_top_write(struct mipicsi_top_reg *reg);
+int mipicsi_top_dphy_read(struct mipicsi_top_reg *reg);
+int mipicsi_top_dphy_write(struct mipicsi_top_reg *reg);
 int mipicsi_top_debug_bist_start(enum mipicsi_top_dev dev);
 int mipicsi_top_debug_bist_status(struct mipicsi_top_bist *bist);
 int mipicsi_top_debug_vpg(struct mipicsi_top_vpg *vpg);

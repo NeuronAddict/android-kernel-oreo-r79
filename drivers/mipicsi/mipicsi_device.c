@@ -285,6 +285,32 @@ void mipicsi_dev_dphy_write(enum mipicsi_top_dev dev,
 #endif
 }
 
+uint8_t mipicsi_dev_dphy_read(enum mipicsi_top_dev dev, uint16_t command)
+{
+	void *baddr = dev_addr_map[dev];
+	uint8_t data;
+
+	if (!baddr) {
+		pr_err("%s: no address for %d\n", __func__, dev);
+		return 0;
+	}
+
+	pr_info("%s: dev=0x%x @ %p, command 0x%02X\n",
+		__func__, dev, baddr, command);
+
+	TX_OUT(PHY_RSTZ, 0);
+	TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLR, 0);
+	TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTDIN, command);
+	TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  1);
+	TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 1);
+	TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 0);
+	TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  0);
+	data = (TX_IN(PHY0_TST_CTRL1))>>8;
+
+	pr_err("%s: X  Offset: 0x%x, Value: 0x%x\n", __func__, command, data);
+	return data;
+}
+
 int mipicsi_dev_dphy_write_set(enum mipicsi_top_dev dev, uint32_t offset,
 			       uint8_t data, uint8_t ps, uint8_t ps_width)
 {

@@ -41,6 +41,8 @@
 #include "mipicsi_top.h"
 #include "mipicsi_util.h"
 #include "mipicsi_sysfs.h"
+#include <soc/mnh/mnh-hwio-mipi-rx.h>
+#include <soc/mnh/mnh-hwio-mipi-tx.h>
 
 #define MAX_STR_COPY	100
 
@@ -70,10 +72,10 @@ static ssize_t name##_show(struct device *dev,                   \
 {                                                                \
 	return snprintf((char *)buf, MAX_STR_COPY, "cat %s not supported\n", \
 			#name);					 \
-}								 \
+}
 
 
-int find_device (const char *str, enum mipicsi_top_dev *device)
+int find_device(const char *str, enum mipicsi_top_dev *device)
 {
 	uint8_t i;
 	bool found = false;
@@ -86,7 +88,7 @@ int find_device (const char *str, enum mipicsi_top_dev *device)
 	}
 
 	if (!found) {
-		pr_err ("Device not found\n");
+		pr_err("Device not found\n");
 		return -EINVAL;
 	}
 
@@ -103,17 +105,21 @@ static ssize_t start_dev_store(struct device *dev,
 {
 	struct mipicsi_top_cfg cfg;
 	enum mipicsi_top_dev device;
+	uint8_t *token;
+	const char *delim = ";";
 
-	if (find_device (buf, &device) >= 0) {
+	token = strsep((char **)&buf, delim);
+	if ((token) && (find_device(token, &device) >= 0)) {
 		cfg.dev = device;
+		token = strsep((char **)&buf, delim);
+		if (!(token) || (kstrtou32(token, 0, &cfg.mbps)))
+			cfg.mbps = 640;
 		cfg.num_lanes = 4;
-		cfg.mbps = 640;
 		mipicsi_top_start(&cfg);
-
-		return snprintf((char *)buf, MAX_STR_COPY, "MIPI: HW start\n");
+		return count;
 	}
-	pr_err ("Usage: echo\"<dev>\">start_dev\n");
-	pr_err ("dev=Rx0,Rx1,Rx2,Tx0,Tx1\n");
+	pr_err("Usage: echo\"<dev>;<bitrate>\">start_dev\n");
+	pr_err("dev=Rx0,Rx1,Rx2,Tx0,Tx1\n");
 	return -EINVAL;
 }
 
@@ -129,12 +135,12 @@ static ssize_t stop_dev_store(struct device *dev,
 {
 	enum mipicsi_top_dev device;
 
-	if (find_device (buf, &device) >= 0) {
+	if (find_device(buf, &device) >= 0) {
 		mipicsi_top_stop(device);
 		return count;
 	}
-	pr_err ("Usage: echo\"<dev>\">stop_dev\n");
-	pr_err ("dev=Rx0,Rx1,Rx2,Tx0,Tx1\n");
+	pr_err("Usage: echo\"<dev>\">stop_dev\n");
+	pr_err("dev=Rx0,Rx1,Rx2,Tx0,Tx1\n");
 	return -EINVAL;
 }
 
@@ -153,12 +159,12 @@ static ssize_t reset_dev_store(struct device *dev,
 	if (!strncmp(buf,"ALL",3)) {
 		mipicsi_top_reset_all();
 		return count;
-	} else if (find_device (buf, &device) >= 0) {
+	} else if (find_device(buf, &device) >= 0) {
 		mipicsi_top_reset(device);
 		return count;
 	}
-	pr_err ("Usage: echo\"<dev>\">reset_dev\n");
-	pr_err ("dev=ALL,Rx0,Rx1,Rx2,Tx0,Tx1\n");
+	pr_err("Usage: echo\"<dev>\">reset_dev\n");
+	pr_err("dev=ALL,Rx0,Rx1,Rx2,Tx0,Tx1\n");
 	return -EINVAL;
 }
 
@@ -178,10 +184,10 @@ static ssize_t set_mux_store(struct device *dev,
 	struct mipicsi_top_mux mux;
 
         token = strsep((char **)&buf, delim);
-        if ( (token) && (find_device (token, &device) >= 0) ) {
+	if ((token) && (find_device(token, &device) >= 0)) {
 		mux.source = device;
 		token = strsep((char **)&buf, delim);
-		if ( (token) && (find_device (token, &device) >= 0) ) {
+		if ((token) && (find_device(token, &device) >= 0)) {
 			mux.sink = device;
 			mux.ss_vc_mask = 0x0F;
 			mux.ss_stream_off = true;
@@ -189,8 +195,8 @@ static ssize_t set_mux_store(struct device *dev,
 			return count;
 		}
 	}
-	pr_err ("Usage: echo\"<source>;<sink>\">set_mux\n");
-	pr_err ("source=Rx0,Rx1,Rx2,IPU sink=Tx0,Tx1,IPU\n");
+	pr_err("Usage: echo\"<source>;<sink>\">set_mux\n");
+	pr_err("source=Rx0,Rx1,Rx2,IPU sink=Tx0,Tx1,IPU\n");
 	return -EINVAL;
 }
 
@@ -209,19 +215,19 @@ static ssize_t disable_mux_store(struct device *dev,
         const char *delim = ";";
 	struct mipicsi_top_mux mux;
 
-        token = strsep((char **)&buf, delim);
-        if ( (token) && (find_device (token, &device) >= 0) ) {
+	token = strsep((char **)&buf, delim);
+	if ((token) && (find_device(token, &device) >= 0)) {
 		mux.source = device;
 		token = strsep((char **)&buf, delim);
-		if ( (token) && (find_device (token, &device) >= 0) ) {
+		if ((token) && (find_device(token, &device) >= 0)) {
 			mux.sink = device;
 			mux.ss_stream_off = true;
 			mipicsi_top_disable_mux(&mux);
 			return count;
 		}
 	}
-	pr_err ("Usage: echo\"<source>;<sink>\">disable_mux\n");
-	pr_err ("source=Rx0,Rx1,Rx2,IPU sink=Tx0,Tx1,IPU\n");
+	pr_err("Usage: echo\"<source>;<sink>\">disable_mux\n");
+	pr_err("source=Rx0,Rx1,Rx2,IPU sink=Tx0,Tx1,IPU\n");
 	return -EINVAL;
 }
 
@@ -250,10 +256,10 @@ static ssize_t get_mux_status_store(struct device *dev,
 	struct mipicsi_top_mux mux;
 	
         token = strsep((char **)&buf, delim);
-        if ( (token) && (find_device (token, &device) >= 0) ) {
+	if ((token) && (find_device(token, &device) >= 0)) {
 		mux.source = device;
 		token = strsep((char **)&buf, delim);
-		if ( (token) && (find_device (token, &device) >= 0) ) {
+		if ((token) && (find_device(token, &device) >= 0)) {
 			mux.sink = device;
 			mipicsi_top_get_mux_status(&mux);
 
@@ -266,8 +272,8 @@ static ssize_t get_mux_status_store(struct device *dev,
 			return count;
 		}
 	}
-	pr_err ("Usage: echo\"<source>;<sink>;\">get_mux_status\n");
-	pr_err ("source=Rx0,Rx1,Rx2,IPU sink=Tx0,Tx1,IPU\n");
+	pr_err("Usage: echo\"<source>;<sink>;\">get_mux_status\n");
+	pr_err("source=Rx0,Rx1,Rx2,IPU sink=Tx0,Tx1,IPU\n");
 	return -EINVAL;
 }
 
@@ -287,7 +293,7 @@ static ssize_t vpg_preset_store(struct device *dev,
 	struct mipicsi_top_vpg vpg;
 	
         token = strsep((char **)&buf, delim);
-        if ( (token) && (find_device (token, &device) >= 0) ) {
+	if ((token) && (find_device(token, &device) >= 0)) {
 		vpg.dev = device;
 		token = strsep((char **)&buf, delim);
 		if (token) {
@@ -305,8 +311,8 @@ static ssize_t vpg_preset_store(struct device *dev,
 			}
 		}
 	}
-	pr_err ("Usage: echo\"<dev>;<resolution>\">vpg_preset\n");
-	pr_err ("dev=Tx0,Tx1, resolution=VGA,1080P,12MP\n");
+	pr_err("Usage: echo\"<dev>;<resolution>\">vpg_preset\n");
+	pr_err("dev=Tx0,Tx1, resolution=VGA,1080P,12MP\n");
 	return -EINVAL;
 }
 
@@ -322,12 +328,12 @@ static ssize_t bist_start_store(struct device *dev,
 {
 	enum mipicsi_top_dev device;
 
-	if (find_device (buf, &device) >= 0) {
+	if (find_device(buf, &device) >= 0) {
 		mipicsi_top_debug_bist_start(device);
 		return count;
 	}
-	pr_err ("Usage: echo\"<dev>\">bist_start\n");
-	pr_err ("dev=Rx0,Rx1,Rx2,Tx0,Tx1\n");
+	pr_err("Usage: echo\"<dev>\">bist_start\n");
+	pr_err("dev=Rx0,Rx1,Rx2,Tx0,Tx1\n");
 	return -EINVAL;
 }
 
@@ -353,7 +359,7 @@ static ssize_t bist_status_store(struct device *dev,
 	enum mipicsi_top_dev device;
 	struct mipicsi_top_bist bist;
 
-	if (find_device (buf, &device) >= 0) {
+	if (find_device(buf, &device) >= 0) {
 		mipicsi_top_debug_bist_status(&bist);
 		if (bist.done == true) {
 			if (bist.ok == true)
@@ -368,13 +374,13 @@ static ssize_t bist_status_store(struct device *dev,
 		}
 		return count;
 	}
-	pr_err ("Usage: echo\"<dev>\">bist_status\n");
-	pr_err ("dev=Rx0,Rx1,Rx2,Tx0,Tx1\n");
+	pr_err("Usage: echo\"<dev>\">bist_status\n");
+	pr_err("dev=Rx0,Rx1,Rx2,Tx0,Tx1\n");
 	return -EINVAL;
 }
 
 static DEVICE_ATTR(bist_status, S_IRUGO | S_IWUSR | S_IWGRP,
-                  bist_status_show, bist_status_store);
+		   bist_status_show, bist_status_store);
 
 static ssize_t reg_read_show(struct device *dev,
 			     struct device_attribute *attr,
@@ -400,7 +406,7 @@ static ssize_t reg_read_store(struct device *dev,
 	struct mipicsi_top_reg reg;
 
         token = strsep((char **)&buf, delim);
-        if ( (token) && (find_device (token, &device) >= 0) ) {
+        if ((token) && (find_device(token, &device) >= 0)) {
 		reg.dev = device;
 		token = strsep((char **)&buf, delim);
 		if ((token) && (!(kstrtou32(token, 0, &val)))
@@ -408,11 +414,13 @@ static ssize_t reg_read_store(struct device *dev,
 			reg.offset = val;
 			mipicsi_top_read(&reg);
 			read_data = reg.value;
+			pr_err("Reg Read: Offset %d, Value %d\n", reg.offset,
+			       reg.value);
 			return count;
 		}
 	}
-	pr_err ("Usage: echo\"<dev>;<offset>;\">reg_read\n");
-	pr_err ("dev=Rx0,Rx1,Rx2,Tx0,Tx1\n");
+	pr_err("Usage: echo\"<dev>;<offset>;\">reg_read\n");
+	pr_err("dev=Rx0,Rx1,Rx2,Tx0,Tx1\n");
 	return -EINVAL;
 }
 
@@ -433,7 +441,7 @@ static ssize_t reg_write_store(struct device *dev,
 	struct mipicsi_top_reg reg;
 
         token = strsep((char **)&buf, delim);
-        if ( (token) && (find_device (token, &device) >= 0) ) {
+        if ((token) && (find_device(token, &device) >= 0)) {
 		reg.dev = device;
 		token = strsep((char **)&buf, delim);
 
@@ -448,14 +456,145 @@ static ssize_t reg_write_store(struct device *dev,
 			}
 		}
 	}
-	pr_err ("Usage: echo\"<dev>;<offset>;<value>;\">reg_write\n");
-	pr_err ("dev=Rx0,Rx1,Rx2,Tx0,Tx1\n");
+	pr_err("Usage: echo\"<dev>;<offset>;<value>;\">reg_write\n");
+	pr_err("dev=Rx0,Rx1,Rx2,Tx0,Tx1\n");
 	return -EINVAL;
 }
 
 static DEVICE_ATTR(reg_write, S_IRUGO | S_IWUSR | S_IWGRP,
 		   reg_write_show, reg_write_store);
 
+static ssize_t dphy_read_show(struct device *dev,
+			      struct device_attribute *attr,
+			      char *buf)
+{
+	ssize_t strlen = 0;
+
+	strlen = snprintf(buf, MAX_STR_COPY, "0x%lx\n",
+			  (unsigned long)read_data);
+	read_data = 0;
+
+	return strlen;
+}
+
+static ssize_t dphy_read_store(struct device *dev,
+			       struct device_attribute *attr,
+			       const char *buf,
+			       size_t count)
+{
+	uint32_t val;
+	enum mipicsi_top_dev device;
+	uint8_t *token;
+	const char *delim = ";";
+	struct mipicsi_top_reg reg;
+
+	token = strsep((char **)&buf, delim);
+	if ((token) && (find_device(token, &device) >= 0)) {
+		reg.dev = device;
+		token = strsep((char **)&buf, delim);
+		if ((token) && (!(kstrtou32(token, 0, &val)))
+		    && (val >= 0) && (val <= 0xFFFF)) {
+			reg.offset = val;
+			mipicsi_top_dphy_read(&reg);
+			read_data = reg.value;
+			pr_err("DPhy Read: Offset 0x%x, Val 0x%x\n", reg.offset,
+			       reg.value);
+			/* Get the device out of shutdown */
+			if ((reg.dev == MIPI_TX0) ||
+			    (reg.dev == MIPI_TX1)) {
+				reg.offset = HWIO_MIPI_TX_PHY_RSTZ_REGOFF;
+				reg.value = 0x07;
+				mipicsi_top_write(&reg);
+			} else {
+				reg.offset = HWIO_MIPI_RX_PHY_SHUTDOWNZ_REGOFF;
+				reg.value = 1;
+				mipicsi_top_write(&reg);
+				reg.offset = HWIO_MIPI_RX_DPHY_RSTZ_REGOFF;
+				reg.value = 1;
+				mipicsi_top_write(&reg);
+			}
+			return count;
+		}
+	}
+	pr_err("Usage: echo\"<dev>;<offset>;\">dphy_read\n");
+	pr_err("dev=Rx0,Rx1,Rx2,Tx0,Tx1\n");
+	return -EINVAL;
+}
+
+static DEVICE_ATTR(dphy_read, S_IRUGO | S_IWUSR | S_IWGRP,
+		   dphy_read_show, dphy_read_store);
+
+SHOW_FMT_NA(dphy_write);
+
+static ssize_t dphy_write_store(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf,
+				size_t count)
+{
+	uint32_t val;
+	enum mipicsi_top_dev device;
+	uint8_t *token;
+	const char *delim = ";";
+	struct mipicsi_top_reg reg;
+
+	token = strsep((char **)&buf, delim);
+	if ((token) && (find_device(token, &device) >= 0)) {
+		reg.dev = device;
+		token = strsep((char **)&buf, delim);
+
+		if ((token) && (!(kstrtou32(token, 0, &val)))
+		    && (val >= 0) && (val <= 0xFFFF)) {
+			reg.offset = val;
+			token = strsep((char **)&buf, delim);
+			if ((token) && (!(kstrtou32(token, 0, &val)))) {
+				reg.value = val;
+				mipicsi_top_dphy_write(&reg);
+				/* Take the device out of shutdown */
+				if ((reg.dev == MIPI_TX0) || (reg.dev == MIPI_TX1)) {
+					reg.offset = HWIO_MIPI_TX_PHY_RSTZ_REGOFF;
+					reg.value = 0x07;
+					mipicsi_top_write(&reg);
+				} else {
+					reg.offset = HWIO_MIPI_RX_PHY_SHUTDOWNZ_REGOFF;
+					reg.value = 1;
+					mipicsi_top_write(&reg);
+					reg.offset = HWIO_MIPI_RX_DPHY_RSTZ_REGOFF;
+					reg.value = 1;
+					mipicsi_top_write(&reg);
+				}
+				return count;
+			}
+		}
+	}
+	pr_err("Usage: echo\"<dev>;<offset>;<value>;\">dphy_write\n");
+	pr_err("dev=Rx0,Rx1,Rx2,Tx0,Tx1\n");
+	return -EINVAL;
+}
+
+static DEVICE_ATTR(dphy_write, S_IRUGO | S_IWUSR | S_IWGRP,
+		   dphy_write_show, dphy_write_store);
+
+
+SHOW_FMT_NA(dump_regs);
+
+static ssize_t dump_regs_store(struct device *dev,
+			       struct device_attribute *attr,
+			       const char *buf,
+			       size_t count)
+{
+	enum mipicsi_top_dev device;
+
+	if (find_device(buf, &device) >= 0) {
+		mipicsi_debug_dump(device);
+		return count;
+	}
+	pr_err("Usage: echo\"<dev>\">dump_regs\n");
+	pr_err("dev=Rx0,Rx1,Rx2,Tx0,Tx1\n");
+	return -EINVAL;
+}
+
+static DEVICE_ATTR(dump_regs, S_IRUGO | S_IWUSR | S_IWGRP,
+		   dump_regs_show, dump_regs_store);
 int mipicsi_sysfs_init(struct device *mipicsi_top_device)
 {
 	int ret;
@@ -464,88 +603,112 @@ int mipicsi_sysfs_init(struct device *mipicsi_top_device)
 	ret = device_create_file(mipicsi_top_device,
 				 &dev_attr_start_dev);
 	if (ret) {
-		dev_err(mipicsi_top_device, "Failed to create sysfs: \
-                        start_dev\n");
+		dev_err(mipicsi_top_device,
+			"Failed to create sysfs: start_dev\n");
 		return -EINVAL;
 	}
 
 	ret = device_create_file(mipicsi_top_device,
 				 &dev_attr_stop_dev);
 	if (ret) {
-		dev_err(mipicsi_top_device, "Failed to create sysfs: \
-                        stop_dev\n");
+		dev_err(mipicsi_top_device,
+			"Failed to create sysfs: stop_dev\n");
 		return -EINVAL;
 	}
 
 	ret = device_create_file(mipicsi_top_device,
 				 &dev_attr_reset_dev);
 	if (ret) {
-		dev_err(mipicsi_top_device, "Failed to create sysfs: \
-                        reset_dev\n");
+		dev_err(mipicsi_top_device,
+			"Failed to create sysfs: reset_dev\n");
 		return -EINVAL;
 	}
 
 	ret = device_create_file(mipicsi_top_device,
 				 &dev_attr_set_mux);
 	if (ret) {
-		dev_err(mipicsi_top_device, "Failed to create sysfs: \
-                        set_mux\n");
+		dev_err(mipicsi_top_device,
+			"Failed to create sysfs: set_mux\n");
 		return -EINVAL;
 	}
 
 	ret = device_create_file(mipicsi_top_device,
 				 &dev_attr_disable_mux);
 	if (ret) {
-		dev_err(mipicsi_top_device, "Failed to create sysfs: \
-                        disable_mux\n");
+		dev_err(mipicsi_top_device,
+			"Failed to create sysfs: disable_mux\n");
 		return -EINVAL;
 	}
 
 	ret = device_create_file(mipicsi_top_device,
 				 &dev_attr_get_mux_status);
 	if (ret) {
-		dev_err(mipicsi_top_device, "Failed to create sysfs: \
-                        get_mux_status\n");
+		dev_err(mipicsi_top_device,
+			"Failed to create sysfs: get_mux_status\n");
 		return -EINVAL;
 	}
 
 	ret = device_create_file(mipicsi_top_device,
 				 &dev_attr_vpg_preset);
 	if (ret) {
-		dev_err(mipicsi_top_device, "Failed to create sysfs: \
-                        vpg_preset\n");
+		dev_err(mipicsi_top_device,
+			"Failed to create sysfs: vpg_preset\n");
 		return -EINVAL;
 	}
 
         ret = device_create_file(mipicsi_top_device,
 				 &dev_attr_bist_start);
 	if (ret) {
-		dev_err(mipicsi_top_device, "Failed to create sysfs: \
-                        bist_start\n");
+		dev_err(mipicsi_top_device,
+			"Failed to create sysfs: bist_start\n");
 		return -EINVAL;
 	}
 
 	ret = device_create_file(mipicsi_top_device,
 				 &dev_attr_bist_status);
 	if (ret) {
-		dev_err(mipicsi_top_device, "Failed to create sysfs: \
-                        bist_status\n");
+		dev_err(mipicsi_top_device,
+			"Failed to create sysfs: bist_status\n");
 		return -EINVAL;
 	}
 
 	ret = device_create_file(mipicsi_top_device,
 				 &dev_attr_reg_read);
 	if (ret) {
-		dev_err(mipicsi_top_device, "Failed to create sysfs: \
-                        reg_read\n");
+		dev_err(mipicsi_top_device,
+			"Failed to create sysfs: reg_read\n");
 		return -EINVAL;
 	}
 
 	ret = device_create_file(mipicsi_top_device,
 				 &dev_attr_reg_write);
 	if (ret) {
-		dev_err(mipicsi_top_device, "Failed to create sysfs: \
-                        reg_write\n");
+		dev_err(mipicsi_top_device,
+			"Failed to create sysfs: reg_write\n");
+		return -EINVAL;
+	}
+
+	ret = device_create_file(mipicsi_top_device,
+				 &dev_attr_dphy_read);
+	if (ret) {
+		dev_err(mipicsi_top_device,
+			"Failed to create sysfs: dphy_read\n");
+		return -EINVAL;
+	}
+
+	ret = device_create_file(mipicsi_top_device,
+				 &dev_attr_dphy_write);
+	if (ret) {
+		dev_err(mipicsi_top_device,
+			"Failed to create sysfs: dphy_write\n");
+		return -EINVAL;
+	}
+
+	ret = device_create_file(mipicsi_top_device,
+				 &dev_attr_dump_regs);
+	if (ret) {
+		dev_err(mipicsi_top_device,
+			"Failed to create sysfs: dump_regs\n");
 		return -EINVAL;
 	}
 
@@ -580,5 +743,7 @@ void mipicsi_sysfs_clean(struct device *mipicsi_top_device)
 
 	device_remove_file(mipicsi_top_device,
 			   &dev_attr_vpg_preset);
-}
 
+	device_remove_file(mipicsi_top_device,
+			   &dev_attr_dump_regs);
+}

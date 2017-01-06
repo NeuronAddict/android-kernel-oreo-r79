@@ -132,6 +132,36 @@ void mipicsi_host_dphy_write(enum mipicsi_top_dev dev,
 #endif
 }
 
+uint8_t mipicsi_host_dphy_read(enum mipicsi_top_dev dev, uint16_t command)
+{
+	void *baddr = dev_addr_map[dev];
+	uint8_t data;
+
+	if (!baddr) {
+		pr_err("%s: no address for %d\n", __func__, dev);
+		return 0;
+	}
+
+	RX_OUTf(PHY_SHUTDOWNZ, PHY_SHUTDOWNZ, 0);
+	RX_OUTf(DPHY_RSTZ,     DPHY_RSTZ,     0);
+	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLR, 0);
+	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, command);
+	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN,  1);
+	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
+	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 0);
+	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN,  0);
+	data = (RX_IN(PHY_TEST_CTRL1))>>8;
+
+	RX_OUTf(DPHY_RSTZ,     DPHY_RSTZ,     1);
+	RX_OUTf(PHY_SHUTDOWNZ, PHY_SHUTDOWNZ, 1);
+
+	pr_err("%s: Dev: %d Offset: 0x%x, Value: 0x%x\n", __func__, dev,
+	       command, data);
+
+	return data;
+}
+
+
 int mipicsi_host_dphy_write_set(enum mipicsi_top_dev dev, uint32_t offset,
 			       uint8_t data, uint8_t ps, uint8_t ps_width)
 {

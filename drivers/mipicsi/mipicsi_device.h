@@ -20,8 +20,6 @@
 #define ANLG_FCTR 0         /* TBD */
 #define MIPI_DDR_CLOCK 1000 /* TBD */
 
-void mipicsi_dev_dphy_write(enum mipicsi_top_dev dev,
-			    uint16_t command, uint8_t data);
 void mipicsi_device_reset(enum mipicsi_top_dev dev);
 void mipicsi_device_dphy_reset(enum mipicsi_top_dev dev);
 int mipicsi_device_start(struct mipicsi_top_cfg *config);
@@ -34,5 +32,8 @@ int mipicsi_device_set_interrupt_mask(enum mipicsi_top_dev devid,
 				      struct mipi_device_irq_mask *mask);
 int mipicsi_device_force_interrupt(enum mipicsi_top_dev devid,
 				   struct mipi_device_irq_mask *mask);
+void mipicsi_dev_dphy_write(enum mipicsi_top_dev dev, uint16_t command,
+			    uint8_t data);
+uint8_t mipicsi_dev_dphy_read(enum mipicsi_top_dev dev, uint16_t command);
 
 #endif /* MIPICSI_DEVICE_H_ */

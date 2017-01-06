@@ -189,6 +189,62 @@ void top_dphy_reset(enum mipicsi_top_dev dev)
 	}
 }
 
+int mipicsi_top_write(struct mipicsi_top_reg *reg)
+{
+	pr_debug("WRITE dev %d reg 0x%x val 0x%x\n", reg->dev, reg->offset,
+		 reg->value);
+	writel(reg->value, (void *)dev_addr_map[reg->dev] + reg->offset);
+
+	return 0;
+}
+
+int mipicsi_top_read(struct mipicsi_top_reg *reg)
+{
+	reg->value = readl((void *)dev_addr_map[reg->dev] + reg->offset);
+	pr_debug("READ dev %d reg 0x%x - val 0x%x\n", reg->dev, reg->offset,
+		 reg->value);
+
+	return 0;
+}
+
+int mipicsi_top_dphy_write(struct mipicsi_top_reg *reg)
+{
+	switch (reg->dev) {
+	case MIPI_RX0:
+	case MIPI_RX1:
+	case MIPI_RX2:
+		mipicsi_host_dphy_write(reg->dev, (uint8_t)reg->offset,
+					(uint8_t)reg->value);
+		return 0;
+
+	case MIPI_TX0:
+	case MIPI_TX1:
+		mipicsi_dev_dphy_write(reg->dev, (uint8_t)reg->offset,
+				       (uint8_t)reg->value);
+		return 0;
+
+	default:
+		return -EINVAL;
+	}
+}
+
+int mipicsi_top_dphy_read(struct mipicsi_top_reg *reg)
+{
+	switch (reg->dev) {
+	case MIPI_RX0:
+	case MIPI_RX1:
+	case MIPI_RX2:
+		reg->value = mipicsi_host_dphy_read(reg->dev, (uint8_t)reg->offset);
+		return 0;
+
+	case MIPI_TX0:
+	case MIPI_TX1:
+		reg->value = mipicsi_dev_dphy_read(reg->dev, (uint8_t)reg->offset);
+		return 0;
+	default:
+		return -EINVAL;
+	}
+}
 
 int top_start_rx(struct mipicsi_top_cfg *config)
 {
@@ -240,7 +296,6 @@ int top_start_tx(struct mipicsi_top_cfg *config)
 
 	mipicsi_device_hw_init(config->dev);
 	mipicsi_device_start(config);
-
 	/* Enable TOP level interrupt */
 	if (config->dev == MIPI_TX0) {
 		TOP_OUTf(TX0_BYPINT, TX0_INT_EN, 1);
@@ -249,27 +304,10 @@ int top_start_tx(struct mipicsi_top_cfg *config)
 	}
 
 	return 0;
-}
-
-int mipicsi_top_write(struct mipicsi_top_reg *reg)
-{
-	pr_debug("writing dev %d reg 0x%x val 0x%x \n", reg->dev, reg->offset,
-		 reg->value);
-	writel(reg->value, (void *)(dev_addr_map[reg->dev] + reg->offset));
 
 	return 0;
 }
 
-int mipicsi_top_read(struct mipicsi_top_reg *reg)
-{
-	pr_debug("reading dev %d reg 0x%x \n", reg->dev, reg->offset);
-
-	reg->value = readl((void *)(dev_addr_map[reg->dev] + reg->offset));
-
-	pr_debug("ret_val 0x%x \n", reg->value);
-
-	return 0;
-}
 
 int mipicsi_top_start(struct mipicsi_top_cfg *config)
 {

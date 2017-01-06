@@ -12,4 +12,5 @@ enum mipicsi_debug_vpg_res {
 int mipicsi_debug_vpg_preset(struct mipicsi_top_vpg *vpg,
 			     enum mipicsi_debug_vpg_res res);
 
+int mipicsi_debug_dump(enum mipicsi_top_dev device);
 #endif
