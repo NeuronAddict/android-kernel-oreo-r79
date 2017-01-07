@@ -300,7 +300,6 @@ uint8_t mipicsi_dev_dphy_read(enum mipicsi_top_dev dev, uint16_t command)
 		__func__, dev, baddr, command);
 
 	if (mipicsi_util_is_emulation()) {
-		TX_OUT(PHY_RSTZ, 0);
 		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLR, 0);
 		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTDIN, command);
 		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  1);
@@ -446,8 +445,8 @@ int32_t mipicsi_device_set_pll(struct mipicsi_top_cfg *config)
 					   (((pll.loop_div-2) >> 5) & 0x1F), 1, 1);
 	} else {
 		/* Set hsfreqrange[6:0]  */
-		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_SYS_0, 1<<5);
 		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_SYS_1, pll.hsfreq);
+		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_SYS_0, 1<<5);
 
 		/* Set cfgclkfreqrange[7:0] = round[ (Fcfg_clk(MHz)-17)*4] = 8'b10000100
 		   assuming cfg_clk = 50MHz; */
@@ -520,7 +519,7 @@ int mipicsi_device_vpg(struct mipicsi_top_vpg *vpg)
 int mipicsi_device_start(struct mipicsi_top_cfg *config)
 {
 	uint32_t data = 0;
-	uint8_t counter = 0;
+	uint8_t counter = 0, val;
 	enum mipicsi_top_dev dev = config->dev;
 	void * baddr = dev_addr_map[dev];
 	const uint32_t stop_mask =
@@ -616,8 +615,8 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 
 		/* TEMP - Hardcode 640 Settings */
 		if (config->mbps == 640) {
-			mipicsi_dev_dphy_write(dev, 0x01, 0x20);
 			mipicsi_dev_dphy_write(dev, 0x02, 0x18);
+			mipicsi_dev_dphy_write(dev, 0x01, 0x20);
 
 			mipicsi_dev_dphy_write(dev, 0x270, 0xE2);
 			mipicsi_dev_dphy_write(dev, 0x271, 0x04);
@@ -630,6 +629,12 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 			mipicsi_dev_dphy_write(dev, 0x15E, 0x10);
 			mipicsi_dev_dphy_write(dev, 0x162, 0x04);
 			mipicsi_dev_dphy_write(dev, 0x16E, 0x0C);
+
+			mipicsi_dev_dphy_write(dev, 0x173, 0x02);
+			mipicsi_dev_dphy_write(dev, 0x174, 0x00);
+			mipicsi_dev_dphy_write(dev, 0x175, 0x60);
+			mipicsi_dev_dphy_write(dev, 0x176, 0x03);
+
 			udelay(1);
 			TX_OUTf(PHY_IF_CFG, LANE_EN_NUM, 3);
 
@@ -647,8 +652,8 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 			TX_OUTf(PHY_IF_CFG, PHY_STOP_WAIT_TIME, 5);
 
 		} else if (config->mbps == 1296) {
-			mipicsi_dev_dphy_write(dev, 0x01, 0x20);
 			mipicsi_dev_dphy_write(dev, 0x02, 0x2B);
+			mipicsi_dev_dphy_write(dev, 0x01, 0x20);
 
 			mipicsi_dev_dphy_write(dev, 0x270, 0xD0);
 			mipicsi_dev_dphy_write(dev, 0x271, 0x07);
@@ -662,6 +667,12 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 			mipicsi_dev_dphy_write(dev, 0x15E, 0x10);
 			mipicsi_dev_dphy_write(dev, 0x162, 0x04);
 			mipicsi_dev_dphy_write(dev, 0x16E, 0x0C);
+
+			mipicsi_dev_dphy_write(dev, 0x173, 0x02);
+			mipicsi_dev_dphy_write(dev, 0x174, 0x00);
+			mipicsi_dev_dphy_write(dev, 0x175, 0x60);
+			mipicsi_dev_dphy_write(dev, 0x176, 0x03);
+
 			udelay(1);
 			TX_OUTf(PHY_IF_CFG, LANE_EN_NUM, 3);
 
@@ -718,14 +729,29 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 		data = TX_IN(PHY_STATUS);
 		if ((data & stop_mask) == stop_mask) {
 			pr_info("%s: X\n", __func__);
-			return 0;
+			break;
 		}
 
 		udelay(10);
 		counter++;
 	} while (counter < 20);
-	pr_info("%s: Device not configured in 200us - 0x%0x\n", __func__, data);
 
+	if (counter >= 20)
+		pr_info("%s: Device not configured in 200us - 0x%0x\n",
+			__func__, data);
+
+
+	if (!mipicsi_util_is_emulation()) {
+		/* Wait 1ms and check Phy FSM */
+		udelay (1000);
+
+		val = mipicsi_dev_dphy_read (dev, R_DPHY_RDWR_TX_SYS_1);
+		if ((val & 0xF) == 0x7)
+			pr_info("%s: Tx DPhy is in Idle", __func__);
+		else
+			pr_info("%s: Tx DPhy is not in Idle; FSM = %d",
+				__func__, val);
+	}
 	return 0;
 }
 

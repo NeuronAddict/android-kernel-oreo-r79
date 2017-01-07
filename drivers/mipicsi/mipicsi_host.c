@@ -144,8 +144,6 @@ uint8_t mipicsi_host_dphy_read(enum mipicsi_top_dev dev, uint16_t command)
 	}
 
 	if (mipicsi_util_is_emulation()) {
-		RX_OUTf(PHY_SHUTDOWNZ, PHY_SHUTDOWNZ, 0);
-		RX_OUTf(DPHY_RSTZ,     DPHY_RSTZ,     0);
 		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLR, 0);
 		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, command);
 		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN,  1);
@@ -335,8 +333,8 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 
 		/* TEMP - Hardcode 640 Settings */
 		if (config->mbps == 640) {
-			mipicsi_host_dphy_write(dev, 0x01, 0x20);
 			mipicsi_host_dphy_write(dev, 0x02, 0x18);
+			mipicsi_host_dphy_write(dev, 0x01, 0x20);
 
 			mipicsi_host_dphy_write(dev, 0xE2, 0xb6);
 			mipicsi_host_dphy_write(dev, 0xE3, 0x1);
@@ -348,8 +346,8 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 			RX_OUTf(N_LANES, N_LANES, 3);
 			udelay(1);
 		} else if (config->mbps == 1296) {
-			mipicsi_host_dphy_write(dev, 0x01, 0x20);
 			mipicsi_host_dphy_write(dev, 0x02, 0x2B);
+			mipicsi_host_dphy_write(dev, 0x01, 0x20);
 
 			mipicsi_host_dphy_write(dev, 0xE2, 0xB6);
 			mipicsi_host_dphy_write(dev, 0xE3, 0x1);
@@ -366,8 +364,8 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 		if (mipicsi_pll_calc(config->mbps, &pll) != 0)
 			return -EINVAL;
 
-		mipicsi_host_dphy_write(dev, R_DPHY_RDWR_RX_SYS_0, 1<<5);
 		mipicsi_host_dphy_write(dev, R_DPHY_RDWR_RX_SYS_1, pll.hsfreq);
+		mipicsi_host_dphy_write(dev, R_DPHY_RDWR_RX_SYS_0, 1<<5);
 
 		/* Refer to "Frequency Ranges and Default" on page 141 and configure
 		 * registers 0xe2, 0xe3 with the appropriate DDL target oscillation
@@ -427,13 +425,26 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 		data = RX_IN(PHY_STOPSTATE);
 		if ((data & stop_mask) == stop_mask) {
 			pr_info("%s: X\n", __func__);
-			return 0;
+			break;
 		}
 		udelay(10);
 		counter++;
 	} while (counter < 20);
-	pr_info("%s: Host not configured in 200us - 0x%0x\n", __func__, data);
+	if (counter >= 20)
+		pr_info("%s: Host not configured in 200us - 0x%0x\n",
+			__func__, data);
 
+	if (!mipicsi_util_is_emulation()) {
+		/* Wait 1ms and check Phy FSM */
+		udelay (1000);
+
+		value = mipicsi_host_dphy_read (dev, R_DPHY_RDWR_RX_SYS_1);
+		if ((value & 0xF) == 0x7)
+			pr_info("%s: Rx DPhy is in Idle", __func__);
+		else
+			pr_info("%s: Rx DPhy is not in Idle; FSM = %d",
+				__func__, value);
+	}
 	return 0;
 }
 
