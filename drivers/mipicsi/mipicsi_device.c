@@ -299,16 +299,41 @@ uint8_t mipicsi_dev_dphy_read(enum mipicsi_top_dev dev, uint16_t command)
 	pr_info("%s: dev=0x%x @ %p, command 0x%02X\n",
 		__func__, dev, baddr, command);
 
-	TX_OUT(PHY_RSTZ, 0);
-	TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLR, 0);
-	TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTDIN, command);
-	TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  1);
-	TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 1);
-	TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 0);
-	TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  0);
-	data = (TX_IN(PHY0_TST_CTRL1))>>8;
+	if (mipicsi_util_is_emulation()) {
+		TX_OUT(PHY_RSTZ, 0);
+		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLR, 0);
+		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTDIN, command);
+		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  1);
+		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 1);
+		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 0);
+		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  0);
+		data = (TX_IN(PHY0_TST_CTRL1))>>8;
+	} else {
+		/* Write 4-bit testcode MSB */
+		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 0);
+		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  0);
+		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  1);
+		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 1);
+		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTDIN, 0);
+		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 0);
+		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  0);
+		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTDIN, ((command & 0xF00)>>8));
+		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 1);
 
-	pr_err("%s: X  Offset: 0x%x, Value: 0x%x\n", __func__, command, data);
+		/* Write 8-bit testcode LSB */
+		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 0);
+		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  1);
+		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 1);
+		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTDIN, (command & 0xFF));
+		TX_OUTf(PHY0_TST_CTRL0, PHY0_TESTCLK, 0);
+		TX_OUTf(PHY0_TST_CTRL1, PHY0_TESTEN,  0);
+
+		/* Read the data */
+		data = (TX_IN(PHY0_TST_CTRL1))>>8;
+	}
+
+	pr_err("%s: X  Offset: 0x%x, Value: 0x%x\n", __func__, command,
+	       data);
 	return data;
 }
 

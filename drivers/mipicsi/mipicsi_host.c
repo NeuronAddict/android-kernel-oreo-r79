@@ -143,22 +143,42 @@ uint8_t mipicsi_host_dphy_read(enum mipicsi_top_dev dev, uint16_t command)
 		return 0;
 	}
 
-	RX_OUTf(PHY_SHUTDOWNZ, PHY_SHUTDOWNZ, 0);
-	RX_OUTf(DPHY_RSTZ,     DPHY_RSTZ,     0);
-	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLR, 0);
-	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, command);
-	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN,  1);
-	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
-	RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 0);
-	RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN,  0);
-	data = (RX_IN(PHY_TEST_CTRL1))>>8;
+	if (mipicsi_util_is_emulation()) {
+		RX_OUTf(PHY_SHUTDOWNZ, PHY_SHUTDOWNZ, 0);
+		RX_OUTf(DPHY_RSTZ,     DPHY_RSTZ,     0);
+		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLR, 0);
+		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, command);
+		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN,  1);
+		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
+		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 0);
+		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN,  0);
+		data = (RX_IN(PHY_TEST_CTRL1))>>8;
+	} else {
+		/* Write 4-bit testcode MSB */
+		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 0);
+		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN,  0);
+		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN , 1);
+		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
+		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, 0);
+		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 0);
+		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN,  0);
+		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, ((command & 0xF00)>>8));
+		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
 
-	RX_OUTf(DPHY_RSTZ,     DPHY_RSTZ,     1);
-	RX_OUTf(PHY_SHUTDOWNZ, PHY_SHUTDOWNZ, 1);
+		/* Write 8-bit testcode LSB */
+		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 0);
+		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN,  1);
+		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 1);
+		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTDIN, (command & 0xFF));
+		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLK, 0);
+		RX_OUTf(PHY_TEST_CTRL1, PHY_TESTEN,  0);
+
+		/* Read the data */
+		data = (RX_IN(PHY_TEST_CTRL1))>>8;
+	}
 
 	pr_err("%s: Dev: %d Offset: 0x%x, Value: 0x%x\n", __func__, dev,
 	       command, data);
-
 	return data;
 }
 
