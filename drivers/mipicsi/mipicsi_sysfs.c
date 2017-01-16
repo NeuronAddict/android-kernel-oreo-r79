@@ -114,11 +114,13 @@ static ssize_t start_dev_store(struct device *dev,
 		token = strsep((char **)&buf, delim);
 		if (!(token) || (kstrtou32(token, 0, &cfg.mbps)))
 			cfg.mbps = 640;
-		cfg.num_lanes = 4;
+		token = strsep((char **)&buf, delim);
+		if (!(token) || (kstrtou32(token, 0, &cfg.num_lanes)))
+			cfg.num_lanes = 4;
 		mipicsi_top_start(&cfg);
 		return count;
 	}
-	pr_err("Usage: echo\"<dev>;<bitrate>\">start_dev\n");
+	pr_err("Usage: echo\"<dev>;<bitrate>;<lanes>\">start_dev\n");
 	pr_err("dev=Rx0,Rx1,Rx2,Tx0,Tx1\n");
 	return -EINVAL;
 }

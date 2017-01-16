@@ -264,11 +264,12 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 	/* Set RSTZ to logic low */
 	RX_OUTf(DPHY_RSTZ, DPHY_RSTZ, 0);
 
-	/* Set TESTCLR to logic high*/
-	//RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLR, 1);
-	RX_OUT(PHY_TEST_CTRL0, 1);
-
 	if (mipicsi_util_is_emulation()) {
+		/* Pulse TSTCLR */
+		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLR, 0);
+		udelay(1);
+		RX_OUTf(PHY_TEST_CTRL0, PHY_TESTCLR, 1);
+
 		/* Apply CFG_CLK signal with the appropriate frequency; for
 		 * correct values, refer to Table 12-5
 		 */
@@ -328,8 +329,9 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 		/* Wait for 15ns */
 		udelay (1);
 
-		/* Set TESTCLR to logic low */
-		RX_OUT(PHY_TEST_CTRL0, 0);
+		RX_OUT(PHY_TEST_CTRL0, 0x1);
+		udelay(1);
+		RX_OUT(PHY_TEST_CTRL0, 0x0);
 
 		/* TEMP - Hardcode 640 Settings */
 		if (config->mbps == 640) {
@@ -343,7 +345,7 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 			mipicsi_host_dphy_write(dev, 0x08, 0x20);
 			udelay (1);
 
-			RX_OUTf(N_LANES, N_LANES, 3);
+			RX_OUTf(N_LANES, N_LANES, (config->num_lanes-1));
 			udelay(1);
 		} else if (config->mbps == 1296) {
 			mipicsi_host_dphy_write(dev, 0x02, 0x2B);
@@ -356,7 +358,7 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 			mipicsi_host_dphy_write(dev, 0x08, 0x20);
 			udelay (1);
 
-			RX_OUTf(N_LANES, N_LANES, 3);
+			RX_OUTf(N_LANES, N_LANES, (config->num_lanes-1));
 			udelay(1);
 		} else { //TEMP
 
@@ -429,22 +431,11 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 		}
 		udelay(10);
 		counter++;
-	} while (counter < 20);
-	if (counter >= 20)
+	} while (counter < 30);
+
+	if (counter >= 30)
 		pr_info("%s: Host not configured in 200us - 0x%0x\n",
 			__func__, data);
-
-	if (!mipicsi_util_is_emulation()) {
-		/* Wait 1ms and check Phy FSM */
-		udelay (1000);
-
-		value = mipicsi_host_dphy_read (dev, R_DPHY_RDWR_RX_SYS_1);
-		if ((value & 0xF) == 0x7)
-			pr_info("%s: Rx DPhy is in Idle", __func__);
-		else
-			pr_info("%s: Rx DPhy is not in Idle; FSM = %d",
-				__func__, value);
-	}
 	return 0;
 }
 

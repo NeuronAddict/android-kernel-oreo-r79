@@ -32,6 +32,7 @@
 
 
 #include <linux/of.h>
+
 #include "mipicsi_top.h"
 
 extern void * dev_addr_map[];
@@ -74,4 +75,14 @@ uint16_t mipicsi_util_get_max_bitrate(void)
 void mipicsi_util_save_virt_addr(enum mipicsi_top_dev dev, void *base_addr)
 {
   dev_addr_map[dev] = base_addr;
+}
+
+int mipicsi_util_write_top(uint16_t offset, uint32_t value)
+{
+	struct mipicsi_top_reg reg;
+
+	reg.dev = MIPI_TOP;
+	reg.offset = offset;
+	reg.value = value;
+	return mipicsi_top_write(&reg);
 }

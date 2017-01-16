@@ -206,16 +206,19 @@ int top_start_rx(struct mipicsi_top_cfg *config)
 	    (config->mbps > mipicsi_util_get_max_bitrate()))
 	    return -EINVAL;
 
-	    if (config->num_lanes > CSI2_HOST_NUM_OF_LANES)
+	if (config->num_lanes > CSI2_HOST_NUM_OF_LANES)
 		return -EINVAL;
 
-	if (config->dev == MIPI_RX0)
-		TOP_OUTf(CSI_CLK_CTRL, CSI2_RX0_CG, 1);
-	else if (config->dev == MIPI_RX1)
-		TOP_OUTf(CSI_CLK_CTRL, CSI2_RX1_CG, 1);
-	else
-		TOP_OUTf(CSI_CLK_CTRL, CSI2_RX2_CG, 1);
-
+	if (config->dev == MIPI_RX0) {
+		TOP_OUTf(CSI_CLK_CTRL, CSI2_RX0_CG, 0);
+		TOP_OUTf(RX0_DPHY_CONFIG, CFGCLKFREQRANGE, 0X84);
+	} else if (config->dev == MIPI_RX1) {
+		TOP_OUTf(CSI_CLK_CTRL, CSI2_RX1_CG, 0);
+		TOP_OUTf(RX1_DPHY_CONFIG, CFGCLKFREQRANGE, 0X84);
+	} else {
+		TOP_OUTf(CSI_CLK_CTRL, CSI2_RX2_CG, 0);
+		TOP_OUTf(RX2_DPHY_CONFIG, CFGCLKFREQRANGE, 0X84);
+	}
 	mipicsi_host_hw_init(config->dev);
 	mipicsi_host_start(config);
 
@@ -238,10 +241,17 @@ int top_start_tx(struct mipicsi_top_cfg *config)
 	if (config->num_lanes > CSI2_DEVICE_NUM_OF_LANES)
 		return -EINVAL;
 
-	if (config->dev == MIPI_TX0)
-		TOP_OUTf(CSI_CLK_CTRL, CSI2_TX0_CG, 1);
-	else
-		TOP_OUTf(CSI_CLK_CTRL, CSI2_TX1_CG, 1);
+	if (config->dev == MIPI_TX0) {
+		TOP_OUTf(CSI_CLK_CTRL, CSI2_TX0_CG, 0);
+		TOP_OUTf(TX0_DPHY_PLL_CNTRL, PLL_SHADOW_CONTROL, 1);
+		TOP_OUTf(TX0_DPHY_PLL_CNTRL, CLK_SEL, 1);
+		TOP_OUTf(TX0_DPHY_CONFIG, CFGCLKFREQRANGE, 0X84);
+	} else {
+		TOP_OUTf(CSI_CLK_CTRL, CSI2_TX1_CG, 0);
+		TOP_OUTf(TX1_DPHY_PLL_CNTRL, PLL_SHADOW_CONTROL, 1);
+		TOP_OUTf(TX1_DPHY_PLL_CNTRL, CLK_SEL, 1);
+		TOP_OUTf(TX1_DPHY_CONFIG, CFGCLKFREQRANGE, 0X84);
+	}
 
 	mipicsi_device_hw_init(config->dev);
 	mipicsi_device_start(config);
@@ -353,35 +363,37 @@ int mipicsi_top_stop(enum mipicsi_top_dev dev)
 		TOP_OUT(RX0_MODE, 0);
 		find_tx_matching_rx_byp_and_pwr_off(TX_BYPASS_RX0);
 		mipicsi_host_stop(dev);
-		TOP_OUTf(CSI_CLK_CTRL, CSI2_RX0_CG, 0);
+		TOP_OUTf(CSI_CLK_CTRL, CSI2_RX0_CG, 1);
 		break;
 
 	case MIPI_RX1:
 		TOP_OUT(RX1_MODE, 0);
 		find_tx_matching_rx_byp_and_pwr_off(TX_BYPASS_RX1);
 		mipicsi_host_stop(dev);
-		TOP_OUTf(CSI_CLK_CTRL, CSI2_RX1_CG, 0);
+		TOP_OUTf(CSI_CLK_CTRL, CSI2_RX1_CG, 1);
 		break;
 
 	case MIPI_RX2:
 		TOP_OUT(RX2_MODE, 0);
 		find_tx_matching_rx_byp_and_pwr_off(TX_BYPASS_RX2);
 		mipicsi_host_stop(dev);
-		TOP_OUTf(CSI_CLK_CTRL, CSI2_RX2_CG, 0);
+		TOP_OUTf(CSI_CLK_CTRL, CSI2_RX2_CG, 1);
 		break;
 
 	case MIPI_TX0:
 		TOP_OUT(TX0_MODE, 0);
 		find_rx_matching_tx_and_disable(TOP_MASK(RX0_MODE, RX0_BYP_TX0_EN));
 		mipicsi_device_stop(dev);
-		TOP_OUTf(CSI_CLK_CTRL, CSI2_TX0_CG, 0);
+		TOP_OUTf(CSI_CLK_CTRL, CSI2_TX0_CG, 1);
+		TOP_OUT(TX0_DPHY_PLL_CNTRL, 0);
 		break;
 
 	case MIPI_TX1:
 		TOP_OUT(TX1_MODE, 0);
 		find_rx_matching_tx_and_disable(TOP_MASK(RX0_MODE, RX0_BYP_TX1_EN));
 		mipicsi_device_stop(dev);
-		TOP_OUTf(CSI_CLK_CTRL, CSI2_TX1_CG, 0);
+		TOP_OUTf(CSI_CLK_CTRL, CSI2_TX1_CG, 1);
+		TOP_OUT(TX1_DPHY_PLL_CNTRL, 0);
 		break;
 
 	default:
@@ -883,6 +895,7 @@ int mipicsi_top_debug_bist_status(struct mipicsi_top_bist *bist)
 
 int mipicsi_top_hw_init(void)
 {
+#if 0
 	/*
 	 * TEMP - Bypass mode from RX0 to TX0 by default
 	 */
@@ -904,7 +917,7 @@ int mipicsi_top_hw_init(void)
 	mux.ss_vc_mask = 0x0F;
 	mux.ss_stream_off = true;
 	mipicsi_top_set_mux(&mux);
-
+#endif
 	return 0;
 }
 

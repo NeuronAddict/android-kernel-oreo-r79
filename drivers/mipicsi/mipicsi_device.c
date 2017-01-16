@@ -636,7 +636,7 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 			mipicsi_dev_dphy_write(dev, 0x176, 0x03);
 
 			udelay(1);
-			TX_OUTf(PHY_IF_CFG, LANE_EN_NUM, 3);
+			TX_OUTf(PHY_IF_CFG, LANE_EN_NUM, (config->num_lanes-1));
 
 			mipicsi_dev_dphy_write(dev, 0x5A, 0x4C);
 			mipicsi_dev_dphy_write(dev, 0x5B, 0x48);
@@ -674,7 +674,7 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 			mipicsi_dev_dphy_write(dev, 0x176, 0x03);
 
 			udelay(1);
-			TX_OUTf(PHY_IF_CFG, LANE_EN_NUM, 3);
+			TX_OUTf(PHY_IF_CFG, LANE_EN_NUM, (config->num_lanes-1));
 
 			mipicsi_dev_dphy_write(dev, 0x5A, 0x53);
 			mipicsi_dev_dphy_write(dev, 0x5B, 0x51);
@@ -734,24 +734,12 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 
 		udelay(10);
 		counter++;
-	} while (counter < 20);
+	} while (counter < 30);
 
-	if (counter >= 20)
+	if (counter >= 30)
 		pr_info("%s: Device not configured in 200us - 0x%0x\n",
 			__func__, data);
 
-
-	if (!mipicsi_util_is_emulation()) {
-		/* Wait 1ms and check Phy FSM */
-		udelay (1000);
-
-		val = mipicsi_dev_dphy_read (dev, R_DPHY_RDWR_TX_SYS_1);
-		if ((val & 0xF) == 0x7)
-			pr_info("%s: Tx DPhy is in Idle", __func__);
-		else
-			pr_info("%s: Tx DPhy is not in Idle; FSM = %d",
-				__func__, val);
-	}
 	return 0;
 }
 
