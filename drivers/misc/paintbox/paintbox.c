@@ -26,6 +26,7 @@
 #include <linux/miscdevice.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
+#include <linux/of.h>
 #include <linux/paintbox.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
@@ -42,6 +43,7 @@
 #include "paintbox-lbp.h"
 #include "paintbox-mipi.h"
 #include "paintbox-mipi-debug.h"
+#include "paintbox-power.h"
 #include "paintbox-regs.h"
 #include "paintbox-stp.h"
 #include "paintbox-stp-sim.h"
@@ -507,9 +509,11 @@ static void paintbox_debug_init(struct paintbox_data *pb)
 }
 #endif
 
-static void paintbox_get_version(struct paintbox_data *pb)
+static int paintbox_get_version(struct paintbox_data *pb)
 {
+	uint64_t hardware_id;
 	uint32_t version = readl(pb->reg_base + IPU_VERSION);
+	int ret;
 
 	pb->caps.version_major = (version & IPU_VERSION_MAJOR_MASK) >>
 			IPU_VERSION_MAJOR_SHIFT;
@@ -520,24 +524,27 @@ static void paintbox_get_version(struct paintbox_data *pb)
 
 #if defined(CONFIG_PAINTBOX_SIMULATOR_SUPPORT)
 	pb->caps.is_simulator = true;
-
-	/* TODO(ahampson):  The RTL tests expect the version register to be zero
-	 * so we are passing the hardware id out of band throughg simulator
-	 * specific registers.  There needs to be some clean up of the hardware
-	 * id system so that version 0.0.0 corresponds to the hardware id of
-	 * Easel configuration.  b/30112936
-	 */
-	pb->caps.hardware_id = readl(pb->sim_base + SIM_ID);
 #endif
-	if (pb->caps.is_fpga)
-		pb->caps.hardware_id = FPGA_HARDWARE_ID;
+
+	ret = of_property_read_u64(pb->pdev->dev.of_node, "hardware-id",
+			&hardware_id);
+	if (ret < 0) {
+		dev_err(&pb->pdev->dev,
+				"%s: hardware-id not set in device tree, err "
+				"%d\n", __func__, ret);
+		return ret;
+	}
+
+	pb->caps.hardware_id = (uint32_t)hardware_id;
 
 	dev_info(&pb->pdev->dev,
-			"Paintbox IPU Version %u.%u Build %u %s Hardware ID %u"
-			"\n", pb->caps.version_major, pb->caps.version_minor,
+			"Paintbox IPU Version %u.%u.%u %s Hardware ID %u\n",
+			pb->caps.version_major, pb->caps.version_minor,
 			pb->caps.version_build, pb->caps.is_simulator ?
 			"Simulator" : pb->caps.is_fpga ? "FPGA" : "",
 			pb->caps.hardware_id);
+
+	return 0;
 }
 
 static int paintbox_probe(struct platform_device *pdev)
@@ -590,9 +597,7 @@ static int paintbox_probe(struct platform_device *pdev)
 	paintbox_sim_init(pb);
 #endif
 
-	paintbox_get_version(pb);
-
-	ret = paintbox_io_axi_init(pb);
+	ret = paintbox_get_version(pb);
 	if (ret < 0)
 		return ret;
 
@@ -619,6 +624,14 @@ static int paintbox_probe(struct platform_device *pdev)
 	if (ret < 0)
 		return ret;
 
+	ret = paintbox_io_axi_init(pb);
+	if (ret < 0)
+		return ret;
+
+	ret = ipu_pm_init(pb);
+	if (ret < 0)
+		return ret;
+
 	/* Initialize the IRQ waiters after IO APB so the IRQ waiter code knows
 	 * how many interrupts to allocate.
 	 */
@@ -629,10 +642,10 @@ static int paintbox_probe(struct platform_device *pdev)
 	/* TODO(ahampson):  This works on the assumption that all lbps have the
 	 * same number of lbs.
 	 */
-	pb->caps.max_line_buffers = pb->lbps[0].max_lbs;
-	pb->caps.max_read_ptrs = pb->lbps[0].max_rptrs;
-	pb->caps.max_channels = pb->lbps[0].max_channels;
-	pb->caps.max_fb_rows = pb->lbps[0].max_fb_rows;
+	pb->caps.max_line_buffers = pb->lbp_caps.max_lbs;
+	pb->caps.max_read_ptrs = pb->lbp_caps.max_rptrs;
+	pb->caps.max_channels = pb->lbp_caps.max_channels;
+	pb->caps.max_fb_rows = pb->lbp_caps.max_fb_rows;
 
 	/* register the misc device */
 	pb->misc_device.minor = MISC_DYNAMIC_MINOR,

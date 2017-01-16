@@ -31,6 +31,7 @@
 #include "paintbox-debug.h"
 #include "paintbox-io.h"
 #include "paintbox-irq.h"
+#include "paintbox-power.h"
 #include "paintbox-regs.h"
 #include "paintbox-sram.h"
 #include "paintbox-stp.h"
@@ -188,10 +189,14 @@ int dump_stp_registers(struct paintbox_debug *debug, char *buf, size_t len)
 	ret = dump_stp_reg_verbose(pb, STP_CAP, val, buf, &written, len,
 			"\tHALO_MEM %u words VECTOR_MEM %u words CONST MEM %u "
 			"words SCALAR_MEM %u words INST_MEM %u instructions\n",
-			(val & STP_CAP_HALO_MEM_MASK) >> STP_CAP_HALO_MEM_SHIFT,
-			(val & STP_CAP_VECTOR_MEM_MASK) >> STP_CAP_VECTOR_MEM_SHIFT,
-			(val & STP_CAP_CONST_MEM_MASK) >> STP_CAP_CONST_MEM_SHIFT,
-			(val & STP_CAP_SCALAR_MEM_MASK) >> STP_CAP_SCALAR_MEM_SHIFT,
+			(val & STP_CAP_HALO_MEM_MASK) >>
+					STP_CAP_HALO_MEM_SHIFT,
+			(val & STP_CAP_VECTOR_MEM_MASK) >>
+					STP_CAP_VECTOR_MEM_SHIFT,
+			(val & STP_CAP_CONST_MEM_MASK) >>
+					STP_CAP_CONST_MEM_SHIFT,
+			(val & STP_CAP_SCALAR_MEM_MASK) >>
+					STP_CAP_SCALAR_MEM_SHIFT,
 			val & STP_CAP_INST_MEM_MASK);
 	if (ret < 0)
 		return ret;
@@ -277,105 +282,8 @@ struct paintbox_stp *get_stp(struct paintbox_data *pb,
 	return &pb->stps[stp_id_to_index(stp_id)];
 }
 
-int allocate_stp_ioctl(struct paintbox_data *pb,
-		struct paintbox_session *session, unsigned long arg)
-{
-	unsigned int stp_id = (unsigned int)arg;
-	unsigned int stp_index = stp_id_to_index(stp_id);
-	struct paintbox_lbp *lbp, *lbp_next;
-	struct paintbox_stp *stp;
-	unsigned long irq_flags;
-	uint32_t ctrl, lbp_mask;
-
-	if (stp_index >= pb->caps.num_stps) {
-		dev_err(&pb->pdev->dev, "%s: invalid stp_id %d\n", __func__,
-				stp_id);
-		return -EINVAL;
-	}
-
-	mutex_lock(&pb->lock);
-	stp = &pb->stps[stp_index];
-	if (stp->session) {
-		dev_err(&pb->pdev->dev, "%s: access error stp_id %d\n",
-				__func__, stp_id);
-		mutex_unlock(&pb->lock);
-		return -EACCES;
-	}
-
-	stp->session = session;
-	list_add_tail(&stp->session_entry, &session->stp_list);
-
-	spin_lock_irqsave(&pb->stp_lock, irq_flags);
-
-	writel(stp_id, pb->stp_base + STP_SEL);
-
-	/* Grant access to all LBPs associated with this session */
-	lbp_mask = 0;
-	list_for_each_entry_safe(lbp, lbp_next, &session->lbp_list,
-			session_entry)
-		lbp_mask |= 1 << (lbp->pool_id + STP_CTRL_LBP_MASK_SHIFT);
-
-	ctrl = readl(pb->stp_base + STP_CTRL);
-	ctrl &= ~STP_CTRL_LBP_MASK_MASK;
-	ctrl |= lbp_mask;
-	writel(ctrl, pb->stp_base + STP_CTRL);
-
-	spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
-
-	mutex_unlock(&pb->lock);
-
-	return 0;
-}
-
-/* The caller to this function must hold pb->lock */
-void release_stp(struct paintbox_data *pb, struct paintbox_session *session,
-		struct paintbox_stp *stp)
-{
-	unsigned long irq_flags;
-#ifdef CONFIG_PAINTBOX_SIMULATOR_SUPPORT
-	int ret;
-
-	/* Make sure the STP is idle before stopping it.  Currently this is only
-	 * done for the Simulator.  The FPGA does not have a similar mechanism
-	 * How the post-DMA interrupt cleanup on the hardware will work is TBD.
-	 */
-	ret = sim_wait_for_idle(pb, stp);
-	if (ret < 0)
-		return;
-#endif
-
-	spin_lock_irqsave(&pb->stp_lock, irq_flags);
-
-	writel(stp->stp_id, pb->stp_base + STP_SEL);
-	writel(0, pb->stp_base + STP_CTRL);
-
-	spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
-
-	/* TODO(ahampson): We will probably need to poll this register to wait
-	 * for the cancel to take effect.
-	 */
-
-	/* Remove the processor from the session. */
-	list_del(&stp->session_entry);
-	stp->session = NULL;
-}
-
-int release_stp_ioctl(struct paintbox_data *pb,
-		struct paintbox_session *session, unsigned long arg)
-{
-	unsigned int stp_id = (unsigned int)arg;
-	struct paintbox_stp *stp;
-	int ret = 0;
-
-	mutex_lock(&pb->lock);
-	stp = get_stp(pb, session, stp_id, &ret);
-	if (!ret)
-		release_stp(pb, session, stp);
-	mutex_unlock(&pb->lock);
-
-	return ret;
-}
-
+/* The LBP access control masks are not implemented on the V1 hardware. */
+#ifndef CONFIG_PAINTBOX_V1
 /* This function is used to set the LBP access control mask for an STP on a
  * newly allocated LBP.
  * The caller to this function must hold pb->lock
@@ -426,6 +334,155 @@ void disable_stp_access_to_lbp(struct paintbox_data *pb,
 
 		spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
 	}
+}
+
+static void set_lbp_access_mask(struct paintbox_data *pb,
+		struct paintbox_session *session, struct paintbox_stp *stp)
+{
+	struct paintbox_lbp *lbp, *lbp_next;
+	unsigned long irq_flags;
+	uint32_t ctrl, lbp_mask;
+
+	spin_lock_irqsave(&pb->stp_lock, irq_flags);
+
+	writel(stp_id, pb->stp_base + STP_SEL);
+
+	/* Grant access to all LBPs associated with this session */
+	lbp_mask = 0;
+
+	list_for_each_entry_safe(lbp, lbp_next, &session->lbp_list,
+			session_entry)
+		lbp_mask |= 1 << (lbp->pool_id + STP_CTRL_LBP_MASK_SHIFT);
+
+	ctrl = readl(pb->stp_base + STP_CTRL);
+	ctrl &= ~STP_CTRL_LBP_MASK_MASK;
+	ctrl |= lbp_mask;
+	writel(ctrl, pb->stp_base + STP_CTRL);
+
+	spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+}
+#endif
+
+int allocate_stp_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg)
+{
+	unsigned int stp_id = (unsigned int)arg;
+	unsigned int stp_index = stp_id_to_index(stp_id);
+	struct paintbox_stp *stp;
+
+	if (stp_index >= pb->caps.num_stps) {
+		dev_err(&pb->pdev->dev, "%s: invalid stp_id %d\n", __func__,
+				stp_id);
+		return -EINVAL;
+	}
+
+	mutex_lock(&pb->lock);
+	stp = &pb->stps[stp_index];
+	if (stp->session) {
+		dev_err(&pb->pdev->dev, "%s: access error stp_id %d\n",
+				__func__, stp_id);
+		mutex_unlock(&pb->lock);
+		return -EACCES;
+	}
+
+	stp->session = session;
+	list_add_tail(&stp->session_entry, &session->stp_list);
+
+#ifndef CONFIG_PAINTBOX_FPGA_SUPPORT
+	ipu_pm_stp_enable(pb, stp);
+#endif
+
+#ifndef CONFIG_PAINTBOX_V1
+	set_lbp_access_mask(pb, session, stp);
+#endif
+
+	/* Now that the core is powered complete the STP data structure
+	 * initialization if it had not previously be initialized.
+	 */
+	if (!stp->inited) {
+		unsigned long irq_flags;
+		uint64_t caps;
+
+		stp->inited = true;
+
+		spin_lock_irqsave(&pb->stp_lock, irq_flags);
+		writel(stp->stp_id, pb->stp_base + STP_SEL);
+
+		caps = readq(pb->stp_base + STP_CAP);
+		stp->inst_mem_size_in_instructions = (unsigned int)(caps &
+				STP_CAP_INST_MEM_MASK);
+		stp->scalar_mem_size_in_words = (unsigned int)((caps &
+				STP_CAP_SCALAR_MEM_MASK) >>
+				STP_CAP_SCALAR_MEM_SHIFT);
+		stp->const_mem_size_in_words = (unsigned int)((caps &
+				STP_CAP_CONST_MEM_MASK) >>
+				STP_CAP_CONST_MEM_SHIFT);
+		stp->vector_mem_size_in_words = (unsigned int)((caps &
+				STP_CAP_VECTOR_MEM_MASK) >>
+				STP_CAP_VECTOR_MEM_SHIFT);
+		stp->halo_mem_size_in_words = (unsigned int)((caps &
+				STP_CAP_HALO_MEM_MASK) >>
+				STP_CAP_HALO_MEM_SHIFT);
+
+		spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+	}
+
+	mutex_unlock(&pb->lock);
+
+	return 0;
+}
+
+/* The caller to this function must hold pb->lock */
+void release_stp(struct paintbox_data *pb, struct paintbox_session *session,
+		struct paintbox_stp *stp)
+{
+	unsigned long irq_flags;
+#ifdef CONFIG_PAINTBOX_SIMULATOR_SUPPORT
+	int ret;
+
+	/* Make sure the STP is idle before stopping it.  Currently this is only
+	 * done for the Simulator.  The FPGA does not have a similar mechanism
+	 * How the post-DMA interrupt cleanup on the hardware will work is TBD.
+	 */
+	ret = sim_wait_for_idle(pb, stp);
+	if (ret < 0)
+		return;
+#endif
+
+	spin_lock_irqsave(&pb->stp_lock, irq_flags);
+
+	writel(stp->stp_id, pb->stp_base + STP_SEL);
+	writel(0, pb->stp_base + STP_CTRL);
+
+	spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+
+	/* TODO(ahampson): We will probably need to poll this register to wait
+	 * for the cancel to take effect.
+	 */
+
+#ifndef CONFIG_PAINTBOX_FPGA_SUPPORT
+	ipu_pm_stp_disable(pb, stp);
+#endif
+
+	/* Remove the processor from the session. */
+	list_del(&stp->session_entry);
+	stp->session = NULL;
+}
+
+int release_stp_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg)
+{
+	unsigned int stp_id = (unsigned int)arg;
+	struct paintbox_stp *stp;
+	int ret = 0;
+
+	mutex_lock(&pb->lock);
+	stp = get_stp(pb, session, stp_id, &ret);
+	if (!ret)
+		release_stp(pb, session, stp);
+	mutex_unlock(&pb->lock);
+
+	return ret;
 }
 
 int stp_ctrl_set(struct paintbox_data *pb,
@@ -695,7 +752,8 @@ int setup_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 	 * eventually be fixed in the assembler.  b/30316979
 	 */
 	ret = create_scalar_sram_config(&sram_config, stp->stp_id,
-			SRAM_TARGET_STP_INSTRUCTION_RAM, true /* swap data */);
+			SRAM_TARGET_STP_INSTRUCTION_RAM, true /* swap data */,
+			false /* pad to align */);
 	if (ret < 0) {
 		mutex_unlock(&pb->lock);
 		return ret;
@@ -727,6 +785,7 @@ int get_program_state_ioctl(struct paintbox_data *pb,
 	struct paintbox_stp *stp;
 	unsigned long irq_flags;
 	uint64_t stat;
+	uint32_t ctrl;
 	int ret;
 
 	user_program_state = (struct stp_program_state __user *)arg;
@@ -744,29 +803,19 @@ int get_program_state_ioctl(struct paintbox_data *pb,
 	spin_lock_irqsave(&pb->stp_lock, irq_flags);
 
 	writel(stp->stp_id, pb->stp_base + STP_SEL);
-
-	/* TODO(ahampson):  Check to make sure the processor is not in the
-	 * enabled state.  The STP_STAT register does not include a HALT state
-	 * to check.  This would be preferrable to relying on the higher level
-	 * code to put the processor in the disabled state.
-	 * A feature request for a STP_STAT HALT bit is tracked by b/26516030.
-	 */
-	if (readl(pb->stp_base + STP_CTRL) & STP_CTRL_ENA_MASK) {
-		dev_err(&pb->pdev->dev, "%s: stp%u: processor is enabled\n",
-				__func__, program_state.stp_id);
-		spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
-		mutex_unlock(&pb->lock);
-		return -EBUSY;
-	}
-
+	ctrl = readl(pb->stp_base + STP_CTRL);
 	stat = readq(pb->stp_base + STP_STAT);
 
 	spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
 
-	program_state.program_counter = (uint32_t)(stat & STP_STAT_PC_MASK);
+	program_state.enabled = (ctrl & STP_CTRL_ENA_MASK) != 0;
+	program_state.stalled = (stat & STP_STAT_STALLED_MASK) != 0;
+	program_state.program_counter =
+			(stat & STP_STAT_PC_MASK) >> STP_STAT_PC_SHIFT;
 
-	dev_dbg(&pb->pdev->dev, "%s: stp%u pc 0x%08x\n",  __func__,
-			stp->stp_id, program_state.program_counter);
+	dev_dbg(&pb->pdev->dev, "%s: stp%u enabled=%u stalled=%u pc 0x%08x\n",
+			__func__, stp->stp_id, program_state.enabled, program_state.stalled,
+			program_state.program_counter);
 
 	mutex_unlock(&pb->lock);
 
@@ -920,7 +969,6 @@ irqreturn_t paintbox_stp_interrupt(struct paintbox_data *pb, uint64_t stp_mask)
 static int init_stp_entry(struct paintbox_data *pb, unsigned int stp_index)
 {
 	struct paintbox_stp *stp = &pb->stps[stp_index];
-	uint64_t caps;
 
 	stp->stp_id = stp_index_to_id(stp_index);
 
@@ -935,19 +983,6 @@ static int init_stp_entry(struct paintbox_data *pb, unsigned int stp_index)
 #ifdef VERBOSE_DEBUG
 	paintbox_alloc_debug_buffer(pb, STP_DEBUG_BUFFER_SIZE);
 #endif
-
-	writel(stp->stp_id, pb->stp_base + STP_SEL);
-	caps = readq(pb->stp_base + STP_CAP);
-	stp->inst_mem_size_in_instructions = (unsigned int)(caps &
-			STP_CAP_INST_MEM_MASK);
-	stp->scalar_mem_size_in_words = (unsigned int)((caps &
-			STP_CAP_SCALAR_MEM_MASK) >> STP_CAP_SCALAR_MEM_SHIFT);
-	stp->const_mem_size_in_words = (unsigned int)((caps &
-			STP_CAP_CONST_MEM_MASK) >> STP_CAP_CONST_MEM_SHIFT);
-	stp->vector_mem_size_in_words = (unsigned int)((caps &
-			STP_CAP_VECTOR_MEM_MASK) >> STP_CAP_VECTOR_MEM_SHIFT);
-	stp->halo_mem_size_in_words = (unsigned int)((caps &
-			STP_CAP_HALO_MEM_MASK) >> STP_CAP_HALO_MEM_SHIFT);
 
 	dev_dbg(&pb->pdev->dev, "stp%u: base %p len %lu\n", stp->stp_id,
 			pb->stp_base, STP_BLOCK_LEN);

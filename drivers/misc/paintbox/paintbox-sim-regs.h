@@ -18,13 +18,12 @@
 
 
 /* Simulator Group Register Offsets */
-#define SIM_ID                 0x00
-#define SIM_CTRL               0x08
-#define SIM_STAT               0x10
-#define SIM_TIMEOUT            0x18
-#define SIM_INTERRUPT_MASK_ALL 0x20
-#define SIM_INTERRUPT_MASK_ANY 0x28
-#define SIM_BLOCK_LEN          0x30
+#define SIM_CTRL               0x00
+#define SIM_STAT               0x08
+#define SIM_TIMEOUT            0x10
+#define SIM_INTERRUPT_MASK_ALL 0x18
+#define SIM_INTERRUPT_MASK_ANY 0x20
+#define SIM_BLOCK_LEN          0x28
 #define SIM_NUM_REGS           (SIM_BLOCK_LEN / sizeof(uint64_t))
 
 /* SIM_CTRL Register Bits */

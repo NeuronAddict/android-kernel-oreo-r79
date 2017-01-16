@@ -145,8 +145,8 @@ int stp_sram_read_word(struct paintbox_data *pb,
 	return 0;
 }
 
-static int validate_ram_transfer(struct paintbox_data *pb,
-		struct paintbox_stp *stp, uint16_t sram_addr_bytes,
+static int validate_sram_transfer(struct paintbox_data *pb,
+		struct paintbox_stp *stp, uint32_t sram_byte_addr,
 		enum sram_target_type sram_target, size_t len_bytes)
 {
 	size_t sram_len_bytes;
@@ -171,11 +171,12 @@ static int validate_ram_transfer(struct paintbox_data *pb,
 		return -EINVAL;
 	};
 
-	if (sram_addr_bytes + len_bytes > sram_len_bytes) {
+	if (sram_byte_addr + len_bytes > sram_len_bytes) {
 		dev_err(&pb->pdev->dev,
-				"%s: stp%u: memory transfer out of range %lu > "
-				"%lu bytes\n", __func__, stp->stp_id, len_bytes,
-				sram_len_bytes);
+				"%s: stp%u: memory transfer out of range: SRAM "
+				"target %d addr 0x%08x + %lu > %lu bytes\n",
+				__func__, stp->stp_id, sram_target,
+				sram_byte_addr, len_bytes, sram_len_bytes);
 		return -ERANGE;
 	}
 
@@ -184,7 +185,7 @@ static int validate_ram_transfer(struct paintbox_data *pb,
 
 int create_scalar_sram_config(struct paintbox_sram_config *sram_config,
 		unsigned int stp_id, enum sram_target_type sram_target,
-		bool swap_data)
+		bool swap_data, bool pad_to_align)
 {
 	switch (sram_target) {
 	case SRAM_TARGET_STP_INSTRUCTION_RAM:
@@ -209,6 +210,7 @@ int create_scalar_sram_config(struct paintbox_sram_config *sram_config,
 			RAM_DATA_MODE_NORMAL;
 	sram_config->write_word = &stp_sram_write_word;
 	sram_config->read_word = &stp_sram_read_word;
+	sram_config->pad_to_align = pad_to_align;
 
 	return 0;
 }
@@ -222,6 +224,7 @@ static void create_vector_sram_config(struct paintbox_sram_config *sram_config,
 	sram_config->ram_data_mode = RAM_DATA_MODE_COL_MAJOR;
 	sram_config->write_word = &stp_sram_write_word;
 	sram_config->read_word = &stp_sram_read_word;
+	sram_config->pad_to_align = false;
 }
 
 static inline uint32_t get_vector_address(uint32_t lane_group_x,
@@ -448,7 +451,7 @@ int write_stp_scalar_sram_ioctl(struct paintbox_data *pb,
 		return ret;
 	}
 
-	ret = validate_ram_transfer(pb, stp, req.sram_byte_addr,
+	ret = validate_sram_transfer(pb, stp, req.sram_byte_addr,
 			req.sram_target, req.len_bytes);
 	if (ret < 0) {
 		mutex_unlock(&pb->lock);
@@ -456,7 +459,7 @@ int write_stp_scalar_sram_ioctl(struct paintbox_data *pb,
 	}
 
 	ret = create_scalar_sram_config(&sram_config, stp->stp_id,
-			req.sram_target, req.swap_data);
+			req.sram_target, req.swap_data, req.pad_to_align);
 	if (ret < 0) {
 		mutex_unlock(&pb->lock);
 		dev_err(&pb->pdev->dev,
@@ -504,7 +507,7 @@ int read_stp_scalar_sram_ioctl(struct paintbox_data *pb,
 		return ret;
 	}
 
-	ret = validate_ram_transfer(pb, stp, req.sram_byte_addr,
+	ret = validate_sram_transfer(pb, stp, req.sram_byte_addr,
 			req.sram_target, req.len_bytes);
 	if (ret < 0) {
 		mutex_unlock(&pb->lock);
@@ -512,7 +515,8 @@ int read_stp_scalar_sram_ioctl(struct paintbox_data *pb,
 	}
 
 	ret = create_scalar_sram_config(&sram_config, stp->stp_id,
-			req.sram_target, req.swap_data);
+			req.sram_target, req.swap_data,
+			false /* pad_to_align */);
 	if (ret < 0) {
 		mutex_unlock(&pb->lock);
 		dev_err(&pb->pdev->dev,

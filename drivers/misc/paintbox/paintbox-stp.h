@@ -65,10 +65,14 @@ struct paintbox_stp *get_stp(struct paintbox_data *pb,
 		int *err);
 void release_stp(struct paintbox_data *pb,
 		struct paintbox_session *session, struct paintbox_stp *stp);
+
+/* The LBP access control masks are not implemented on the V1 hardware. */
+#ifndef CONFIG_PAINTBOX_V1
 void enable_stp_access_to_lbp(struct paintbox_data *pb,
 		struct paintbox_session *session, struct paintbox_lbp *lbp);
 void disable_stp_access_to_lbp(struct paintbox_data *pb,
 		struct paintbox_session *session, struct paintbox_lbp *lbp);
+#endif
 
 #if defined(CONFIG_DEBUG_FS) || defined(VERBOSE_DEBUG)
 int dump_stp_registers(struct paintbox_debug *debug, char *buf, size_t len);

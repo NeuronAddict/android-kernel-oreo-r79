@@ -30,6 +30,7 @@
 #include "paintbox-common.h"
 #include "paintbox-debug.h"
 #include "paintbox-lbp.h"
+#include "paintbox-power.h"
 #include "paintbox-regs.h"
 #include "paintbox-regs-supplemental.h"
 #include "paintbox-sram.h"
@@ -366,7 +367,7 @@ static int validate_lb_config(struct paintbox_data *pb,
 	/* TODO(ahampson): Need to figure out how the broadcast id will be
 	 * expressed.
 	 */
-	if (lb_config->lb_id < 0 || lb_config->lb_id >= lbp->max_lbs) {
+	if (lb_config->lb_id < 0 || lb_config->lb_id >= pb->lbp_caps.max_lbs) {
 		dev_err(&pb->pdev->dev, "%s: invalid line buffer id %d\n",
 				__func__, lb_config->lb_id);
 		return -EINVAL;
@@ -381,21 +382,21 @@ static int validate_lb_config(struct paintbox_data *pb,
 		return -EINVAL;
 	}
 
-	if (lb_config->num_read_ptrs > lbp->max_rptrs) {
+	if (lb_config->num_read_ptrs > pb->lbp_caps.max_rptrs) {
 		dev_err(&pb->pdev->dev,
 				"%s: lb%u.%u: invalid max read ptrs, %u > %u\n",
 				__func__, lb_config->lb_pool_id,
 				lb_config->lb_id, lb_config->num_read_ptrs,
-				lbp->max_rptrs);
+				pb->lbp_caps.max_rptrs);
 		return -EINVAL;
 	}
 
-	if (lb_config->fb_rows > lbp->max_fb_rows) {
+	if (lb_config->fb_rows > pb->lbp_caps.max_fb_rows) {
 		dev_err(&pb->pdev->dev,
 				"%s: lb%u.%u: invalid fb_rows, %u > %u\n",
 				__func__, lb_config->lb_pool_id,
 				lb_config->lb_id, lb_config->fb_rows,
-				lbp->max_fb_rows);
+				pb->lbp_caps.max_fb_rows);
 		return -EINVAL;
 	}
 
@@ -515,7 +516,7 @@ struct paintbox_lb *get_lb(struct paintbox_data *pb,
 		return NULL;
 	}
 
-	if (lb_id >= lbp->max_lbs) {
+	if (lb_id >= pb->lbp_caps.max_lbs) {
 		dev_err(&pb->pdev->dev, "%s: lbp%u invalid lb id %u\n",
 				__func__, lbp_id, lb_id);
 		*err = -EINVAL;
@@ -563,11 +564,18 @@ void reset_lb(struct paintbox_data *pb, unsigned int lbp_id, unsigned int lb_id)
 void release_lbp(struct paintbox_data *pb,
 		struct paintbox_session *session, struct paintbox_lbp *lbp)
 {
+	/* The LBP access control masks are not implemented on the V1 hardware.
+	 */
+#ifndef CONFIG_PAINTBOX_V1
 	disable_stp_access_to_lbp(pb, session, lbp);
-
+#endif
 	/* Disable all line buffers within the pool. */
 	writel(lbp->pool_id, pb->lbp_base + LBP_SEL);
 	writeq(0, pb->lbp_base + LBP_CTRL);
+
+#ifndef CONFIG_PAINTBOX_FPGA_SUPPORT
+	ipu_pm_lbp_disable(pb, lbp);
+#endif
 
 	/* Remove the line buffer pool from the session. */
 	list_del(&lbp->session_entry);
@@ -599,12 +607,20 @@ int allocate_lbp_ioctl(struct paintbox_data *pb,
 	lbp->session = session;
 	list_add_tail(&lbp->session_entry, &session->lbp_list);
 
+#ifndef CONFIG_PAINTBOX_FPGA_SUPPORT
+	ipu_pm_lbp_enable(pb, lbp);
+#endif
+
 	writel(pool_id, pb->lbp_base + LBP_SEL);
 	writeq(LBP_CTRL_LBP_RESET_MASK, pb->lbp_base + LBP_CTRL);
 	writeq(0, pb->lbp_base + LBP_CTRL);
 
+	/* The LBP access control masks are not implemented on the V1 hardware.
+	 */
+#ifndef CONFIG_PAINTBOX_V1
 	/* Grant access to all STPs in this session. */
 	enable_stp_access_to_lbp(pb, session, lbp);
+#endif
 
 	mutex_unlock(&pb->lock);
 
@@ -869,7 +885,7 @@ static int lbp_sram_read_word(struct paintbox_data *pb,
 }
 
 static void create_lbp_sram_config(struct paintbox_sram_config *sram_config,
-		unsigned int lbp_id)
+		unsigned int lbp_id, bool pad_to_align)
 {
 	sram_config->core_id = lbp_id;
 	sram_config->ram_ctrl_target = 0;
@@ -877,6 +893,23 @@ static void create_lbp_sram_config(struct paintbox_sram_config *sram_config,
 	sram_config->sram_word_bytes = LBP_DATA_REG_COUNT * IPU_REG_WIDTH_BYTES;
 	sram_config->write_word = &lbp_sram_write_word;
 	sram_config->read_word = &lbp_sram_read_word;
+	sram_config->pad_to_align = pad_to_align;
+}
+
+static int validate_sram_transfer(struct paintbox_data *pb,
+		struct paintbox_lbp *lbp, uint32_t sram_byte_addr,
+		size_t len_bytes)
+{
+	if (sram_byte_addr + len_bytes > pb->lbp_caps.mem_size_bytes) {
+		dev_err(&pb->pdev->dev,
+				"%s: lbp%u: memory transfer out of range: SRAM "
+				"addr 0x%08x + %lu > %u bytes\n",
+				__func__, lbp->pool_id, sram_byte_addr,
+				len_bytes, pb->lbp_caps.mem_size_bytes);
+		return -ERANGE;
+	}
+
+	return 0;
 }
 
 int write_lbp_memory_ioctl(struct paintbox_data *pb,
@@ -899,7 +932,14 @@ int write_lbp_memory_ioctl(struct paintbox_data *pb,
 		return ret;
 	}
 
-	create_lbp_sram_config(&sram_config, req.id);
+	ret = validate_sram_transfer(pb, lbp, req.sram_byte_addr,
+			req.len_bytes);
+	if (ret < 0) {
+		mutex_unlock(&pb->lock);
+		return ret;
+	}
+
+	create_lbp_sram_config(&sram_config, req.id, req.pad_to_align);
 
 	ret = sram_write_user_buffer(pb, &sram_config, req.sram_byte_addr,
 			req.buf, req.len_bytes);
@@ -935,7 +975,14 @@ int read_lbp_memory_ioctl(struct paintbox_data *pb,
 		return ret;
 	}
 
-	create_lbp_sram_config(&sram_config, req.id);
+	ret = validate_sram_transfer(pb, lbp, req.sram_byte_addr,
+			req.len_bytes);
+	if (ret < 0) {
+		mutex_unlock(&pb->lock);
+		return ret;
+	}
+
+	create_lbp_sram_config(&sram_config, req.id, false /* pad_to_align */);
 
 	ret = sram_read_user_buffer(pb, &sram_config, req.sram_byte_addr,
 			req.buf, req.len_bytes);
@@ -1001,9 +1048,10 @@ int reset_lb_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 		return ret;
 	}
 
-	if (req.lb_id >= lbp->max_lbs) {
+	if (req.lb_id >= pb->lbp_caps.max_lbs) {
 		dev_err(&pb->pdev->dev, "%s: lbp%u: invalid lb id %u, max %u\n",
-				__func__, req.lbp_id, req.lb_id, lbp->max_lbs);
+				__func__, req.lbp_id, req.lb_id,
+				pb->lbp_caps.max_lbs);
 		mutex_unlock(&pb->lock);
 		return -EINVAL;
 	}
@@ -1028,7 +1076,6 @@ static int init_lbp(struct paintbox_data *pb, unsigned int lbp_index)
 {
 	struct paintbox_lbp *lbp;
 	unsigned int i;
-	uint64_t caps;
 
 	lbp = &pb->lbps[lbp_index];
 
@@ -1037,20 +1084,7 @@ static int init_lbp(struct paintbox_data *pb, unsigned int lbp_index)
 	 */
 	lbp->pool_id = lbp_index;
 
-	/* Read LBP/LB specific capabilities */
-	writel(lbp_index, pb->lbp_base + LBP_SEL);
-	caps = readl(pb->lbp_base + LBP_CAP0);
-
-	lbp->max_lbs = caps & LBP_CAP0_MAX_LB_MASK;
-	lbp->max_rptrs = (caps & LBP_CAP0_MAX_RPTR_MASK) >>
-			LBP_CAP0_MAX_RPTR_SHIFT;
-	lbp->max_channels = (caps & LBP_CAP0_MAX_CHAN_MASK) >>
-			LBP_CAP0_MAX_CHAN_SHIFT;
-	lbp->max_fb_rows = (caps & LBP_CAP0_MAX_FB_ROWS_MASK) >>
-			LBP_CAP0_MAX_FB_ROWS_SHIFT;
-	lbp->mem_size = readl(pb->lbp_base + LBP_CAP1);
-
-	lbp->lbs = kzalloc(sizeof(struct paintbox_lb) * lbp->max_lbs,
+	lbp->lbs = kzalloc(sizeof(struct paintbox_lb) * pb->lbp_caps.max_lbs,
 			GFP_KERNEL);
 	if (!lbp->lbs)
 		return -ENOMEM;
@@ -1064,7 +1098,7 @@ static int init_lbp(struct paintbox_data *pb, unsigned int lbp_index)
 			lbp_reg_entry_read);
 #endif
 
-	for (i = 0; i < lbp->max_lbs; i++) {
+	for (i = 0; i < pb->lbp_caps.max_lbs; i++) {
 		struct paintbox_lb *lb = &lbp->lbs[i];
 		lb->lbp = lbp;
 		lb->lb_id = i;
@@ -1086,20 +1120,13 @@ static int init_lbp(struct paintbox_data *pb, unsigned int lbp_index)
 			LB_DEBUG_BUFFER_SIZE));
 #endif
 
-	dev_dbg(&pb->pdev->dev, "lbp%u: base %p len %lu max lbs%u\n",
-			lbp_index, pb->lbp_base, LBP_BLOCK_LEN, lbp->max_lbs);
-	dev_dbg(&pb->pdev->dev, "\trptrs %u ch %u fbrows %u size %u\n",
-			pb->lbps[lbp_index].max_rptrs,
-			pb->lbps[lbp_index].max_channels,
-			pb->lbps[lbp_index].max_fb_rows,
-			pb->lbps[lbp_index].mem_size);
-
 	return 0;
 }
 
 int paintbox_lbp_init(struct paintbox_data *pb)
 {
 	unsigned int i;
+	uint64_t caps;
 	int ret;
 
 	pb->lbp_base = pb->reg_base + IPU_LBP_OFFSET;
@@ -1112,11 +1139,35 @@ int paintbox_lbp_init(struct paintbox_data *pb)
 	if (!pb->lbps)
 		return -ENOMEM;
 
+
+	/* Read LBP/LB capabilities from LBP0 since that is always powered.
+	 * The capabilities are the same for the other LBPs.
+	 */
+	writel(0, pb->lbp_base + LBP_SEL);
+	caps = readl(pb->lbp_base + LBP_CAP0);
+
+	pb->lbp_caps.max_lbs = caps & LBP_CAP0_MAX_LB_MASK;
+	pb->lbp_caps.max_rptrs = (caps & LBP_CAP0_MAX_RPTR_MASK) >>
+			LBP_CAP0_MAX_RPTR_SHIFT;
+	pb->lbp_caps.max_channels = (caps & LBP_CAP0_MAX_CHAN_MASK) >>
+			LBP_CAP0_MAX_CHAN_SHIFT;
+	pb->lbp_caps.max_fb_rows = (caps & LBP_CAP0_MAX_FB_ROWS_MASK) >>
+			LBP_CAP0_MAX_FB_ROWS_SHIFT;
+	pb->lbp_caps.mem_size_bytes = readl(pb->lbp_base + LBP_CAP1);
+
 	for (i = 0; i < pb->caps.num_lbps; i++) {
 		ret = init_lbp(pb, i);
 		if (ret < 0)
 			return ret;
 	}
+
+	dev_dbg(&pb->pdev->dev, "lbp: base %p len %lu max lbs%u\n",
+			pb->lbp_base, LBP_BLOCK_LEN, pb->lbp_caps.max_lbs);
+	dev_dbg(&pb->pdev->dev, "\trptrs %u ch %u fbrows %u size %u bytes\n",
+			pb->lbp_caps.max_rptrs,
+			pb->lbp_caps.max_channels,
+			pb->lbp_caps.max_fb_rows,
+			pb->lbp_caps.mem_size_bytes);
 
 	return 0;
 }

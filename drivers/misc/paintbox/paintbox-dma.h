@@ -66,6 +66,13 @@ irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 		uint32_t channel_mask);
 
 /* This function must be called in an interrupt context */
+void dma_report_channel_error(struct paintbox_data *pb,
+		unsigned int channel_id, int err);
+
+/* This function must be called in an interrupt context */
+void dma_report_error_all_channels(struct paintbox_data *pb, int err);
+
+/* This function must be called in an interrupt context */
 void dma_set_mipi_error(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel, int err);
 

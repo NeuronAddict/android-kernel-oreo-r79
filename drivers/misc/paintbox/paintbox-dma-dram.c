@@ -64,27 +64,41 @@ static int ipu_import_dma_buf(struct paintbox_data *pb,
 		struct paintbox_dma_transfer *transfer,
 		struct dma_dram_config *config)
 {
+	int ret;
+
 	transfer->dma_buf = dma_buf_get(config->dma_buf_fd);
 	if (IS_ERR(transfer->dma_buf))
 		return PTR_ERR(transfer->dma_buf);
 
 	transfer->attach = dma_buf_attach(transfer->dma_buf, &pb->pdev->dev);
 	if (IS_ERR(transfer->attach)) {
-		dma_buf_put(transfer->dma_buf);
-		return PTR_ERR(transfer->attach);
+		ret = PTR_ERR(transfer->attach);
+		dev_err(&pb->pdev->dev,
+				"%s: failed to attach dma_buf, err %d\n",
+				__func__, ret);
+		goto err_put;
 	}
 
 	transfer->sg_table = dma_buf_map_attachment(transfer->attach,
 			transfer->dir);
 	if (IS_ERR(transfer->sg_table)) {
-		dma_buf_detach(transfer->dma_buf, transfer->attach);
-		dma_buf_put(transfer->dma_buf);
-		return PTR_ERR(transfer->sg_table);
+		ret = PTR_ERR(transfer->sg_table);
+		dev_err(&pb->pdev->dev,
+				"%s: failed to map dma_buf, err %d\n", __func__,
+				ret);
+		goto err_detach;
 	}
 
 	transfer->dma_addr = sg_dma_address(transfer->sg_table->sgl);
 
 	return 0;
+
+err_detach:
+	dma_buf_detach(transfer->dma_buf, transfer->attach);
+err_put:
+	dma_buf_put(transfer->dma_buf);
+
+	return ret;
 }
 
 static void ipu_release_dma_buf(struct paintbox_data *pb,

@@ -102,10 +102,6 @@ int dma_setup_dram_to_lbp_transfer(struct paintbox_data *pb,
 	if (config->src.dram.len_bytes > DMA_MAX_IMG_TRANSFER_LEN)
 		return -ERANGE;
 
-	if (!access_ok(VERIFY_READ, config->src.dram.host_vaddr,
-				config->src.dram.len_bytes))
-		return -EFAULT;
-
 	ret = ipu_dma_attach_buffer(pb, transfer, &config->src.dram,
 			DMA_TO_DEVICE);
 	if (ret < 0)
@@ -153,10 +149,6 @@ int dma_setup_lbp_to_dram_transfer(struct paintbox_data *pb,
 
 	if (config->dst.dram.len_bytes > DMA_MAX_IMG_TRANSFER_LEN)
 		return -ERANGE;
-
-	if (!access_ok(VERIFY_WRITE, config->dst.dram.host_vaddr,
-			config->dst.dram.len_bytes))
-		return -EFAULT;
 
 	ret = ipu_dma_attach_buffer(pb, transfer, &config->dst.dram,
 			DMA_FROM_DEVICE);

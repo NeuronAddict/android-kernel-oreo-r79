@@ -93,6 +93,9 @@
 
 #define LBP_DATA_REG_COUNT    4
 
+/* MMU_ERR_LOG */
+#define MMU_IOVA_SHIFT        12
+
 /* MMU_ISR / MMU_IMR */
 #define NUM_MMU_INTERRUPTS 1
 

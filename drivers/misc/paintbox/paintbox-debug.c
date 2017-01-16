@@ -31,17 +31,29 @@
 int dump_ipu_vprintf(struct paintbox_data *pb, char *buf, int *written,
 		size_t len, const char *format, va_list args)
 {
-	int ret;
+	int ret = 0;
 
-	ret = vsnprintf(buf + *written, len - *written, format, args);
+	if (buf && written) {
+		ret = vsnprintf(buf + *written, len - *written, format, args);
 
-	if (ret < 0) {
-		dev_err(&pb->pdev->dev, "%s: dump printf error, err = %d",
-				__func__, ret);
-		return ret;
+		if (ret < 0) {
+			dev_err(&pb->pdev->dev,
+					"%s: dump printf error, err = %d",
+					__func__, ret);
+			return ret;
+		}
+
+		*written += ret;
+	} else {
+		struct va_format vaf;
+
+		vaf.fmt = format;
+		vaf.va = &args;
+
+		/* TODO(ahampson):  Add support for levels */
+
+		pr_info("%pV", &vaf);
 	}
-
-	*written += ret;
 
 	return ret;
 }

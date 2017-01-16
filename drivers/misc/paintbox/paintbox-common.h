@@ -28,11 +28,6 @@
 
 #define RESOURCE_NAME_LEN    16
 
-/* TODO(ahampson): Temporary FPGA_VERSION.  This should be removed once
- * b/30112936 is fixed.
- */
-#define FPGA_HARDWARE_ID     6
-
 /* This timeout is the minimum wait time for a MIPI stream cleanup to
  * complete.
  */
@@ -102,6 +97,11 @@ struct paintbox_debug {
 	int resource_id;
 	register_dump_t register_dump;
 	stats_dump_t stats_dump;
+};
+
+struct paintbox_power {
+	struct paintbox_debug debug;
+	unsigned int active_core_count;
 };
 
 struct paintbox_io {
@@ -396,6 +396,8 @@ struct paintbox_stp {
 	unsigned int const_mem_size_in_words;
 	unsigned int vector_mem_size_in_words;
 	unsigned int halo_mem_size_in_words;
+	bool pm_enabled;
+	bool inited;
 };
 
 struct paintbox_lbp;
@@ -434,12 +436,16 @@ struct paintbox_lbp {
 	struct paintbox_debug debug;
 	struct paintbox_session *session;
 	struct paintbox_lb *lbs;
-	uint32_t mem_size;
+	unsigned int pool_id;
+	bool pm_enabled;
+};
+
+struct paintbox_lbp_caps {
+	uint32_t mem_size_bytes;
 	uint32_t max_fb_rows;
 	uint32_t max_lbs;
 	uint32_t max_rptrs;
 	uint32_t max_channels;
-	unsigned int pool_id;
 };
 
 struct paintbox_waiter {
@@ -474,11 +480,13 @@ struct paintbox_data {
 	struct dentry *debug_root;
 	struct dentry *regs_dentry;
 
+	struct paintbox_power power;
 	struct paintbox_io io;
 	struct paintbox_io_ipu io_ipu;
 	struct paintbox_dma dma;
 	struct paintbox_irq *irqs;
 	struct paintbox_stp *stps;
+	struct paintbox_lbp_caps lbp_caps;
 	struct paintbox_lbp *lbps;
 	struct ipu_capabilities caps;
 	size_t vdbg_log_len;

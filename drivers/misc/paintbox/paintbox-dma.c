@@ -32,6 +32,7 @@
 #include "paintbox-irq.h"
 #include "paintbox-lbp.h"
 #include "paintbox-mipi.h"
+#include "paintbox-power.h"
 #include "paintbox-regs.h"
 #include "paintbox-sim-regs.h"
 
@@ -200,7 +201,7 @@ static void dma_reset_channel_locked(struct paintbox_data *pb,
 		 */
 		writel(0, dma->dma_base + DMA_CHAN_IMR);
 		io_disable_dma_channel_interrupt(pb, channel->channel_id);
-		io_disable_dma_channel(pb, channel->channel_id);
+		ipu_pm_disable_dma_channel(pb, channel->channel_id);
 		return;
 	}
 
@@ -266,7 +267,7 @@ void dma_stop_transfer(struct paintbox_data *pb,
 		 */
 		writel(0, dma->dma_base + DMA_CHAN_IMR);
 		io_disable_dma_channel_interrupt(pb, channel->channel_id);
-		io_disable_dma_channel(pb, channel->channel_id);
+		ipu_pm_disable_dma_channel(pb, channel->channel_id);
 
 		spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 		return;
@@ -357,7 +358,7 @@ void dma_stop_transfer(struct paintbox_data *pb,
 
 	/* If there are no active transfers then power down the DMA channel. */
 	if (channel->active_count == 0)
-		io_disable_dma_channel(pb, channel->channel_id);
+		ipu_pm_disable_dma_channel(pb, channel->channel_id);
 
 	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 }
@@ -398,7 +399,7 @@ void release_dma_channel(struct paintbox_data *pb,
 
 	/* Make sure the DMA channel is powered down. */
 	if (!WARN_ON(channel->active_count != 0))
-		io_disable_dma_channel(pb, channel->channel_id);
+		ipu_pm_disable_dma_channel(pb, channel->channel_id);
 
 	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 }
@@ -832,7 +833,7 @@ int start_dma_transfer_ioctl(struct paintbox_data *pb,
 		goto err_exit;
 	}
 
-	io_enable_dma_channel(pb, channel_id);
+	ipu_pm_enable_dma_channel(pb, channel_id);
 
 	commit_transfer_to_hardware(pb, channel);
 
@@ -914,6 +915,78 @@ int dma_test_channel_reset_ioctl(struct paintbox_data *pb,
 	return ret;
 }
 #endif
+
+/* This function must be called in an interrupt context and the caller must
+ * hold pb->dma.dma_lock.
+ */
+static void dma_report_channel_error_locked(struct paintbox_data *pb,
+		unsigned int channel_id, int err)
+{
+	struct paintbox_dma_channel *channel;
+	struct paintbox_dma_transfer *transfer;
+	uint32_t mode;
+
+	channel = &pb->dma.channels[channel_id];
+
+	dma_select_channel(pb, channel->channel_id);
+
+	/* Disable the channel to prevent any pending transfers from starting.
+	 */
+	mode = readl(pb->dma.dma_base + DMA_CHAN_MODE);
+	if (mode & DMA_CHAN_ENA) {
+		mode &= ~DMA_CHAN_ENA;
+		writel(mode, pb->dma.dma_base + DMA_CHAN_MODE);
+	}
+
+	/* If there is an active stop request on this channel then cancel it. */
+	if (channel->stop_request) {
+		channel->stop_request = false;
+		complete(&channel->stop_completion);
+	}
+
+	/* If there is no active transfer then there isn't much more we can do.
+	 */
+	if (!channel->active_count)
+		return;
+
+	/* If there is an active request then then complete it and report the
+	 * error to the client.
+	 */
+	channel->active_count--;
+	WARN_ON(channel->active_count < 0);
+
+	transfer = list_entry(channel->active_list.next,
+			struct paintbox_dma_transfer, entry);
+	if (!WARN_ON(transfer == NULL)) {
+		list_del(&transfer->entry);
+		dma_report_completion(pb, channel, transfer, err);
+	}
+}
+
+
+/* This function must be called in an interrupt context */
+void dma_report_channel_error(struct paintbox_data *pb,
+		unsigned int channel_id, int err)
+{
+	spin_lock(&pb->dma.dma_lock);
+
+	dma_report_channel_error_locked(pb, channel_id, err);
+
+	spin_unlock(&pb->dma.dma_lock);
+}
+
+/* This function must be called in an interrupt context */
+void dma_report_error_all_channels(struct paintbox_data *pb, int err)
+{
+	unsigned int channel_id;
+
+	spin_lock(&pb->dma.dma_lock);
+
+	for (channel_id = 0; channel_id < pb->dma.num_channels; channel_id++)
+		dma_report_channel_error_locked(pb, channel_id, err);
+
+	spin_unlock(&pb->dma.dma_lock);
+}
 
 /* This function must be called in an interrupt context */
 void dma_set_mipi_error(struct paintbox_data *pb,
@@ -1027,7 +1100,8 @@ irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 				 * down the DMA channel.
 				 */
 				if (channel->active_count == 0)
-					io_disable_dma_channel(pb, channel_id);
+					ipu_pm_disable_dma_channel(pb,
+							channel_id);
 
 				spin_unlock(&pb->dma.dma_lock);
 				continue;
@@ -1052,7 +1126,7 @@ irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 		 * channel.
 		 */
 		if (channel->active_count == 0)
-			io_disable_dma_channel(pb, channel->channel_id);
+			ipu_pm_disable_dma_channel(pb, channel->channel_id);
 
 		spin_unlock(&pb->dma.dma_lock);
 	}

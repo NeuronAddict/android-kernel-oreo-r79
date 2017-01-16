@@ -238,8 +238,10 @@ struct stp_config {
 };
 
 struct stp_program_state {
-	uint32_t program_counter;
+	int32_t program_counter;
 	uint8_t stp_id;
+	bool enabled;
+	bool stalled;
 };
 
 struct stp_interrupt_config {
@@ -254,6 +256,12 @@ struct ipu_sram_write {
 	uint32_t id;
 	enum sram_target_type sram_target;
 	bool swap_data;
+
+	/* When set the driver will pad unaligned or short writes with zeros
+	 * instead of doing a read-modify-write.  This feature is used for
+	 * test and debugging and should not normally be set.
+	 */
+	bool pad_to_align;
 };
 
 struct ipu_sram_read {

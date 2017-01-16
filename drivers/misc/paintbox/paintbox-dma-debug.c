@@ -382,17 +382,254 @@ static inline const char *dma_rgba_to_str(uint32_t val)
 	};
 }
 
+static int dump_chan_mode_register(struct paintbox_data *pb,
+		uint32_t reg_offset, uint32_t val, char *buf, int *written,
+		size_t len)
+{
+	int ret, buf_offset = written ? *written : 0;
+
+	ret = dump_dma_reg_verbose(pb, reg_offset, val, buf, &buf_offset, len,
+			"\tGATHER %u ADDR_MODE %s DST %s SRC %s ENA %u\n",
+			!!(val & DMA_CHAN_GATHER),
+			val & DMA_CHAN_ADDR_MODE_PHYSICAL ? "PHYSICAL" :
+			"ABSTRACT",
+			dma_dst_to_str(val),
+			dma_src_to_str(val),
+			!!(val & DMA_CHAN_ENA));
+	if (ret < 0)
+		return ret;
+
+	if (written)
+		*written = buf_offset;
+
+	return ret;
+}
+
+static int dump_chan_img_format_register(struct paintbox_data *pb,
+		uint32_t reg_offset, uint32_t val, char *buf, int *written,
+		size_t len)
+{
+	int ret, buf_offset = written ? *written : 0;
+
+	ret = dump_dma_reg_verbose(pb, reg_offset, val, buf, &buf_offset, len,
+			"\tBLOCK_4x4 %u RGBA %s MIPI_RAW_FORMAT %d BIT DEPTH %u"
+			" PLANES %u COMPONENTS %u\n",
+			!!(val & DMA_CHAN_BLOCK_4X4),
+			dma_rgba_to_str(val),
+			!!(val & DMA_CHAN_MIPI_RAW_FORMAT),
+			get_bit_depth(val),
+			((val & DMA_CHAN_PLANES_MASK) >>
+					DMA_CHAN_PLANES_SHIFT) + 1,
+			(val & DMA_CHAN_COMPONENTS_MASK) + 1);
+	if (ret < 0)
+		return ret;
+
+	if (written)
+		*written = buf_offset;
+
+	return ret;
+}
+
+static int dump_chan_img_size_register(struct paintbox_data *pb,
+		uint32_t reg_offset, uint32_t val, char *buf, int *written,
+		size_t len)
+{
+	int ret, buf_offset = written ? *written : 0;
+
+	ret = dump_dma_reg_verbose(pb, reg_offset, val, buf, &buf_offset, len,
+			"\tIMG_HEIGHT %u IMG_WIDTH %u\n",
+			(val & DMA_CHAN_IMG_HEIGHT_MASK) >>
+					DMA_CHAN_IMG_HEIGHT_SHIFT,
+			val & DMA_CHAN_IMG_SIZE_MASK);
+	if (ret < 0)
+		return ret;
+
+	if (written)
+		*written = buf_offset;
+
+	return ret;
+}
+
+/* TODO(ahampson):  Remove high/low values once this part of the driver has
+ * been converted to 64bit ops.
+ */
+static int dump_chan_img_position_register(struct paintbox_data *pb,
+		uint32_t reg_offset, uint32_t low_val, uint32_t high_val,
+		char *buf, int *written, size_t len)
+{
+	int ret, buf_offset = written ? *written : 0;
+
+	ret = dump_dma_reg(pb, reg_offset, low_val, buf, &buf_offset, len);
+	if (ret < 0)
+		return ret;
+
+	ret = dump_dma_reg_verbose(pb, reg_offset + sizeof(uint32_t), high_val,
+			buf, &buf_offset, len,
+			"\tLB_START_Y %d LB_START_X %d START_Y %u START_X %u\n",
+			(int16_t)((high_val & DMA_CHAN_LB_START_Y_MASK) >>
+					DMA_CHAN_LB_START_Y_SHIFT),
+			(int16_t)(high_val & DMA_CHAN_LB_START_X_MASK),
+			(low_val & DMA_CHAN_START_Y_MASK) >>
+					DMA_CHAN_START_Y_SHIFT,
+			low_val & DMA_CHAN_START_X_MASK);
+	if (ret < 0)
+		return ret;
+
+	if (written)
+		*written = buf_offset;
+
+	return ret;
+}
+
+/* TODO(ahampson):  Remove high/low values once this part of the driver has
+ * been converted to 64bit ops.
+ */
+static int dump_chan_img_layout_register(struct paintbox_data *pb,
+		uint32_t reg_offset, uint32_t low_val, uint32_t high_val,
+		char *buf, int *written, size_t len)
+{
+	int ret, buf_offset = written ? *written : 0;
+	uint64_t plane_stride;
+	uint32_t row_stride;
+
+	ret = dump_dma_reg(pb, reg_offset, low_val, buf, &buf_offset, len);
+	if (ret < 0)
+		return ret;
+
+	row_stride = low_val & DMA_CHAN_ROW_STRIDE_MASK;
+	plane_stride = (low_val & DMA_CHAN_PLANE_STRIDE_LOW_MASK) >>
+			DMA_CHAN_PLANE_STRIDE_LOW_SHIFT;
+	plane_stride |= (uint64_t)(high_val &
+			DMA_CHAN_PLANE_STRIDE_HIGH_MASK) <<
+			DMA_CHAN_PLANE_STRIDE_LOW_WIDTH;
+
+	ret = dump_dma_reg_verbose(pb, DMA_CHAN_IMG_LAYOUT_H, high_val, buf,
+			&buf_offset, len, "\tROW_STRIDE %u PLANE_STRIDE %llu\n",
+			row_stride, plane_stride);
+	if (ret < 0)
+		return ret;
+
+	if (written)
+		*written = buf_offset;
+
+	return ret;
+}
+
+static int dump_chan_bif_transfer_register(struct paintbox_data *pb,
+		uint32_t reg_offset, uint32_t val, char *buf, int *written,
+		size_t len)
+{
+	int ret, buf_offset = written ? *written : 0;
+
+	ret = dump_dma_reg_verbose(pb, reg_offset, val, buf, &buf_offset,
+			len, "\tOUTSTANDING %u STRIPE_HEIGHT %u\n",
+			(val & DMA_CHAN_OUTSTANDING_MASK) >>
+					DMA_CHAN_OUTSTANDING_SHIFT,
+			val & DMA_CHAN_STRIPE_HEIGHT_MASK);
+	if (ret < 0)
+		return ret;
+
+	if (written)
+		*written = buf_offset;
+
+	return ret;
+}
+
+/* TODO(ahampson):  Remove high/low values once this part of the driver has
+ * been converted to 64bit ops.
+ */
+static int dump_chan_va_register(struct paintbox_data *pb, uint32_t reg_offset,
+		uint32_t low_val, uint32_t high_val, char *buf, int *written,
+		size_t len)
+{
+	int ret, buf_offset = written ? *written : 0;
+	uint64_t va;
+
+	ret = dump_dma_reg(pb, reg_offset, low_val, buf, &buf_offset, len);
+	if (ret < 0)
+		return ret;
+
+	va = low_val;
+	va |= ((uint64_t)high_val) << 32;
+
+	return dump_dma_reg_verbose(pb, reg_offset + sizeof(uint32_t), high_val,
+			buf, written, len, "\tVA 0x%016llx\n", va);
+}
+
+/* TODO(ahampson):  Remove high/low values once this part of the driver has
+ * been converted to 64bit ops.
+ */
+static int dump_chan_va_bdry_register(struct paintbox_data *pb,
+		uint32_t reg_offset, uint32_t low_val, uint32_t high_val,
+		char *buf, int *written, size_t len)
+{
+	int ret;
+	uint64_t va_bdry;
+
+	ret = dump_dma_reg(pb, reg_offset, low_val, buf, written, len);
+	if (ret < 0)
+		return ret;
+
+	va_bdry = low_val;
+	va_bdry |= ((uint64_t)high_val) << 32;
+
+	return dump_dma_reg_verbose(pb, reg_offset + sizeof(uint32_t), high_val,
+			buf, written, len, "\tVA BDRY %llu\n", va_bdry);
+}
+
+/* TODO(ahampson):  Remove high/low values once this part of the driver has
+ * been converted to 64bit ops.
+ */
+static int dump_chan_noc_transfer_register(struct paintbox_data *pb,
+		uint32_t reg_offset, uint32_t low_val, uint32_t high_val,
+		char *buf, int *written, size_t len)
+{
+	int ret;
+
+	ret = dump_dma_reg_verbose(pb, reg_offset, low_val, buf, written, len,
+			"\tOUTSTANDING %u SHEET_HEIGHT %u SHEET_WIDTH %u\n",
+			(low_val & DMA_CHAN_NOC_OUTSTANDING_MASK) >>
+					DMA_CHAN_NOC_OUTSTANDING_SHIFT,
+			(low_val & DMA_CHAN_SHEET_HEIGHT_MASK) >>
+					DMA_CHAN_SHEET_HEIGHT_SHIFT,
+			low_val & DMA_CHAN_SHEET_WIDTH_MASK);
+	if (ret < 0)
+		return ret;
+
+	return dump_dma_reg_verbose(pb, reg_offset + sizeof(uint32_t), high_val,
+			buf, written, len,
+			"\tDYN_OUTSTANDING %d RETRY_INTERVAL %u\n",
+			!!(high_val & DMA_CHAN_NOC_XFER_DYN_OUTSTANDING_MASK),
+			high_val & DMA_CHAN_RETRY_INTERVAL_MASK);
+}
+
+static int dump_chan_node_register(struct paintbox_data *pb,
+		uint32_t reg_offset, uint32_t val, char *buf, int *written,
+		size_t len)
+{
+	return dump_dma_reg_verbose(pb, reg_offset, val, buf, written, len,
+			"\tCORE_ID %u LB_ID %u RPTR_ID %u\n",
+			val & DMA_CHAN_CORE_ID_MASK,
+			(val & DMA_CHAN_LB_ID_MASK) >> DMA_CHAN_LB_ID_SHIFT,
+			(val & DMA_CHAN_RPTR_ID_MASK) >>
+					DMA_CHAN_RPTR_ID_SHIFT);
+}
+
+static inline uint32_t get_reg_value(uint32_t *reg_values,
+		uint32_t reg_offset)
+{
+	return reg_values[REG_INDEX(reg_offset - DMA_CHAN_BLOCK_START)];
+}
+
 int dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
 			size_t len)
 {
-	uint32_t dma_channel_registers[DMA_CHAN_NUM_REGS];
+	uint32_t reg_values[DMA_CHAN_NUM_REGS];
 	struct paintbox_dma_channel *channel = container_of(debug,
 			struct paintbox_dma_channel, debug);
 	struct paintbox_data *pb = debug->pb;
 	unsigned long irq_flags;
-	uint64_t va, va_bdry, plane_stride;
-	uint32_t val, row_stride;
-	unsigned int i, reg_offset;
+	unsigned int reg_offset;
 	int ret, written = 0;
 
 	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
@@ -404,178 +641,159 @@ int dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
 		if (!dma_reg_names[REG_INDEX(reg_offset)])
 			continue;
 
-		dma_channel_registers[REG_INDEX(reg_offset -
-				DMA_CHAN_BLOCK_START)] =
+		reg_values[REG_INDEX(reg_offset - DMA_CHAN_BLOCK_START)] =
 				readl(pb->dma.dma_base + reg_offset);
 	}
 
 	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 
-	val = dma_channel_registers[REG_INDEX(DMA_CHAN_MODE -
-			DMA_CHAN_BLOCK_START)];
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_MODE, val, buf, &written, len,
-			"\tGATHER %u ADDR_MODE %s DST %s SRC %s ENA %u\n",
-			!!(val & DMA_CHAN_GATHER),
-			val & DMA_CHAN_ADDR_MODE_PHYSICAL ? "PHYSICAL" :
-			"ABSTRACT",
-			dma_dst_to_str(val),
-			dma_src_to_str(val),
-			!!(val & DMA_CHAN_ENA));
+	ret = dump_chan_mode_register(pb, DMA_CHAN_MODE,
+			get_reg_value(reg_values, DMA_CHAN_MODE), buf, &written,
+			len);
 	if (ret < 0)
 		goto err_exit;
 
-	val = dma_channel_registers[REG_INDEX(DMA_CHAN_IMG_FORMAT -
-			DMA_CHAN_BLOCK_START)];
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_IMG_FORMAT, val, buf, &written,
-			len,
-			"\tBLOCK_4x4 %u RGBA %s MIPI_RAW_FORMAT %d BIT DEPTH %u"
-			" PLANES %u COMPONENTS %u\n",
-			!!(val & DMA_CHAN_BLOCK_4X4),
-			dma_rgba_to_str(val),
-			!!(val & DMA_CHAN_MIPI_RAW_FORMAT),
-			get_bit_depth(val),
-			((val & DMA_CHAN_PLANES_MASK) >>
-					DMA_CHAN_PLANES_SHIFT) + 1,
-			(val & DMA_CHAN_COMPONENTS_MASK) + 1);
+	ret = dump_chan_img_format_register(pb, DMA_CHAN_IMG_FORMAT,
+			get_reg_value(reg_values, DMA_CHAN_IMG_FORMAT),
+			buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	val = dma_channel_registers[REG_INDEX(DMA_CHAN_IMG_SIZE -
-			DMA_CHAN_BLOCK_START)];
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_IMG_SIZE, val, buf, &written,
-			len,
-			"\tIMG_HEIGHT %u IMG_WIDTH %u\n",
-			(val & DMA_CHAN_IMG_HEIGHT_MASK) >>
-					DMA_CHAN_IMG_HEIGHT_SHIFT,
-			val & DMA_CHAN_IMG_SIZE_MASK);
+	ret = dump_chan_img_size_register(pb, DMA_CHAN_IMG_SIZE,
+			get_reg_value(reg_values, DMA_CHAN_IMG_SIZE), buf,
+			&written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	val = dma_channel_registers[REG_INDEX(DMA_CHAN_IMG_POS_L -
-			DMA_CHAN_BLOCK_START)];
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_IMG_POS_L, val, buf, &written,
-			len, "\tSTART_Y %u START_X %u\n",
-			(val & DMA_CHAN_START_Y_MASK) >> DMA_CHAN_START_Y_SHIFT,
-			val & DMA_CHAN_START_X_MASK);
+	ret = dump_chan_img_position_register(pb, DMA_CHAN_IMG_POS_L,
+			get_reg_value(reg_values, DMA_CHAN_IMG_POS_L),
+			get_reg_value(reg_values, DMA_CHAN_IMG_POS_H),
+			buf,&written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	val = dma_channel_registers[REG_INDEX(DMA_CHAN_IMG_POS_H -
-			DMA_CHAN_BLOCK_START)];
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_IMG_POS_H, val, buf, &written,
-			len, "\tLB_START_Y %d LB_START_X %d\n",
-			(int16_t)((val & DMA_CHAN_LB_START_Y_MASK) >>
-					DMA_CHAN_LB_START_Y_SHIFT),
-			(int16_t)(val & DMA_CHAN_LB_START_X_MASK));
+	ret = dump_chan_img_layout_register(pb, DMA_CHAN_IMG_LAYOUT_L,
+			get_reg_value(reg_values, DMA_CHAN_IMG_LAYOUT_L),
+			get_reg_value(reg_values, DMA_CHAN_IMG_LAYOUT_H),
+			buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	val = dma_channel_registers[REG_INDEX(DMA_CHAN_IMG_LAYOUT_L -
-			DMA_CHAN_BLOCK_START)];
-	ret = dump_dma_reg(pb, DMA_CHAN_IMG_LAYOUT_L, val, buf, &written, len);
+	ret = dump_chan_bif_transfer_register(pb, DMA_CHAN_BIF_XFER,
+			get_reg_value(reg_values, DMA_CHAN_BIF_XFER), buf,
+			&written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	row_stride = val & DMA_CHAN_ROW_STRIDE_MASK;
-	plane_stride = (val & DMA_CHAN_PLANE_STRIDE_LOW_MASK) >>
-			DMA_CHAN_PLANE_STRIDE_LOW_SHIFT;
-
-	val = dma_channel_registers[REG_INDEX(DMA_CHAN_IMG_LAYOUT_H -
-			DMA_CHAN_BLOCK_START)];
-
-	plane_stride |= (uint64_t)(val & DMA_CHAN_PLANE_STRIDE_HIGH_MASK) <<
-			DMA_CHAN_PLANE_STRIDE_LOW_WIDTH;
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_IMG_LAYOUT_H, val, buf,
-			&written, len, "\tROW_STRIDE %u PLANE_STRIDE %llu\n",
-			row_stride, plane_stride);
+	ret = dump_chan_va_register(pb, DMA_CHAN_VA_L,
+			get_reg_value(reg_values, DMA_CHAN_VA_L),
+			get_reg_value(reg_values, DMA_CHAN_VA_H),
+			buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	val = dma_channel_registers[REG_INDEX(DMA_CHAN_BIF_XFER -
-			DMA_CHAN_BLOCK_START)];
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_BIF_XFER, val, buf, &written,
-			len, "\tOUTSTANDING %u STRIPE_HEIGHT %u\n",
-			(val & DMA_CHAN_OUTSTANDING_MASK) >>
-					DMA_CHAN_OUTSTANDING_SHIFT,
-			val & DMA_CHAN_STRIPE_HEIGHT_MASK);
+	ret = dump_chan_va_bdry_register(pb, DMA_CHAN_VA_BDRY_L,
+			get_reg_value(reg_values, DMA_CHAN_VA_BDRY_L),
+			get_reg_value(reg_values, DMA_CHAN_VA_BDRY_H),
+			buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	val = dma_channel_registers[REG_INDEX(DMA_CHAN_VA_L -
-			DMA_CHAN_BLOCK_START)];
-	ret = dump_dma_reg(pb, DMA_CHAN_VA_L, val, buf, &written, len);
+	ret = dump_chan_noc_transfer_register(pb, DMA_CHAN_NOC_XFER_L,
+			get_reg_value(reg_values, DMA_CHAN_NOC_XFER_L),
+			get_reg_value(reg_values, DMA_CHAN_NOC_XFER_H),
+			buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	va = dma_channel_registers[REG_INDEX(DMA_CHAN_VA_L -
-			DMA_CHAN_BLOCK_START)];
-	va |= ((uint64_t)dma_channel_registers[REG_INDEX(DMA_CHAN_VA_H -
-			DMA_CHAN_BLOCK_START)]) << 32;
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_VA_H, val, buf, &written, len,
-			"\tVA 0x%016llx\n", va);
+	ret = dump_chan_node_register(pb, DMA_CHAN_NODE,
+			get_reg_value(reg_values, DMA_CHAN_NODE), buf,
+			&written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	val = dma_channel_registers[REG_INDEX(DMA_CHAN_VA_BDRY_L -
-			DMA_CHAN_BLOCK_START)];
-	ret = dump_dma_reg(pb, DMA_CHAN_VA_BDRY_L, val, buf, &written, len);
+	ret = dump_dma_reg(pb, DMA_CHAN_IMR,
+			get_reg_value(reg_values, DMA_CHAN_IMR), buf, &written,
+			len);
 	if (ret < 0)
 		goto err_exit;
 
-	va_bdry = dma_channel_registers[REG_INDEX(DMA_CHAN_VA_BDRY_L -
-			DMA_CHAN_BLOCK_START)];
-	va_bdry |= ((uint64_t)dma_channel_registers[
-			REG_INDEX(DMA_CHAN_VA_BDRY_H -
-			DMA_CHAN_BLOCK_START)]) << 32;
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_VA_BDRY_H, val, buf, &written,
-			len, "\tVA BDRY %llu\n", va_bdry);
+	ret = dump_dma_reg(pb, DMA_CHAN_ISR,
+			get_reg_value(reg_values, DMA_CHAN_ISR), buf, &written,
+			len);
 	if (ret < 0)
 		goto err_exit;
 
-	val = dma_channel_registers[REG_INDEX(DMA_CHAN_NOC_XFER_L -
-			DMA_CHAN_BLOCK_START)];
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_NOC_XFER_L, val, buf, &written,
-			len,
-			"\tOUTSTANDING %u SHEET_HEIGHT %u SHEET_WIDTH %u\n",
-			(val & DMA_CHAN_NOC_OUTSTANDING_MASK) >>
-					DMA_CHAN_NOC_OUTSTANDING_SHIFT,
-			(val & DMA_CHAN_SHEET_HEIGHT_MASK) >>
-					DMA_CHAN_SHEET_HEIGHT_SHIFT,
-			val & DMA_CHAN_SHEET_WIDTH_MASK);
+	ret = dump_dma_reg(pb, DMA_CHAN_ISR_OVF,
+			get_reg_value(reg_values, DMA_CHAN_ISR_OVF), buf,
+			&written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	val = dma_channel_registers[REG_INDEX(DMA_CHAN_NOC_XFER_H -
-			DMA_CHAN_BLOCK_START)];
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_NOC_XFER_H, val, buf, &written,
-			len, "\tDYN_OUTSTANDING %d RETRY_INTERVAL %u\n",
-			!!(val & DMA_CHAN_NOC_XFER_DYN_OUTSTANDING_MASK),
-			val & DMA_CHAN_RETRY_INTERVAL_MASK);
+	ret = dump_chan_mode_register(pb, DMA_CHAN_MODE_RO,
+			get_reg_value(reg_values, DMA_CHAN_MODE_RO), buf,
+			&written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	val = dma_channel_registers[REG_INDEX(DMA_CHAN_NODE -
-			DMA_CHAN_BLOCK_START)];
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_NODE, val, buf, &written, len,
-			"\tCORE_ID %u LB_ID %u RPTR_ID %u\n",
-			val & DMA_CHAN_CORE_ID_MASK,
-			(val & DMA_CHAN_LB_ID_MASK) >> DMA_CHAN_LB_ID_SHIFT,
-			(val & DMA_CHAN_RPTR_ID_MASK) >>
-					DMA_CHAN_RPTR_ID_SHIFT);
+	ret = dump_chan_img_format_register(pb, DMA_CHAN_IMG_FORMAT_RO,
+			get_reg_value(reg_values, DMA_CHAN_IMG_FORMAT_RO),
+			buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	for (i = REG_INDEX(DMA_CHAN_IMR); i <= REG_INDEX(DMA_CHAN_NODE_RO);
-			i++) {
-		if (dma_reg_names[i] != NULL) {
-			val = dma_channel_registers[i -
-					REG_INDEX(DMA_CHAN_BLOCK_START)];
-			ret = dump_dma_reg(pb, i * IPU_REG_WIDTH, val, buf,
-					&written, len);
-			if (ret < 0)
-				goto err_exit;
-		}
-	}
+	ret = dump_chan_img_size_register(pb, DMA_CHAN_IMG_SIZE_L_RO,
+			get_reg_value(reg_values, DMA_CHAN_IMG_SIZE_L_RO), buf,
+			&written, len);
+	if (ret < 0)
+		goto err_exit;
+
+	ret = dump_chan_img_position_register(pb, DMA_CHAN_IMG_POS_L_RO,
+			get_reg_value(reg_values, DMA_CHAN_IMG_POS_L_RO),
+			get_reg_value(reg_values, DMA_CHAN_IMG_POS_H_RO),
+			buf, &written, len);
+	if (ret < 0)
+		goto err_exit;
+
+	ret = dump_chan_img_layout_register(pb, DMA_CHAN_IMG_LAYOUT_L_RO,
+			get_reg_value(reg_values, DMA_CHAN_IMG_LAYOUT_L_RO),
+			get_reg_value(reg_values, DMA_CHAN_IMG_LAYOUT_H_RO),
+			buf, &written, len);
+	if (ret < 0)
+		goto err_exit;
+
+	ret = dump_chan_bif_transfer_register(pb, DMA_CHAN_BIF_XFER_RO,
+			get_reg_value(reg_values, DMA_CHAN_BIF_XFER_RO), buf,
+			&written, len);
+	if (ret < 0)
+		goto err_exit;
+
+	ret = dump_chan_va_register(pb, DMA_CHAN_VA_L,
+			get_reg_value(reg_values, DMA_CHAN_VA_L_RO),
+			get_reg_value(reg_values, DMA_CHAN_VA_H_RO),
+			buf, &written, len);
+	if (ret < 0)
+		goto err_exit;
+
+	ret = dump_chan_va_bdry_register(pb, DMA_CHAN_VA_BDRY_L_RO,
+			get_reg_value(reg_values, DMA_CHAN_VA_BDRY_L_RO),
+			get_reg_value(reg_values, DMA_CHAN_VA_BDRY_H_RO),
+			buf, &written, len);
+	if (ret < 0)
+		goto err_exit;
+
+	ret = dump_chan_noc_transfer_register(pb, DMA_CHAN_NOC_XFER_L_RO,
+			get_reg_value(reg_values, DMA_CHAN_NOC_XFER_L_RO),
+			get_reg_value(reg_values, DMA_CHAN_NOC_XFER_H_RO),
+			buf, &written, len);
+	if (ret < 0)
+		goto err_exit;
+
+	ret = dump_chan_node_register(pb, DMA_CHAN_NODE_RO,
+			get_reg_value(reg_values, DMA_CHAN_NODE_RO), buf,
+			&written, len);
+	if (ret < 0)
+		goto err_exit;
 
 	return written;
 
@@ -585,42 +803,55 @@ err_exit:
 	return ret;
 }
 
+/* The caller to this function must hold pb->dma.dma_lock. */
 void log_dma_registers(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel, const char *msg)
 {
-	int ret, written;
+	dev_info(&pb->pdev->dev, "%s\n", msg);
+	dump_chan_mode_register(pb, DMA_CHAN_MODE_RO,
+			readl(pb->dma.dma_base + DMA_CHAN_MODE_RO),
+			NULL, NULL, 0);
 
-	ret = snprintf(pb->vdbg_log, pb->vdbg_log_len, "dma:\n");
-	if (ret < 0)
-		goto err_exit;
+	dump_chan_img_format_register(pb, DMA_CHAN_IMG_FORMAT_RO,
+			readl(pb->dma.dma_base + DMA_CHAN_IMG_FORMAT_RO),
+			NULL, NULL, 0);
 
-	written = ret;
+	dump_chan_img_size_register(pb, DMA_CHAN_IMG_SIZE_L_RO,
+			readl(pb->dma.dma_base + DMA_CHAN_IMG_SIZE_L_RO),
+			NULL, NULL, 0);
 
-	ret = dump_dma_registers(&pb->dma.debug, pb->vdbg_log + written,
-			pb->vdbg_log_len - written);
-	if (ret < 0)
-		goto err_exit;
+	dump_chan_img_position_register(pb, DMA_CHAN_IMG_POS_L_RO,
+			readl(pb->dma.dma_base + DMA_CHAN_IMG_POS_L_RO),
+			readl(pb->dma.dma_base + DMA_CHAN_IMG_POS_H_RO),
+			NULL, NULL, 0);
 
-	dev_vdbg(&pb->pdev->dev, "%s\n%s", msg, pb->vdbg_log);
+	dump_chan_img_layout_register(pb, DMA_CHAN_IMG_LAYOUT_L_RO,
+			readl(pb->dma.dma_base + DMA_CHAN_IMG_LAYOUT_L_RO),
+			readl(pb->dma.dma_base + DMA_CHAN_IMG_LAYOUT_H_RO),
+			NULL, NULL, 0);
 
-	ret = snprintf(pb->vdbg_log, pb->vdbg_log_len, "dma ch%u:\n",
-			channel->channel_id);
-	if (ret < 0)
-		goto err_exit;
+	dump_chan_bif_transfer_register(pb, DMA_CHAN_BIF_XFER_RO,
+			readl(pb->dma.dma_base + DMA_CHAN_BIF_XFER_RO),
+			NULL, NULL, 0);
 
-	written = ret;
+	dump_chan_va_register(pb, DMA_CHAN_VA_L,
+			readl(pb->dma.dma_base + DMA_CHAN_VA_L_RO),
+			readl(pb->dma.dma_base + DMA_CHAN_VA_H_RO),
+			NULL, NULL,  0);
 
-	ret = dump_dma_channel_registers(
-			&pb->dma.channels[channel->channel_id].debug,
-			pb->vdbg_log + written, pb->vdbg_log_len - written);
-	if (ret < 0)
-		goto err_exit;
+	dump_chan_va_bdry_register(pb, DMA_CHAN_VA_BDRY_L_RO,
+			readl(pb->dma.dma_base + DMA_CHAN_VA_BDRY_L_RO),
+			readl(pb->dma.dma_base + DMA_CHAN_VA_BDRY_H_RO),
+			NULL, NULL, 0);
 
-	dev_vdbg(&pb->pdev->dev, "%s\n%s", msg, pb->vdbg_log);
+	dump_chan_noc_transfer_register(pb, DMA_CHAN_NOC_XFER_L_RO,
+			readl(pb->dma.dma_base + DMA_CHAN_NOC_XFER_L_RO),
+			readl(pb->dma.dma_base + DMA_CHAN_NOC_XFER_H_RO),
+			NULL, NULL, 0);
 
-err_exit:
-	dev_err(&pb->pdev->dev, "%s: register log error, err = %d", __func__,
-			ret);
+	dump_chan_node_register(pb, DMA_CHAN_NODE_RO,
+			readl(pb->dma.dma_base + DMA_CHAN_NODE_RO),
+			NULL, NULL, 0);
 }
 
 int dump_dma_channel_stats(struct paintbox_debug *debug, char *buf,

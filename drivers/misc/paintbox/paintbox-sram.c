@@ -289,10 +289,14 @@ int sram_write_buffer(struct paintbox_data *pb,
 
 		ram_ctrl_addr = get_scalar_address(sram_word_addr);
 
-		ret = sram_config->read_word(pb, sram_config, transfer_buf,
-				ram_ctrl_addr);
-		if (ret < 0)
-			return ret;
+		if (sram_config->pad_to_align) {
+			memset(transfer_buf, 0, sram_config->sram_word_bytes);
+		} else {
+			ret = sram_config->read_word(pb, sram_config,
+					transfer_buf, ram_ctrl_addr);
+			if (ret < 0)
+				return ret;
+		}
 
 		memcpy(transfer_buf + byte_offset_in_word, buf,
 				short_write_len);
@@ -330,10 +334,14 @@ int sram_write_buffer(struct paintbox_data *pb,
 
 		ram_ctrl_addr = get_scalar_address(sram_word_addr);
 
-		ret = sram_config->read_word(pb, sram_config, transfer_buf,
-				ram_ctrl_addr);
-		if (ret < 0)
-			return ret;
+		if (sram_config->pad_to_align) {
+			memset(transfer_buf, 0, sram_config->sram_word_bytes);
+		} else {
+			ret = sram_config->read_word(pb, sram_config,
+					transfer_buf, ram_ctrl_addr);
+			if (ret < 0)
+				return ret;
+		}
 
 		memcpy(transfer_buf, buf + bytes_written, bytes_remaining);
 

@@ -53,6 +53,7 @@ struct paintbox_sram_config {
 	unsigned int ram_data_mode;
 	unsigned int core_id;
 	size_t sram_word_bytes;
+	bool pad_to_align;
 	int (*write_word)(struct paintbox_data *pb,
 			struct paintbox_sram_config *sram_config,
 			const uint8_t *buf, uint32_t ram_ctrl_addr);
