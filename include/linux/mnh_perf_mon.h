@@ -142,6 +142,8 @@ struct perf_result {
 
 #define SCU_INf(reg, fld)		HW_INf(perf_mon_dev->scu, SCU, reg,\
 						fld)
+#define SCU_OUTf(reg, fld, val)		HW_OUTf(perf_mon_dev->scu, SCU, reg,\
+							fld, val)
 
 
 

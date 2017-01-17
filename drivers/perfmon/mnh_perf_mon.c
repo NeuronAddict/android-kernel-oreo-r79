@@ -53,6 +53,7 @@
 
 struct mnh_perf_mon_device *perf_mon_dev;
 static uint32_t perfmon_stop_free_test(void);
+static void init_perfmon(void);
 
 static uint32_t read_emulation_setting(void)
 {
@@ -255,10 +256,12 @@ static uint32_t perfmon_start_test(uint64_t time)
 			|| (time == 0))
 		return 3;
 	ticks = perf_mon_dev->axi_speed * time; /* need to correct */
+	/* Enable Clock */
+	SCU_OUTf(RSTC, PMON_RST, 1);
+	SCU_OUTf(CCU_CLK_CTL, PMON_CLKEN, 1);
+	SCU_OUTf(RSTC, PMON_RST, 0);
 	/* program registers */
-	PMON_OUTf(GLOBAL_CTRL, GLBL_CLR, 1);
-	PMON_OUTf(GLOBAL_CTRL, GLBL_CLR, 0);
-	PMON_OUTf(GLOBAL_CTRL, GLBL_EN, 1);
+	init_perfmon();
 	PMON_OUT(SNAPSHOT_TIME_LO, LOWER(ticks));
 	PMON_OUT(SNAPSHOT_TIME_HI, UPPER(ticks));
 	if (config_prmu() == 1)
@@ -394,8 +397,10 @@ static irqreturn_t perfmon_handle_irq(int irq, void *dev_id)
 	uint32_t prmu_irq;
 	/* check actual interrupt content */
 	if (PMON_INf(IRQ_STATUS, SNAPSHOT_TIME_INTR_STS) == 1) {
-		if (perf_mon_dev->status == 1)
+		if (perf_mon_dev->status == 1) {
 			perf_mon_dev->status = 2;
+			dev_err(perf_mon_dev->dev, "Perfmon timed test complete\n");
+		}
 		PMON_OUTf(IRQ_STATUS, SNAPSHOT_TIME_INTR_STS, 1);
 	}
 	if (PMON_INf(IRQ_STATUS, TIMESTAMP_OVFL_INTR_STS) == 1) {
@@ -435,10 +440,12 @@ static uint32_t perfmon_start_free_test(void)
 
 	if ((perf_mon_dev->status == 1) || (perf_mon_dev->status == 3))
 		return 1;
+	/* Enable Clock */
+	SCU_OUTf(RSTC, PMON_RST, 1);
+	SCU_OUTf(CCU_CLK_CTL, PMON_CLKEN, 1);
+	SCU_OUTf(RSTC, PMON_RST, 0);
 	/* program registers */
-	PMON_OUTf(GLOBAL_CTRL, GLBL_CLR, 1);
-	PMON_OUTf(GLOBAL_CTRL, GLBL_CLR, 0);
-	PMON_OUTf(GLOBAL_CTRL, GLBL_EN, 1);
+	init_perfmon();
 	dev_err(perf_mon_dev->dev, "GC programed\n");
 	PMON_OUT(SNAPSHOT_TIME_LO, 0x0);
 	PMON_OUT(SNAPSHOT_TIME_HI, 0x0);
@@ -467,13 +474,12 @@ static uint32_t perfmon_stop_free_test(void)
 
 static void init_perfmon(void)
 {
-	PMON_OUTf(GLOBAL_CTRL, GLBL_CLR, 1);
 	PMON_OUTf(GLOBAL_CTRL, GLBL_EN, 1);
-	PMON_OUTf(GLOBAL_CTRL, TIMESTAMP_CNT_CLR, 1);
 	PMON_OUTf(IRQ_ENABLE, SNAPSHOT_TIME_INTR_EN, 1);
 	PMON_OUTf(IRQ_ENABLE, TIMESTAMP_OVFL_INTR_EN, 1);
 	PMON_OUT(PRMU_INTR, 0x3F);
-
+	PMON_OUTf(GLOBAL_CTRL, GLBL_CLR, 1);
+	PMON_OUTf(GLOBAL_CTRL, GLBL_CLR, 0);
 }
 
 static int config_mem(struct platform_device *pdev)
@@ -1086,7 +1092,6 @@ static int mnh_perf_mon_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 	init_sysfs();
-	init_perfmon();
 	return 0;
 }
 
