@@ -46,14 +46,36 @@
 	mipi_tx0: mipidevice@04010000 {
 		compatible = "snps,mipicsi_device";
 		reg = <0x0 0x04010000 0x0 0xFFF>;
+                interrupts = <GIC_SPI 2 IRQ_TYPE_LEVEL_HIGH>;
 		device-id = "TX0";
+	};
+
+	mipi_tx1: mipidevice@04011000 {
+		compatible = "snps,mipicsi_device";
+		reg = <0x0 0x04011000 0x0 0xFFF>;
+                interrupts = <GIC_SPI 3 IRQ_TYPE_LEVEL_HIGH>;
+		device-id = "TX1";
 	};
 
 	mipi_rx0: mipihost@04012000 {
 		compatible = "snps,mipicsi_host";
 		reg = <0x0 0x04012000 0x0 0xFFF>;
-		interrupts = <GIC_SPI 4 IRQ_TYPE_EDGE_RISING>;
+		interrupts = <GIC_SPI 4 IRQ_TYPE_LEVEL_HIGH>;
 		device-id = "RX0";
+	};
+
+	mipi_rx1: mipihost@04013000 {
+		compatible = "snps,mipicsi_host";
+		reg = <0x0 0x04013000 0x0 0xFFF>;
+		interrupts = <GIC_SPI 5 IRQ_TYPE_LEVEL_HIGH>;
+		device-id = "RX1";
+	};
+
+	mipi_rx2: mipihost@04014000 {
+		compatible = "snps,mipicsi_host";
+		reg = <0x0 0x04014000 0x0 0xFFF>;
+		interrupts = <GIC_SPI 6 IRQ_TYPE_LEVEL_HIGH>;
+		device-id = "RX2";
 	};
 
 	mipitop: mipitop@04015000 {

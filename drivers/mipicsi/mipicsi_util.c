@@ -72,9 +72,10 @@ uint16_t mipicsi_util_get_max_bitrate(void)
 	return ((mipi_emulation == true) ? DC_MAX_BITRATE : G3_MAX_BITRATE);
 }
 
-void mipicsi_util_save_virt_addr(enum mipicsi_top_dev dev, void *base_addr)
+void mipicsi_util_save_virt_addr(struct mipi_dev *dev)
 {
-  dev_addr_map[dev] = base_addr;
+	pr_err("Device %d Base Addr 0x%x\n", dev->device_id, dev->base_address);
+	dev_addr_map[dev->device_id] = dev->base_address;
 }
 
 int mipicsi_util_write_top(uint16_t offset, uint32_t value)

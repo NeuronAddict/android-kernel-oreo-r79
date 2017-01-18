@@ -940,7 +940,6 @@ int mipicsi_device_probe(struct platform_device *pdev)
 	}
 
 	pr_info("MIPI DEV: ioremapped to %p\n", dev->base_address);
-	mipicsi_util_save_virt_addr(MIPI_TX0, dev->base_address);
 
 	/* Read emulation vs silicon setting */
 	mipicsi_util_read_emulation ();
@@ -976,6 +975,7 @@ int mipicsi_device_probe(struct platform_device *pdev)
 	} else {
 		dev->device_id = get_device_id(device_id_name);
 		mipicsi_set_device(dev->device_id, dev);
+		mipicsi_util_save_virt_addr(dev);
 	}
 	/* Now that everything is fine, let's add it to device list */
 	list_add_tail(&dev->devlist, &devlist_global);
