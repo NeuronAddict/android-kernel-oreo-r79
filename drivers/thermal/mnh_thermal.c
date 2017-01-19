@@ -1,24 +1,34 @@
 /*
- * mnh_thermal.c - MonhetteHill PVT Sensor Thermal driver
+ * Copyright (c) 2016, Intel Corporation. All rights reserved.
  *
- * Copyright (C) 2016 Intel Corporation
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ * Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; version 2 of the License.
+ * Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
  *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	See the GNU
- * General Public License for more details.
+ * Neither the name of Intel nor the names of its contributors may be used
+ * to endorse or promote products derived from this software without specific
+ * prior written permission.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program;
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
- * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
- * Author: Jimin Ha (jiminha@intel.com)
+ * Intel MonetteHill PVT Sensor Thermal driver
+ *
  */
 
 #include <linux/clk.h>
@@ -38,17 +48,21 @@
 #define MNH_BAD_ADDR  ((void *)0xFFFFFFFF)
 #define MNH_NUM_PVT_SENSORS 4
 
+/* Thermal characterization data */
 #define API_TRIM_CODE          0xF
 #define API_PRECISION_CODE     0x0
-#define NO_BITS_EFUSE          10
-#define API_BITS_SLOPE         5
-#define API_BITS_OFFSET        (NO_BITS_EFUSE-API_BITS_SLOPE)
 
-#define API_POLY_N4 -16743  // -1.6743e-11 : 15bits excluding sign
-#define API_POLY_N3 +81542  // +8.1542e-08 : 17bits excluding sign
-#define API_POLY_N2 -18201  // -1.8201e-04 : 15bits excluding sign
-#define API_POLY_N1 +31020  // +3.1020e-01 : 15bits excluding sign
-#define API_POLY_N0 -48380  // -4.8380e+01 : 16bits excluding sign
+/* Thermal efuse data */
+#define NUM_BITS_EFUSE          10
+#define API_BITS_SLOPE         5
+#define API_BITS_OFFSET        (NUM_BITS_EFUSE-API_BITS_SLOPE)
+
+/* Temperature calculation algorithm parameters */
+#define API_POLY_N4 (-16743)  /* -1.6743e-11 : 15bits excluding sign */
+#define API_POLY_N3 (+81542)  /* +8.1542e-08 : 17bits excluding sign */
+#define API_POLY_N2 (-18201)  /* -1.8201e-04 : 15bits excluding sign */
+#define API_POLY_N1 (+31020)  /* +3.1020e-01 : 15bits excluding sign */
+#define API_POLY_N0 (-48380)  /* -4.8380e+01 : 16bits excluding sign */
 
 #define N3_E15_MULTIPLIER 1000 /* 1e3*/
 #define N2_E15_MULTIPLIER 10000000 /* 1e7 */
@@ -59,7 +73,7 @@
 #define API_RES_OFFSET 1  /* 0.001000 */
 
 #define RES_SLOPE_DIVIDER 100000 /* 1e5 */
-#define RES_OFFSET_E15_MULTIPLIER 1000000000000/* 1e12 */
+#define RES_OFFSET_E15_MULTIPLIER 1000000000000 /* 1e12 */
 
 #define API_BITS_SLOPE_MASK    0x1F
 #define API_BITS_OFFSET_MASK   0x1F
@@ -67,6 +81,29 @@
 #define N15_DIVIDER  1000000000000000 /* 1e15 */
 #define N15_ROUNDING_NUM 500000000000000 /* 5e14 */
 
+/* PVT Data conversion wait time calculation
+ * PVT_FREQ: 1.15MHZ
+ * PVT_WAIT_CYCLE: 376 + marginal cycles
+ * PVT_WAIT_TIME: ((1/PVT_FREQ)*PVT_WAIT_CYCLE*PRECISION)
+ * Average samples: (1<<(PRECISION*2))
+ * PVT data conversion time:
+ *   temp/vol mode: 376 PVT_SENSOR_CLK cycles
+ *   process mode: 4 PVT_SENSOR_CLK cycles
+ */
+#define PVT_FREQ		1150
+#define PVT_FREQ_UNIT   1000000
+#define PVT_CYCLE		(PVT_FREQ_UNIT/PVT_FREQ)
+#define PVT_WAIT_CYCLE	390
+#define PVT_WAIT_MS		(((PVT_CYCLE*PVT_WAIT_CYCLE* \
+	(1<<(API_PRECISION_CODE*2)))/PVT_FREQ_UNIT)+1)
+
+/* PVT debug messages definition */
+#define MNH_THERM_DBG 1
+#if MNH_THERM_DBG
+#define mnh_debug pr_err
+#else
+#define mnh_debug pr_debug
+#endif
 
 struct mnh_thermal_sensor {
 	struct mnh_thermal_device *dev;
@@ -81,6 +118,7 @@ struct mnh_thermal_device {
 	struct reset_control *reset;
 	void __iomem *regs;
 	uint32_t emulation;
+	uint32_t wait_time_ms;
 	struct mnh_thermal_sensor *sensors[MNH_NUM_PVT_SENSORS];
 };
 
@@ -109,6 +147,7 @@ static void read_efuse_trim(struct mnh_thermal_device *dev)
 	uint32_t i=0, val;
 	int slope, offset;
 
+	/* Read thermal zone configuration */
 	np = of_find_node_by_name(NULL, "thermal-zones");
 	if (!np)
 		return; /* Not able to find */
@@ -126,19 +165,16 @@ static void read_efuse_trim(struct mnh_thermal_device *dev)
 			offset = val & API_BITS_OFFSET_MASK;
 			if (offset >= 16) offset = offset - 32;
 
-			dev_dbg(&dev->sensors[i]->tzd->device,
-				"sensor[%d]: efuse[0x%x] - s:%d,o:%d\n",
+			mnh_debug("pvt%d efuse:0x%x, s:%d, o:%d\n",
 				i, val, slope, offset);
 
 			dev->sensors[i]->slope = slope;
 			dev->sensors[i]->offset = offset;
-
 		}
 		i++;
 	}
 
 	return;
-
 }
 
 /*
@@ -162,48 +198,52 @@ static int calculate_temp(int code, int slope, int offset)
 	int T, Final_Temp;
 
 
-	pr_debug("calculate_temp: code:%d, slope:%d, offset:%d",
+	mnh_debug("temp code:%d, slope:%d, offset:%d",
 		code, slope, offset);
 
 	/* Make sure code is 10bit */
 	code = code & 0x3FF;
 
-	/* Calculate raw code to DegC */
-	n4_ = (long)code*code*code*code * API_POLY_N4;			// 55bits
-	n3_ = (long)code*code*code * API_POLY_N3 * N3_E15_MULTIPLIER;	// 57bits
-	n2_ = (long)code*code * API_POLY_N2 * N2_E15_MULTIPLIER;	// 55bits
-	n1_ = (long)code * API_POLY_N1 * N1_E15_MULTIPLIER; 		// 56bits
-	n0_ = API_POLY_N0 * N0_E15_MULTIPLIER;				// 56bits
-	n01234_ = n4_ + n3_ + n2_ + n1_ + n0_;				// 59bits
-	pr_debug("n01234_:%ld\n", n01234_);
+	/* Calculate DegC
+	 * n4: 55bits
+	 * n3: 57bits
+	 * n2: 55bits
+	 * n1: 56bits
+	 * n0: 59bits
+	 */
+	n4_ = (long)code*code*code*code * API_POLY_N4;
+	n3_ = (long)code*code*code * API_POLY_N3 * N3_E15_MULTIPLIER;
+	n2_ = (long)code*code * API_POLY_N2 * N2_E15_MULTIPLIER;
+	n1_ = (long)code * API_POLY_N1 * N1_E15_MULTIPLIER;
+	n0_ = API_POLY_N0 * N0_E15_MULTIPLIER;
+	n01234_ = n4_ + n3_ + n2_ + n1_ + n0_;
 
 	T = (n01234_ + N15_ROUNDING_NUM) / N15_DIVIDER;
-	pr_debug("T = %d\n", T);
 
 	/* n01234_ is 59bit, max slope is 5bit, which may overflow
 	 * when multiplied without first down-scaling.
 	 */
 	error_ = n01234_/ RES_SLOPE_DIVIDER * slope * API_RES_SLOPE
 		+ (long)offset * RES_OFFSET_E15_MULTIPLIER * API_RES_OFFSET;
-	pr_debug("error = %ld\n", error_);
+	mnh_debug("temp err:%ld, n01234_:%ld\n", error_, n01234_);
 
 	final_temp_ = n01234_ - error_;
 	Final_Temp = (final_temp_ + N15_ROUNDING_NUM) / N15_DIVIDER;
-	pr_debug("Final_Temp = %d\n", Final_Temp);
 
 	return Final_Temp;
 }
 
-/* The sequence of PVT sensing :
- * 1. Enable 1.2MHz Clock to PVT Sensor(PVT_CLKEN = 1)
- * 2. Wait for 2 msecs for the clock to PVT sensor to start ticking
- * 3. Program VSAMPLE/PSAMPLE
- * 4. Set ENA register to 1
- * 5. Wait for conversion cycle time or poll for PVT_DATA[x].DATAVALID to be 1 or
+/* Read raw temperature data from sensors
+ * Enable 1.2MHz Clock to PVT Sensor
+ * Wait for 2 msecs for the clock to PVT sensor to start ticking
+ * Program VSAMPLE/PSAMPLE
+ * Enable PVT sensor access
+ * Wait for conversion cycle time or PVT_DATA.DATAVALID or
  * wait for SCU interrupt
- * 6. Read PVT_DATA[x].DATA_OUT[9:0]
- * 7. Reset ENA to 0
- * 8. Disable 1.2MHz clock to PVT sensor(PVT_CLKEN = 0)
+ * Read PVT_DATA[x].DATA_OUT[9:0]
+ * Disable PVT sensor access
+ * Reset PVT_DATA.DATAVALID
+ * Disable 1.2MHz clock to PVT sensor
 */
 static void get_raw_temp_code(void *data, int *out_temp)
 {
@@ -214,9 +254,8 @@ static void get_raw_temp_code(void *data, int *out_temp)
 
 	if(sensor->dev->emulation != 0){ /* Not silicon */
 
-		/* For emulation, take raw out value as below
-		 * data_out values are from temperature translation table from
-		 * PVT sensor datasheet
+		/* For emulation, below data_out values are sampled from
+		 * temperature translation table of PVT sensor datasheet
 		 */
 		switch(sensor->id){
 			case 0:
@@ -240,27 +279,30 @@ static void get_raw_temp_code(void *data, int *out_temp)
 		HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id, PSAMPLE, 0);
 		HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id, VSAMPLE, 0);
 
-		/* Set ENA register to 1 */
+		/* Enable PVT sensor access */
 		HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id, ENA, 1);
 
-		/* Wait for conversion cycle time or poll for PVT_DATA[x]. DATAVALID to
-		 * be 1 or wait for SCU interrupt if enabled for PVT_SENSx_DV
-		 * interrupt reason
-		 * Conversion cycle time should be 376 PVT_SENSOR_CLK cycles
+		/* Wait until PVT data conversion is finished in
+		 * temperature and voltage mode.
+		 * Conversion time: 376 PVT_SENSOR_CLK cycles
 		 */
 		do {
 			val = HW_INxf(sensor->dev->regs, SCU, PVT_DATA,
 				sensor->id, DATAVALID);
 			if(val == 1)
 				break;
-			msleep(20);
+			mdelay(sensor->dev->wait_time_ms);
 		} while (time_before(jiffies, timeout));
 
-		/* Read PVT_DATA[x].DATA_OUT status register to read temperature */
+		/* Read DATA_OUT from sensor */
 		val = HW_INxf(sensor->dev->regs, SCU, PVT_DATA, sensor->id, DATA);
 
-		/* Reset ENA register to 0 */
+		/* Disable PVT sensor access */
 		HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id, ENA, 0);
+
+		/* Reset DATAVALID bit */
+		HW_OUTxf(sensor->dev->regs, SCU, PVT_DATA, sensor->id,
+			DATAVALID, 1);
 	}
 
 	*out_temp = val;
@@ -275,8 +317,6 @@ static int mnh_thermal_get_temp(void *data, int *out_temp)
 {
 	struct mnh_thermal_sensor *sensor = (struct mnh_thermal_sensor*)data;
 	int raw_temp = 0;
-	int deg_temp = 0;
-
 
 	/* Apply 5 bit trim and 2 bit precision to PVT sensor register */
 	HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id,
@@ -315,19 +355,28 @@ static int mnh_thermal_probe(struct platform_device *pdev)
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
-		dev_err(&pdev->dev, "cannot get platform resources\n");
+		pr_err("cannot get platform resources\n");
 		return -ENOENT;
 	}
 
 	mnh_dev->regs = ioremap_nocache(res->start, resource_size(res));
 	if (!mnh_dev->regs) {
-		dev_err(&pdev->dev, "unable to remap resources\n");
+		pr_err("unable to remap resources\n");
 		return -ENOMEM;
 	}
 
+	/* Enable 1.2MHz clock to PVT sensor and wait for 2usecs
+	 * until the clock is ticking
+	 */
+	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, PVT_CLKEN, 1);
+	udelay(2);
+
 	/* Read target settings */
 	mnh_dev->emulation = read_emulation_setting();
-	dev_dbg(&pdev->dev, "emulation : %d\n", mnh_dev->emulation);
+
+	/* Calculate PVT data read wait time */
+	mnh_dev->wait_time_ms = PVT_WAIT_MS;
+	mnh_debug("pvt wait time: %d\n", mnh_dev->wait_time_ms);
 
 	/* Initialize thermctl sensors */
 	for (i = 0; i < ARRAY_SIZE(mnh_dev->sensors); ++i) {
@@ -342,28 +391,21 @@ static int mnh_thermal_probe(struct platform_device *pdev)
 
 		if (IS_ERR(sensor->tzd)) {
 			err = PTR_ERR(sensor->tzd);
-			dev_err(&pdev->dev, "failed to register sensor: %d\n",
-				err);
+			pr_err("failed to register sensor: %d\n", err);
 			goto unregister_sensors;
 		}
 
 		mnh_dev->sensors[i] = sensor;
-
-		dev_info(&pdev->dev, "mnh_thermal - zone register:%d\n",i);
 	}
 
-	/* TBD : Initialize the sensor with TRIM value by readin EFUSE
-	 * (Not available yet in FPGA, will be available in silicon)
+	dev_info(&pdev->dev, "sensors init\n");
+
+	/* TODO: configure sensors with characterized TRIM data
+	 * and dts trimmed config data from efuse.
 	 */
 	read_efuse_trim(mnh_dev);
 
-	/* Enable 1.2MHz clock to PVT sensor and wait for 2msecs for the clock
-	 * to PVT sensor to start ticking
-	 */
-	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, PVT_CLKEN, 1);
-	udelay(2);
-
-	/* Enable THERMAL TRIP */
+	/* TODO: Enable Thermal alarm */
 
 	platform_set_drvdata(pdev, mnh_dev);
 
@@ -421,5 +463,5 @@ static struct platform_driver mnh_thermal_driver = {
 };
 module_platform_driver(mnh_thermal_driver);
 
-MODULE_DESCRIPTION("Monette Hill Thermal Driver");
+MODULE_DESCRIPTION("MonetteHill Thermal Driver");
 MODULE_LICENSE("GPL");
