@@ -43,6 +43,7 @@
 #include "paintbox-lbp.h"
 #include "paintbox-mipi.h"
 #include "paintbox-mipi-debug.h"
+#include "paintbox-mmu.h"
 #include "paintbox-power.h"
 #include "paintbox-regs.h"
 #include "paintbox-stp.h"
@@ -357,7 +358,7 @@ static void paintbox_deinit(struct paintbox_data *pb)
 
 	paintbox_lbp_deinit(pb);
 
-	kfree(pb->stps);
+	kfree(pb->stp.stps);
 	kfree(pb->irqs);
 	kfree(pb->dma.channels);
 	kfree(pb->vdbg_log);
@@ -435,7 +436,7 @@ static int pb_debug_regs_show(struct seq_file *s, void *unused)
 	}
 
 	for (i = 0; i < pb->caps.num_stps; i++) {
-		ret = dump_stp_registers(&pb->stps[i].debug, buf + written,
+		ret = dump_stp_registers(&pb->stp.stps[i].debug, buf + written,
 				len - written);
 		if (ret < 0)
 			goto err_exit;
@@ -443,8 +444,8 @@ static int pb_debug_regs_show(struct seq_file *s, void *unused)
 		written += ret;
 	}
 
-	for (i = 0; i < pb->caps.num_lbps; i++) {
-		ret = dump_lbp_registers(&pb->lbps[i].debug, buf + written,
+	for (i = 0; i < pb->lbp.num_lbps; i++) {
+		ret = dump_lbp_registers(&pb->lbp.lbps[i].debug, buf + written,
 				len - written);
 		if (ret < 0)
 			goto err_exit;
@@ -452,7 +453,7 @@ static int pb_debug_regs_show(struct seq_file *s, void *unused)
 		written += ret;
 
 		for (j = 0; j < pb->caps.max_line_buffers; j++) {
-			ret = dump_lb_registers(&pb->lbps[i].lbs[j].debug,
+			ret = dump_lb_registers(&pb->lbp.lbps[i].lbs[j].debug,
 					buf + written, len - written);
 			if (ret < 0)
 				goto err_exit;
@@ -632,6 +633,10 @@ static int paintbox_probe(struct platform_device *pdev)
 	if (ret < 0)
 		return ret;
 
+	ret = paintbox_mmu_init(pb);
+	if (ret < 0)
+		return ret;
+
 	/* Initialize the IRQ waiters after IO APB so the IRQ waiter code knows
 	 * how many interrupts to allocate.
 	 */
@@ -642,10 +647,10 @@ static int paintbox_probe(struct platform_device *pdev)
 	/* TODO(ahampson):  This works on the assumption that all lbps have the
 	 * same number of lbs.
 	 */
-	pb->caps.max_line_buffers = pb->lbp_caps.max_lbs;
-	pb->caps.max_read_ptrs = pb->lbp_caps.max_rptrs;
-	pb->caps.max_channels = pb->lbp_caps.max_channels;
-	pb->caps.max_fb_rows = pb->lbp_caps.max_fb_rows;
+	pb->caps.max_line_buffers = pb->lbp.max_lbs;
+	pb->caps.max_read_ptrs = pb->lbp.max_rptrs;
+	pb->caps.max_channels = pb->lbp.max_channels;
+	pb->caps.max_fb_rows = pb->lbp.max_fb_rows;
 
 	/* register the misc device */
 	pb->misc_device.minor = MISC_DYNAMIC_MINOR,

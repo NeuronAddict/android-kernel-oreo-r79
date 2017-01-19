@@ -156,11 +156,11 @@ void write_ram_data_registers_column_major(struct paintbox_data *pb,
 		data |= ((uint64_t)buf[row1_col + 2]) << 48;
 		data |= ((uint64_t)buf[row1_col + 3]) << 56;
 
-		writeq(data, pb->stp_base + STP_RAM_DATA0 + reg_index *
+		writeq(data, pb->stp.reg_base + STP_RAM_DATA0 + reg_index *
 				IPU_REG_WIDTH_BYTES);
 	}
 
-	DUMP_REGISTERS(pb, pb->stp_base + STP_RAM_DATA0, STP_DATA_REG_COUNT,
+	DUMP_REGISTERS(pb, pb->stp.reg_base + STP_RAM_DATA0, STP_DATA_REG_COUNT,
 			__func__);
 }
 
@@ -223,7 +223,7 @@ void read_ram_data_registers_column_major(struct paintbox_data *pb,
 {
 	unsigned int reg_index, row0_col, row1_col;
 
-	DUMP_REGISTERS(pb, pb->stp_base + STP_RAM_DATA0, STP_DATA_REG_COUNT,
+	DUMP_REGISTERS(pb, pb->stp.reg_base + STP_RAM_DATA0, STP_DATA_REG_COUNT,
 			__func__);
 
 	/* Each vector bank is a 4 x 2 array of ALU lanes (lanes are 16 bits).
@@ -246,8 +246,8 @@ void read_ram_data_registers_column_major(struct paintbox_data *pb,
 	for (reg_index = 0; reg_index < STP_DATA_REG_COUNT; reg_index++,
 			row0_col += VECTOR_GROUP_ROW_OFFSET_BYTES,
 			row1_col += VECTOR_GROUP_ROW_OFFSET_BYTES) {
-		uint64_t data = readq(pb->stp_base + STP_RAM_DATA0 + reg_index *
-				IPU_REG_WIDTH_BYTES);
+		uint64_t data = readq(pb->stp.reg_base + STP_RAM_DATA0 +
+				reg_index * IPU_REG_WIDTH_BYTES);
 
 		buf[row0_col] = (uint8_t)((data >> 0) & 0xff);
 		buf[row0_col + 1] = (uint8_t)((data >> 8) & 0xff);

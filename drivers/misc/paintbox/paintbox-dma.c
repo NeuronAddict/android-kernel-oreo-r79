@@ -186,16 +186,16 @@ int unbind_dma_interrupt_ioctl(struct paintbox_data *pb,
 
 /* The caller to this function must hold pb->lock and pb->dma.dma_lock */
 static void dma_reset_channel_locked(struct paintbox_data *pb,
-		struct paintbox_dma_channel *channel)
+		struct paintbox_dma_channel *channel, bool force)
 {
 	struct paintbox_dma *dma = &pb->dma;
 	struct paintbox_dma_transfer *transfer;
 	uint32_t ctrl;
 
-	/* If there are no active transfers then there is no need to reset the
-	 * channel.
+	/* If there are no active transfers and a reset is not being forced then
+	 * there is no need to reset the channel.
 	 */
-	if (channel->active_count == 0) {
+	if (!force && channel->active_count == 0) {
 		/* Disable the DMA channel interrupts in the local IMR and in
 		 * the top-level IPU_IMR.
 		 */
@@ -205,9 +205,6 @@ static void dma_reset_channel_locked(struct paintbox_data *pb,
 		return;
 	}
 
-	channel->active_count--;
-	if (WARN_ON(channel->active_count < 0))
-		channel->active_count = 0;
 
 	dma_select_channel(pb, channel->channel_id);
 
@@ -217,11 +214,16 @@ static void dma_reset_channel_locked(struct paintbox_data *pb,
 	ctrl &= ~(1 << channel->channel_id);
 	writel(ctrl, dma->dma_base + DMA_CHAN_CTRL_L);
 
-	transfer = list_entry(channel->active_list.next,
-			struct paintbox_dma_transfer, entry);
-	if (!WARN_ON(transfer == NULL)) {
-		list_del(&transfer->entry);
-		dma_report_completion(pb, channel, transfer, -ECANCELED);
+	if (channel->active_count > 0) {
+		channel->active_count--;
+
+		transfer = list_entry(channel->active_list.next,
+				struct paintbox_dma_transfer, entry);
+		if (!WARN_ON(transfer == NULL)) {
+			list_del(&transfer->entry);
+			dma_report_completion(pb, channel, transfer,
+					-ECANCELED);
+		}
 	}
 }
 
@@ -233,7 +235,7 @@ void dma_reset_channel(struct paintbox_data *pb,
 
 	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
 
-	dma_reset_channel_locked(pb, channel);
+	dma_reset_channel_locked(pb, channel, false /* force */);
 
 	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 }
@@ -346,6 +348,13 @@ void dma_stop_transfer(struct paintbox_data *pb,
 			verify_cleanup_completion(pb, channel->mipi_stream);
 	}
 
+#ifdef CONFIG_PAINTBOX_V1
+	/* On the first version of the hardware we always do a reset after
+	 * stopping the channel.
+	 */
+	channel->stop_request = false;
+	dma_reset_channel_locked(pb, channel, true /* force */);
+#else
 	/* If the channel didn't stop within the timeout then reset it.  This
 	 * situation can occur if there are no outstanding requests between the
 	 * src and dst or if the transfer has not started.
@@ -353,8 +362,9 @@ void dma_stop_transfer(struct paintbox_data *pb,
 	if (channel->stop_request) {
 		channel->stop_request = false;
 
-		dma_reset_channel_locked(pb, channel);
+		dma_reset_channel_locked(pb, channel, false /* force */);
 	}
+#endif
 
 	/* If there are no active transfers then power down the DMA channel. */
 	if (channel->active_count == 0)

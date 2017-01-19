@@ -41,7 +41,7 @@ static int validate_stp_inst_sram_transfer(struct paintbox_data *pb,
 		struct dma_dram_config *dram_config,
 		struct dma_stp_config *stp_config)
 {
-	size_t sram_size_bytes = stp->inst_mem_size_in_instructions *
+	size_t sram_size_bytes = pb->stp.inst_mem_size_in_instructions *
 			STP_INST_SRAM_INSTRUCTION_WIDTH_BYTES;
 
 	if ((stp_config->sram_addr & DMA_STP_SRAM_ADDR_ALIGN_MASK) != 0) {
@@ -70,7 +70,7 @@ static int validate_stp_cnst_sram_transfer(struct paintbox_data *pb,
 		struct dma_dram_config *dram_config,
 		struct dma_stp_config *stp_config)
 {
-	size_t sram_size_bytes = stp->const_mem_size_in_words *
+	size_t sram_size_bytes = pb->stp.const_mem_size_in_words *
 			STP_CONST_SRAM_WORD_WIDTH_BYTES;
 
 	if ((stp_config->sram_addr & DMA_STP_SRAM_ADDR_ALIGN_MASK) != 0) {
@@ -99,7 +99,7 @@ static int validate_stp_scalar_sram_transfer(struct paintbox_data *pb,
 		struct dma_dram_config *dram_config,
 		struct dma_stp_config *stp_config)
 {
-	size_t sram_size_bytes = stp->scalar_mem_size_in_words *
+	size_t sram_size_bytes = pb->stp.scalar_mem_size_in_words *
 			STP_SCALAR_SRAM_WORD_WIDTH_BYTES;
 
 	if ((stp_config->sram_addr & DMA_STP_SRAM_ADDR_ALIGN_MASK) != 0) {

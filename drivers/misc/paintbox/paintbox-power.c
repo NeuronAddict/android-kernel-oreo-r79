@@ -325,8 +325,8 @@ static void ipu_core_power_down_walk(struct paintbox_data *pb)
 	 */
 	for (requested_cores = pb->power.active_core_count;
 			requested_cores > 0; requested_cores--) {
-		struct paintbox_stp *stp = &pb->stps[requested_cores];
-		struct paintbox_lbp *lbp = &pb->lbps[requested_cores];
+		struct paintbox_stp *stp = &pb->stp.stps[requested_cores];
+		struct paintbox_lbp *lbp = &pb->lbp.lbps[requested_cores];
 
 		if (stp->pm_enabled || lbp->pm_enabled)
 			break;

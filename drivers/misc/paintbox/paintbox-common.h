@@ -104,6 +104,10 @@ struct paintbox_power {
 	unsigned int active_core_count;
 };
 
+struct paintbox_mmu {
+	struct paintbox_debug debug;
+};
+
 struct paintbox_io {
 	struct paintbox_debug axi_debug;
 	struct paintbox_debug apb_debug;
@@ -391,13 +395,24 @@ struct paintbox_stp {
 	struct paintbox_irq *irq;
 	unsigned int stp_id;
 	unsigned int interrupt_count;
+	bool pm_enabled;
+};
+
+struct paintbox_stp_common {
+	struct paintbox_stp *stps;
+	void __iomem *reg_base;
+	unsigned int num_stps;
 	unsigned int inst_mem_size_in_instructions;
 	unsigned int scalar_mem_size_in_words;
 	unsigned int const_mem_size_in_words;
 	unsigned int vector_mem_size_in_words;
 	unsigned int halo_mem_size_in_words;
-	bool pm_enabled;
-	bool inited;
+	bool caps_inited;
+
+	/* The stp lock is used to protect access to the STP registers between
+	 * threads and the STP interrupt handler.
+	 */
+	spinlock_t lock;
 };
 
 struct paintbox_lbp;
@@ -440,7 +455,10 @@ struct paintbox_lbp {
 	bool pm_enabled;
 };
 
-struct paintbox_lbp_caps {
+struct paintbox_lbp_common {
+	void __iomem *reg_base;
+	struct paintbox_lbp *lbps;
+	unsigned int num_lbps;
 	uint32_t mem_size_bytes;
 	uint32_t max_fb_rows;
 	uint32_t max_lbs;
@@ -462,13 +480,7 @@ struct paintbox_data {
 	 */
 	spinlock_t irq_lock;
 
-	/* stp_lock is used to protect access to the STP registers betweeen
-	 * threads and the STP interrupt handler.
-	 */
-	spinlock_t stp_lock;
 	void __iomem *reg_base;
-	void __iomem *lbp_base;
-	void __iomem *stp_base;
 #ifdef CONFIG_PAINTBOX_SIMULATOR_SUPPORT
 	void __iomem *sim_base;
 #endif
@@ -479,15 +491,14 @@ struct paintbox_data {
 	struct platform_device *pdev;
 	struct dentry *debug_root;
 	struct dentry *regs_dentry;
-
+	struct paintbox_lbp_common lbp;
+	struct paintbox_stp_common stp;
 	struct paintbox_power power;
 	struct paintbox_io io;
+	struct paintbox_mmu mmu;
 	struct paintbox_io_ipu io_ipu;
 	struct paintbox_dma dma;
 	struct paintbox_irq *irqs;
-	struct paintbox_stp *stps;
-	struct paintbox_lbp_caps lbp_caps;
-	struct paintbox_lbp *lbps;
 	struct ipu_capabilities caps;
 	size_t vdbg_log_len;
 	char *vdbg_log;

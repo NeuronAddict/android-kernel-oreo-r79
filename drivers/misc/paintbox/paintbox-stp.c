@@ -52,12 +52,12 @@ static uint64_t stp_reg_entry_read(struct paintbox_debug_reg_entry *reg_entry)
 
 	mutex_lock(&pb->lock);
 
-	spin_lock_irqsave(&pb->stp_lock, irq_flags);
+	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-	writel(stp->stp_id, pb->stp_base + STP_SEL);
-	val = readq(pb->stp_base + reg_entry->reg_offset);
+	writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
+	val = readq(pb->stp.reg_base + reg_entry->reg_offset);
 
-	spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 
 	mutex_unlock(&pb->lock);
 
@@ -75,12 +75,12 @@ static void stp_reg_entry_write(struct paintbox_debug_reg_entry *reg_entry,
 
 	mutex_lock(&pb->lock);
 
-	spin_lock_irqsave(&pb->stp_lock, irq_flags);
+	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-	writel(stp->stp_id, pb->stp_base + STP_SEL);
-	writeq(val, pb->stp_base + reg_entry->reg_offset);
+	writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
+	writeq(val, pb->stp.reg_base + reg_entry->reg_offset);
 
-	spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 
 	mutex_unlock(&pb->lock);
 }
@@ -109,7 +109,7 @@ static inline int dump_stp_reg(struct paintbox_data *pb, uint32_t reg_offset,
 		uint64_t reg_value, char *buf, int *written, size_t len)
 {
 	const char *reg_name = stp_reg_names[REG_INDEX(reg_offset)];
-	return dump_ipu_register_with_value64(pb, pb->stp_base, reg_offset,
+	return dump_ipu_register_with_value64(pb, pb->stp.reg_base, reg_offset,
 			reg_value, reg_name, buf, written, len);
 }
 
@@ -144,20 +144,20 @@ int dump_stp_registers(struct paintbox_debug *debug, char *buf, size_t len)
 	unsigned int reg_offset;
 	uint64_t val;
 
-	spin_lock_irqsave(&pb->stp_lock, irq_flags);
+	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-	writel(stp->stp_id, pb->stp_base + STP_SEL);
+	writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
 
 	for (reg_offset = 0; reg_offset < STP_BLOCK_LEN; reg_offset +=
 			IPU_REG_WIDTH) {
 		if (!stp_reg_names[REG_INDEX(reg_offset)])
 			continue;
 
-		stp_registers[REG_INDEX(reg_offset)] =  readq(pb->stp_base +
+		stp_registers[REG_INDEX(reg_offset)] =  readq(pb->stp.reg_base +
 				reg_offset);
 	}
 
-	spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 
 	val = stp_registers[REG_INDEX(STP_SEL)];
 	ret = dump_stp_reg_verbose(pb, STP_SEL, val, buf, &written, len,
@@ -253,13 +253,13 @@ int validate_stp(struct paintbox_data *pb,
 {
 	unsigned int stp_index = stp_id_to_index(stp_id);
 
-	if (stp_index >= pb->caps.num_stps) {
+	if (stp_index >= pb->stp.num_stps) {
 		dev_err(&pb->pdev->dev, "%s: invalid stp_id %d\n", __func__,
 				stp_id);
 		return -EINVAL;
 	}
 
-	if (pb->stps[stp_index].session != session) {
+	if (pb->stp.stps[stp_index].session != session) {
 		dev_err(&pb->pdev->dev, "%s: access error stp_id %d\n",
 				__func__, stp_id);
 		return -EACCES;
@@ -279,7 +279,7 @@ struct paintbox_stp *get_stp(struct paintbox_data *pb,
 	}
 
 	*err = 0;
-	return &pb->stps[stp_id_to_index(stp_id)];
+	return &pb->stp.stps[stp_id_to_index(stp_id)];
 }
 
 /* The LBP access control masks are not implemented on the V1 hardware. */
@@ -299,14 +299,14 @@ void enable_stp_access_to_lbp(struct paintbox_data *pb,
 			session_entry) {
 		unsigned long irq_flags;
 
-		spin_lock_irqsave(&pb->stp_lock, irq_flags);
+		spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-		writel(stp->stp_id, pb->stp_base + STP_SEL);
-		ctrl = readl(pb->stp_base + STP_CTRL);
+		writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
+		ctrl = readl(pb->stp.reg_base + STP_CTRL);
 		ctrl |= 1 << (lbp->pool_id + STP_CTRL_LBP_MASK_SHIFT);
-		writel(ctrl, pb->stp_base + STP_CTRL);
+		writel(ctrl, pb->stp.reg_base + STP_CTRL);
 
-		spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+		spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 	}
 }
 
@@ -325,14 +325,14 @@ void disable_stp_access_to_lbp(struct paintbox_data *pb,
 			session_entry) {
 		unsigned long irq_flags;
 
-		spin_lock_irqsave(&pb->stp_lock, irq_flags);
+		spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-		writel(stp->stp_id, pb->stp_base + STP_SEL);
-		ctrl = readl(pb->stp_base + STP_CTRL);
+		writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
+		ctrl = readl(pb->stp.reg_base + STP_CTRL);
 		ctrl &= ~(1 << (lbp->pool_id + STP_CTRL_LBP_MASK_SHIFT));
-		writel(ctrl, pb->stp_base + STP_CTRL);
+		writel(ctrl, pb->stp.reg_base + STP_CTRL);
 
-		spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+		spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 	}
 }
 
@@ -343,9 +343,9 @@ static void set_lbp_access_mask(struct paintbox_data *pb,
 	unsigned long irq_flags;
 	uint32_t ctrl, lbp_mask;
 
-	spin_lock_irqsave(&pb->stp_lock, irq_flags);
+	spin_lock_irqsave(&pb->stp.stp.lock, irq_flags);
 
-	writel(stp_id, pb->stp_base + STP_SEL);
+	writel(stp_id, pb->stp.reg_base + STP_SEL);
 
 	/* Grant access to all LBPs associated with this session */
 	lbp_mask = 0;
@@ -354,12 +354,12 @@ static void set_lbp_access_mask(struct paintbox_data *pb,
 			session_entry)
 		lbp_mask |= 1 << (lbp->pool_id + STP_CTRL_LBP_MASK_SHIFT);
 
-	ctrl = readl(pb->stp_base + STP_CTRL);
+	ctrl = readl(pb->stp.reg_base + STP_CTRL);
 	ctrl &= ~STP_CTRL_LBP_MASK_MASK;
 	ctrl |= lbp_mask;
-	writel(ctrl, pb->stp_base + STP_CTRL);
+	writel(ctrl, pb->stp.reg_base + STP_CTRL);
 
-	spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+	spin_unlock_irqrestore(&pb->stp.stp.lock, irq_flags);
 }
 #endif
 
@@ -370,14 +370,14 @@ int allocate_stp_ioctl(struct paintbox_data *pb,
 	unsigned int stp_index = stp_id_to_index(stp_id);
 	struct paintbox_stp *stp;
 
-	if (stp_index >= pb->caps.num_stps) {
+	if (stp_index >= pb->stp.num_stps) {
 		dev_err(&pb->pdev->dev, "%s: invalid stp_id %d\n", __func__,
 				stp_id);
 		return -EINVAL;
 	}
 
 	mutex_lock(&pb->lock);
-	stp = &pb->stps[stp_index];
+	stp = &pb->stp.stps[stp_index];
 	if (stp->session) {
 		dev_err(&pb->pdev->dev, "%s: access error stp_id %d\n",
 				__func__, stp_id);
@@ -396,35 +396,34 @@ int allocate_stp_ioctl(struct paintbox_data *pb,
 	set_lbp_access_mask(pb, session, stp);
 #endif
 
-	/* Now that the core is powered complete the STP data structure
-	 * initialization if it had not previously be initialized.
+	/* If this is the first STP core to be powered up then initialize the
+	 * SRAM memory size fields in the pb->stp structure.
 	 */
-	if (!stp->inited) {
+	if (!pb->stp.caps_inited) {
 		unsigned long irq_flags;
 		uint64_t caps;
 
-		stp->inited = true;
+		pb->stp.caps_inited = true;
 
-		spin_lock_irqsave(&pb->stp_lock, irq_flags);
-		writel(stp->stp_id, pb->stp_base + STP_SEL);
+		spin_lock_irqsave(&pb->stp.lock, irq_flags);
+		writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
+		caps = readq(pb->stp.reg_base + STP_CAP);
+		spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 
-		caps = readq(pb->stp_base + STP_CAP);
-		stp->inst_mem_size_in_instructions = (unsigned int)(caps &
+		pb->stp.inst_mem_size_in_instructions = (unsigned int)(caps &
 				STP_CAP_INST_MEM_MASK);
-		stp->scalar_mem_size_in_words = (unsigned int)((caps &
+		pb->stp.scalar_mem_size_in_words = (unsigned int)((caps &
 				STP_CAP_SCALAR_MEM_MASK) >>
 				STP_CAP_SCALAR_MEM_SHIFT);
-		stp->const_mem_size_in_words = (unsigned int)((caps &
+		pb->stp.const_mem_size_in_words = (unsigned int)((caps &
 				STP_CAP_CONST_MEM_MASK) >>
 				STP_CAP_CONST_MEM_SHIFT);
-		stp->vector_mem_size_in_words = (unsigned int)((caps &
+		pb->stp.vector_mem_size_in_words = (unsigned int)((caps &
 				STP_CAP_VECTOR_MEM_MASK) >>
 				STP_CAP_VECTOR_MEM_SHIFT);
-		stp->halo_mem_size_in_words = (unsigned int)((caps &
+		pb->stp.halo_mem_size_in_words = (unsigned int)((caps &
 				STP_CAP_HALO_MEM_MASK) >>
 				STP_CAP_HALO_MEM_SHIFT);
-
-		spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
 	}
 
 	mutex_unlock(&pb->lock);
@@ -449,12 +448,12 @@ void release_stp(struct paintbox_data *pb, struct paintbox_session *session,
 		return;
 #endif
 
-	spin_lock_irqsave(&pb->stp_lock, irq_flags);
+	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-	writel(stp->stp_id, pb->stp_base + STP_SEL);
-	writel(0, pb->stp_base + STP_CTRL);
+	writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
+	writel(0, pb->stp.reg_base + STP_CTRL);
 
-	spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 
 	/* TODO(ahampson): We will probably need to poll this register to wait
 	 * for the cancel to take effect.
@@ -501,15 +500,15 @@ int stp_ctrl_set(struct paintbox_data *pb,
 		return ret;
 	}
 
-	spin_lock_irqsave(&pb->stp_lock, irq_flags);
+	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-	writel(stp->stp_id, pb->stp_base + STP_SEL);
+	writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
 
-	ctrl = readl(pb->stp_base + STP_CTRL);
+	ctrl = readl(pb->stp.reg_base + STP_CTRL);
 	ctrl |= set_mask;
-	writel(ctrl, pb->stp_base + STP_CTRL);
+	writel(ctrl, pb->stp.reg_base + STP_CTRL);
 
-	spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 
 	mutex_unlock(&pb->lock);
 
@@ -532,17 +531,17 @@ int stp_ctrl_set_and_clear(struct paintbox_data *pb,
 		return ret;
 	}
 
-	spin_lock_irqsave(&pb->stp_lock, irq_flags);
+	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-	writel(stp->stp_id, pb->stp_base + STP_SEL);
+	writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
 
-	ctrl = readl(pb->stp_base + STP_CTRL);
+	ctrl = readl(pb->stp.reg_base + STP_CTRL);
 	ctrl |= set_mask;
-	writel(ctrl, pb->stp_base + STP_CTRL);
+	writel(ctrl, pb->stp.reg_base + STP_CTRL);
 	ctrl &= ~set_mask;
-	writel(ctrl, pb->stp_base + STP_CTRL);
+	writel(ctrl, pb->stp.reg_base + STP_CTRL);
 
-	spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 
 	mutex_unlock(&pb->lock);
 
@@ -568,13 +567,13 @@ int start_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 
 	dev_dbg(&pb->pdev->dev, "%s: stp%u\n",  __func__, stp_id);
 
-	spin_lock_irqsave(&pb->stp_lock, irq_flags);
+	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-	writel(stp->stp_id, pb->stp_base + STP_SEL);
+	writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
 
-	stat = readq(pb->stp_base + STP_STAT);
+	stat = readq(pb->stp.reg_base + STP_STAT);
 
-	ctrl = readl(pb->stp_base + STP_CTRL);
+	ctrl = readl(pb->stp.reg_base + STP_CTRL);
 	ctrl |= STP_CTRL_ENA_MASK;
 
 	/* If the processor is stalled (due to a stall.b16 <- src8) instruction
@@ -583,15 +582,15 @@ int start_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 	if (stat & STP_STAT_STALLED_MASK)
 		ctrl |= STP_CTRL_RESUME_MASK;
 
-	writel(ctrl, pb->stp_base + STP_CTRL);
+	writel(ctrl, pb->stp.reg_base + STP_CTRL);
 
 	/* The RESUME bit is not self clearing. */
 	if (stat & STP_STAT_STALLED_MASK) {
 		ctrl &= ~STP_CTRL_RESUME_MASK;
-		writel(ctrl, pb->stp_base + STP_CTRL);
+		writel(ctrl, pb->stp.reg_base + STP_CTRL);
 	}
 
-	spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 
 	mutex_unlock(&pb->lock);
 
@@ -626,15 +625,15 @@ int stop_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 		return ret;
 #endif
 
-	spin_lock_irqsave(&pb->stp_lock, irq_flags);
+	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-	writel(stp->stp_id, pb->stp_base + STP_SEL);
+	writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
 
-	ctrl = readl(pb->stp_base + STP_CTRL);
+	ctrl = readl(pb->stp.reg_base + STP_CTRL);
 	ctrl &= ~STP_CTRL_ENA_MASK;
-	writel(ctrl, pb->stp_base + STP_CTRL);
+	writel(ctrl, pb->stp.reg_base + STP_CTRL);
 
-	spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 
 	LOG_STP_REGISTERS(pb, stp);
 
@@ -677,17 +676,17 @@ int init_stp(struct paintbox_data *pb, struct paintbox_stp *stp)
 		return ret;
 #endif
 
-	spin_lock_irqsave(&pb->stp_lock, irq_flags);
+	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-	writel(stp->stp_id, pb->stp_base + STP_SEL);
+	writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
 
 	/* Stop and reset the processor */
-	ctrl = readl(pb->stp_base + STP_CTRL);
+	ctrl = readl(pb->stp.reg_base + STP_CTRL);
 	ctrl &= ~STP_CTRL_ENA_MASK;
-	writel(STP_CTRL_RESET_MASK, pb->stp_base + STP_CTRL);
-	writel(ctrl, pb->stp_base + STP_CTRL);
+	writel(STP_CTRL_RESET_MASK, pb->stp.reg_base + STP_CTRL);
+	writel(ctrl, pb->stp.reg_base + STP_CTRL);
 
-	spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 
 	return 0;
 }
@@ -734,7 +733,7 @@ int setup_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 		return ret;
 	}
 
-	max_len_bytes = stp->inst_mem_size_in_instructions *
+	max_len_bytes = pb->stp.inst_mem_size_in_instructions *
 			STP_INST_SRAM_INSTRUCTION_WIDTH_BYTES;
 
 	if (config.len > max_len_bytes) {
@@ -800,13 +799,13 @@ int get_program_state_ioctl(struct paintbox_data *pb,
 		return ret;
 	}
 
-	spin_lock_irqsave(&pb->stp_lock, irq_flags);
+	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-	writel(stp->stp_id, pb->stp_base + STP_SEL);
-	ctrl = readl(pb->stp_base + STP_CTRL);
-	stat = readq(pb->stp_base + STP_STAT);
+	writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
+	ctrl = readl(pb->stp.reg_base + STP_CTRL);
+	stat = readq(pb->stp.reg_base + STP_STAT);
 
-	spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 
 	program_state.enabled = (ctrl & STP_CTRL_ENA_MASK) != 0;
 	program_state.stalled = (stat & STP_STAT_STALLED_MASK) != 0;
@@ -938,29 +937,29 @@ irqreturn_t paintbox_stp_interrupt(struct paintbox_data *pb, uint64_t stp_mask)
 		if (!(stp_mask & 0x01))
 			continue;
 
-		stp = &pb->stps[stp_index];
+		stp = &pb->stp.stps[stp_index];
 
-		spin_lock(&pb->stp_lock);
+		spin_lock(&pb->stp.lock);
 
-		writel(stp->stp_id, pb->stp_base + STP_SEL);
-		ctrl = readl(pb->stp_base + STP_CTRL);
+		writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
+		ctrl = readl(pb->stp.reg_base + STP_CTRL);
 
 		if (!(ctrl & STP_CTRL_INT_MASK)) {
-			spin_unlock(&pb->stp_lock);
+			spin_unlock(&pb->stp.lock);
 			continue;
 		}
 
-		int_code = (int)((readq(pb->stp_base + STP_STAT) &
+		int_code = (int)((readq(pb->stp.reg_base + STP_STAT) &
 				STP_STAT_INT_CODE_MASK) >>
 				STP_STAT_INT_CODE_SHIFT);
 
-		writel(ctrl & ~STP_CTRL_INT_MASK, pb->stp_base + STP_CTRL);
+		writel(ctrl & ~STP_CTRL_INT_MASK, pb->stp.reg_base + STP_CTRL);
 
 		stp->interrupt_count++;
 
 		signal_waiters(pb, stp->irq, int_code);
 
-		spin_unlock(&pb->stp_lock);
+		spin_unlock(&pb->stp.lock);
 	}
 
 	return IRQ_HANDLED;
@@ -968,7 +967,7 @@ irqreturn_t paintbox_stp_interrupt(struct paintbox_data *pb, uint64_t stp_mask)
 
 static int init_stp_entry(struct paintbox_data *pb, unsigned int stp_index)
 {
-	struct paintbox_stp *stp = &pb->stps[stp_index];
+	struct paintbox_stp *stp = &pb->stp.stps[stp_index];
 
 	stp->stp_id = stp_index_to_id(stp_index);
 
@@ -985,15 +984,7 @@ static int init_stp_entry(struct paintbox_data *pb, unsigned int stp_index)
 #endif
 
 	dev_dbg(&pb->pdev->dev, "stp%u: base %p len %lu\n", stp->stp_id,
-			pb->stp_base, STP_BLOCK_LEN);
-	dev_dbg(&pb->pdev->dev, "\tinst mem %u instructions scalar mem %u words"
-			" const mem %u words\n",
-			stp->inst_mem_size_in_instructions,
-			stp->scalar_mem_size_in_words,
-			stp->const_mem_size_in_words);
-	dev_dbg(&pb->pdev->dev, "\tvector mem %u words halo mem %u words\n",
-			stp->const_mem_size_in_words,
-			stp->halo_mem_size_in_words);
+			pb->stp.reg_base, STP_BLOCK_LEN);
 
 	return 0;
 }
@@ -1002,19 +993,23 @@ int paintbox_stp_init(struct paintbox_data *pb)
 {
 	unsigned int stp_index;
 
-	pb->stp_base = pb->reg_base + IPU_STP_OFFSET;
+	pb->stp.reg_base = pb->reg_base + IPU_STP_OFFSET;
 
-	spin_lock_init(&pb->stp_lock);
+	spin_lock_init(&pb->stp.lock);
 
-	pb->caps.num_stps = readl(pb->reg_base + IPU_CAP) &
+	pb->stp.num_stps = readl(pb->reg_base + IPU_CAP) &
 			IPU_CAP_NUM_STP_MASK;
 
-	pb->stps = kzalloc(sizeof(struct paintbox_stp) * pb->caps.num_stps,
+	/* TODO(ahampson):  Move this to a common function to fill in the caps.
+	 */
+	pb->caps.num_stps = pb->stp.num_stps;
+
+	pb->stp.stps = kzalloc(sizeof(struct paintbox_stp) * pb->stp.num_stps,
 			GFP_KERNEL);
-	if (!pb->stps)
+	if (!pb->stp.stps)
 		return -ENOMEM;
 
-	for (stp_index = 0; stp_index < pb->caps.num_stps; stp_index++)
+	for (stp_index = 0; stp_index < pb->stp.num_stps; stp_index++)
 		init_stp_entry(pb, stp_index);
 
 	return 0;

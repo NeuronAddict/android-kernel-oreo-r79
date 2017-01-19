@@ -47,6 +47,8 @@ void io_enable_mipi_output_interface_interrupt(struct paintbox_data *pb,
 		unsigned int interface_id);
 void io_disable_mipi_output_interface_interrupt(struct paintbox_data *pb,
 		unsigned int interface_id);
+void paintbox_enable_mmu_interrupt(struct paintbox_data *pb);
+void paintbox_disable_mmu_interrupt(struct paintbox_data *pb);
 
 /* The caller to these functions must hold pb->lock */
 void io_enable_dma_channel(struct paintbox_data *pb, unsigned int channel_id);

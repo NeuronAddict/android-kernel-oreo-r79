@@ -37,20 +37,20 @@ int stp_sram_write_word(struct paintbox_data *pb,
 	unsigned long irq_flags;
 	unsigned int attempts = 0;
 
-	spin_lock_irqsave(&pb->stp_lock, irq_flags);
+	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-	writel(sram_config->core_id, pb->stp_base + STP_SEL);
+	writel(sram_config->core_id, pb->stp.reg_base + STP_SEL);
 
 	/* TODO(ahampson):  This can be removed once the SWAP and COL_MAJOR
 	 * support is moved outside the driver.
 	 */
 	switch (sram_config->ram_data_mode) {
 	case RAM_DATA_MODE_NORMAL:
-		write_ram_data_registers(pb, buf, pb->stp_base +
+		write_ram_data_registers(pb, buf, pb->stp.reg_base +
 				STP_RAM_DATA0, STP_DATA_REG_COUNT);
 		break;
 	case RAM_DATA_MODE_SWAP:
-		write_ram_data_registers_swapped(pb, buf, pb->stp_base +
+		write_ram_data_registers_swapped(pb, buf, pb->stp.reg_base +
 				STP_RAM_DATA0, STP_DATA_REG_COUNT);
 		break;
 	case RAM_DATA_MODE_COL_MAJOR:
@@ -59,11 +59,11 @@ int stp_sram_write_word(struct paintbox_data *pb,
 	};
 
 	writel(STP_RAM_CTRL_RUN_MASK | STP_RAM_CTRL_WRITE_MASK | ram_ctrl_addr |
-			sram_config->ram_ctrl_target, pb->stp_base +
+			sram_config->ram_ctrl_target, pb->stp.reg_base +
 			STP_RAM_CTRL);
 
-	while (readl(pb->stp_base + STP_RAM_CTRL) & STP_RAM_CTRL_RUN_MASK) {
-		spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+	while (readl(pb->stp.reg_base + STP_RAM_CTRL) & STP_RAM_CTRL_RUN_MASK) {
+		spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 
 		if (++attempts >= MAX_MEMORY_ACCESS_ATTEMPTS) {
 			dev_err(&pb->pdev->dev, "%s: write timeout\n",
@@ -73,17 +73,17 @@ int stp_sram_write_word(struct paintbox_data *pb,
 
 		usleep_range(MIN_RAM_ACCESS_SLEEP, MAX_RAM_ACCESS_SLEEP);
 
-		spin_lock_irqsave(&pb->stp_lock, irq_flags);
+		spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
 		/* Make sure the STP_SEL register is set to the correct STP ID
 		 * before reading the STP_RAM_CTRL register.  If an interrupt
 		 * occurred while stp_lock was not held then the STP_SEL
 		 * register may have been changed.
 		 */
-		writel(sram_config->core_id, pb->stp_base + STP_SEL);
+		writel(sram_config->core_id, pb->stp.reg_base + STP_SEL);
 	}
 
-	spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 
 	return 0;
 }
@@ -95,16 +95,16 @@ int stp_sram_read_word(struct paintbox_data *pb,
 	unsigned long irq_flags;
 	unsigned int attempts = 0;
 
-	spin_lock_irqsave(&pb->stp_lock, irq_flags);
+	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-	writel(sram_config->core_id, pb->stp_base + STP_SEL);
+	writel(sram_config->core_id, pb->stp.reg_base + STP_SEL);
 
 	writel(STP_RAM_CTRL_RUN_MASK | ram_ctrl_addr |
-			sram_config->ram_ctrl_target, pb->stp_base +
+			sram_config->ram_ctrl_target, pb->stp.reg_base +
 			STP_RAM_CTRL);
 
-	while (readl(pb->stp_base + STP_RAM_CTRL) & STP_RAM_CTRL_RUN_MASK) {
-		spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+	while (readl(pb->stp.reg_base + STP_RAM_CTRL) & STP_RAM_CTRL_RUN_MASK) {
+		spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 
 		if (++attempts >= MAX_MEMORY_ACCESS_ATTEMPTS) {
 			dev_err(&pb->pdev->dev, "%s: read timeout\n", __func__);
@@ -113,14 +113,14 @@ int stp_sram_read_word(struct paintbox_data *pb,
 
 		usleep_range(MIN_RAM_ACCESS_SLEEP, MAX_RAM_ACCESS_SLEEP);
 
-		spin_lock_irqsave(&pb->stp_lock, irq_flags);
+		spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
 		/* Make sure the STP_SEL register is set to the correct STP ID
 		 * before reading the STP_RAM_CTRL register.  If an interrupt
 		 * occurred while stp_lock was not held then the STP_SEL
 		 * register may have been changed.
 		 */
-		writel(sram_config->core_id, pb->stp_base + STP_SEL);
+		writel(sram_config->core_id, pb->stp.reg_base + STP_SEL);
 	}
 
 	/* TODO(ahampson):  This can be removed once the SWAP and COL_MAJOR
@@ -128,11 +128,11 @@ int stp_sram_read_word(struct paintbox_data *pb,
 	 */
 	switch (sram_config->ram_data_mode) {
 	case RAM_DATA_MODE_NORMAL:
-		read_ram_data_registers(pb, buf, pb->stp_base +
+		read_ram_data_registers(pb, buf, pb->stp.reg_base +
 				STP_RAM_DATA0, STP_DATA_REG_COUNT);
 		break;
 	case RAM_DATA_MODE_SWAP:
-		read_ram_data_registers_swapped(pb, buf, pb->stp_base +
+		read_ram_data_registers_swapped(pb, buf, pb->stp.reg_base +
 				STP_RAM_DATA0, STP_DATA_REG_COUNT);
 		break;
 	case RAM_DATA_MODE_COL_MAJOR:
@@ -140,7 +140,7 @@ int stp_sram_read_word(struct paintbox_data *pb,
 		break;
 	};
 
-	spin_unlock_irqrestore(&pb->stp_lock, irq_flags);
+	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 
 	return 0;
 }
@@ -153,15 +153,15 @@ static int validate_sram_transfer(struct paintbox_data *pb,
 
 	switch (sram_target) {
 	case SRAM_TARGET_STP_INSTRUCTION_RAM:
-		sram_len_bytes = stp->inst_mem_size_in_instructions *
+		sram_len_bytes = pb->stp.inst_mem_size_in_instructions *
 				STP_INST_SRAM_INSTRUCTION_WIDTH_BYTES;
 		break;
 	case SRAM_TARGET_STP_CONSTANT_RAM:
-		sram_len_bytes = stp->const_mem_size_in_words *
+		sram_len_bytes = pb->stp.const_mem_size_in_words *
 				STP_CONST_SRAM_WORD_WIDTH_BYTES;
 		break;
 	case SRAM_TARGET_STP_SCALAR_RAM:
-		sram_len_bytes = stp->scalar_mem_size_in_words *
+		sram_len_bytes = pb->stp.scalar_mem_size_in_words *
 				STP_SCALAR_SRAM_WORD_WIDTH_BYTES;
 		break;
 	default:
@@ -255,8 +255,9 @@ static int validate_stp_vector_write_replicate_parameters(
 		return -EINVAL;
 	}
 
-	num_sheet_slots = req->write_halo_lanes ? stp->halo_mem_size_in_words :
-			stp->vector_mem_size_in_words;
+	num_sheet_slots = req->write_halo_lanes ?
+			pb->stp.halo_mem_size_in_words :
+			pb->stp.vector_mem_size_in_words;
 
 	sram_len_bytes = num_sheet_slots * STP_PIO_WORD_WIDTH_BYTES;
 	sram_start_bytes = req->sheet_slot * STP_PIO_WORD_WIDTH_BYTES;
@@ -303,8 +304,8 @@ static int validate_stp_vector_write_coordinate_parameters(
 			VECTOR_SRAM_LANE_GROUP_SIMD_COLS || req->lane_group_y >=
 			VECTOR_SRAM_LANE_GROUP_SIMD_ROWS);
 
-	num_sheet_slots = is_halo_write ? stp->halo_mem_size_in_words :
-			stp->vector_mem_size_in_words;
+	num_sheet_slots = is_halo_write ? pb->stp.halo_mem_size_in_words :
+			pb->stp.vector_mem_size_in_words;
 
 	sram_len_bytes = num_sheet_slots * STP_PIO_WORD_WIDTH_BYTES;
 	sram_start_bytes = req->sheet_slot * STP_PIO_WORD_WIDTH_BYTES;
@@ -372,8 +373,8 @@ static int validate_stp_vector_read_coordinate_parameters(
 	is_halo_read = (req->lane_group_x >= VECTOR_SRAM_LANE_GROUP_SIMD_COLS ||
 			req->lane_group_y >= VECTOR_SRAM_LANE_GROUP_SIMD_ROWS);
 
-	num_sheet_slots = is_halo_read ? stp->halo_mem_size_in_words :
-			stp->vector_mem_size_in_words;
+	num_sheet_slots = is_halo_read ? pb->stp.halo_mem_size_in_words :
+			pb->stp.vector_mem_size_in_words;
 
 	sram_len_bytes = num_sheet_slots * STP_PIO_WORD_WIDTH_BYTES;
 	sram_start_bytes = req->sheet_slot * STP_PIO_WORD_WIDTH_BYTES;

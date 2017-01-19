@@ -33,6 +33,7 @@
 #include "paintbox-dma.h"
 #include "paintbox-io.h"
 #include "paintbox-mipi.h"
+#include "paintbox-mmu.h"
 #include "paintbox-regs.h"
 #include "paintbox-regs-supplemental.h"
 #include "paintbox-stp.h"
@@ -127,18 +128,6 @@ err_exit:
 }
 
 static const char *io_axi_reg_names[IO_AXI_NUM_REGS] = {
-	REG_NAME_ENTRY(MMU_CTRL),
-	REG_NAME_ENTRY(MMU_TABLE_BASE),
-	REG_NAME_ENTRY(MMU_ERR_BASE),
-	REG_NAME_ENTRY(MMU_SYNC),
-	REG_NAME_ENTRY(MMU_FLUSH_CHANNEL),
-	REG_NAME_ENTRY(MMU_FLUSH_ADDRESS),
-	REG_NAME_ENTRY(MMU_FLUSH_FIFO_LEVEL),
-	REG_NAME_ENTRY(MMU_FLUSH_FIFO_FULL),
-	REG_NAME_ENTRY(MMU_ISR),
-	REG_NAME_ENTRY(MMU_IMR),
-	REG_NAME_ENTRY(MMU_ISR_OVF),
-	REG_NAME_ENTRY(MMU_ERR_LOG),
 	REG_NAME_ENTRY(BIF_AXI_CTRL_DMA0),
 	REG_NAME_ENTRY(BIF_AXI_CTRL_DMA1),
 	REG_NAME_ENTRY(BIF_AXI_CTRL_DMA2),
@@ -160,16 +149,7 @@ static const char *io_axi_reg_names[IO_AXI_NUM_REGS] = {
 	REG_NAME_ENTRY(BIF_PMON_CNT_1_CFG),
 	REG_NAME_ENTRY(BIF_PMON_CNT_1),
 	REG_NAME_ENTRY(BIF_PMON_CNT_1_STS_ACC),
-	REG_NAME_ENTRY(BIF_PMON_CNT_1_STS),
-	REG_NAME_ENTRY(MMU_PMON_CFG),
-	REG_NAME_ENTRY(MMU_PMON_CNT_0_CFG),
-	REG_NAME_ENTRY(MMU_PMON_CNT_0),
-	REG_NAME_ENTRY(MMU_PMON_CNT_0_STS_ACC),
-	REG_NAME_ENTRY(MMU_PMON_CNT_0_STS),
-	REG_NAME_ENTRY(MMU_PMON_CNT_1_CFG),
-	REG_NAME_ENTRY(MMU_PMON_CNT_1),
-	REG_NAME_ENTRY(MMU_PMON_CNT_1_STS_ACC),
-	REG_NAME_ENTRY(MMU_PMON_CNT_1_STS)
+	REG_NAME_ENTRY(BIF_PMON_CNT_1_STS)
 };
 
 int dump_io_apb_stats(struct paintbox_debug *debug, char *buf,
@@ -468,168 +448,6 @@ static void paintbox_bif_interrupt(struct paintbox_data *pb)
 		paintbox_bif_dma_bus_error_interrupt(pb, true);
 }
 
-static void paintbox_mmu_table_walk_error_interrupt(struct paintbox_data *pb,
-		const char *error, bool overflow)
-{
-	if (!overflow) {
-		uint64_t err_log;
-		unsigned long iova;
-		unsigned int tid;
-
-		err_log = readq(pb->io.axi_base + MMU_ERR_LOG);
-		writeq(err_log, pb->io.axi_base + MMU_ERR_LOG);
-
-		tid = (unsigned int)((err_log & MMU_ERR_LOG_ID_MASK) >>
-				MMU_ERR_LOG_ID_SHIFT);
-
-		iova = (unsigned long)((err_log & MMU_ERR_LOG_VPAGEADDR_MASK) <<
-				MMU_IOVA_SHIFT);
-
-		dev_err(&pb->pdev->dev,
-				"%s: %s occurred on dma %s, tid 0x%02x iova "
-				"0x%016lx\n", __func__, error,
-				(err_log & MMU_ERR_LOG_RD_WR_N_MASK) ? "read" :
-				"write", tid, iova);
-	} else {
-		dev_err(&pb->pdev->dev,
-				"%s: table walk engine %s occurred (interrupt "
-				"overflow)", __func__, error);
-	}
-
-	/* An MMU table walk error is a catastrophic error for the IPU.
-	 * Complete and report the error on all DMA channels.
-	 */
-	dma_report_error_all_channels(pb, -ENOTRECOVERABLE);
-
-	/* TODO(ahampson):  Initiate a reset of the IPU and block new operations
-	 * until the IPU comes out of reset.  As part of the reset process any
-	 * MIPI or STP waiters should be released.  b/33455713
-	 */
-}
-
-static void paintbox_mmu_flush_error_interrupt(struct paintbox_data *pb,
-		const char *error, bool overflow)
-{
-	if (!overflow) {
-		uint64_t err_log;
-		unsigned long iova;
-
-		err_log = readq(pb->io.axi_base + MMU_ERR_LOG);
-		writeq(err_log, pb->io.axi_base + MMU_ERR_LOG);
-
-		iova = (unsigned long)((err_log & MMU_ERR_LOG_VPAGEADDR_MASK) <<
-				MMU_IOVA_SHIFT);
-
-		dev_err(&pb->pdev->dev,
-				"%s: mmu flush %s error occurred, iova 0x%016lx"
-				"\n", __func__, error, iova);
-	} else {
-		dev_err(&pb->pdev->dev,
-				"%s: mmu flush %s error occurred (interrupt "
-				"overflow)", __func__, error);
-	}
-
-	/* An MMU flush error is a catastrophic error for the IPU.
-	 * Complete and report the error on all DMA channels.
-	 */
-	dma_report_error_all_channels(pb, -ENOTRECOVERABLE);
-
-	/* TODO(ahampson):  Initiate a reset of the IPU and block new operations
-	 * until the IPU comes out of reset.  As part of the reset process any
-	 * MIPI or STP waiters should be released.  b/33455713
-	 */
-}
-
-static void paintbox_mmu_prefetch_error_interrupt(struct paintbox_data *pb,
-		bool overflow)
-{
-	if (!overflow) {
-		uint64_t err_log;
-		unsigned long iova;
-
-		err_log = readq(pb->io.axi_base + MMU_ERR_LOG);
-		writeq(err_log, pb->io.axi_base + MMU_ERR_LOG);
-
-		iova = (unsigned long)((err_log & MMU_ERR_LOG_VPAGEADDR_MASK) <<
-				MMU_IOVA_SHIFT);
-
-		dev_err(&pb->pdev->dev,
-				"%s: mmu prefetch read error occurred, iova "
-				"0x%016lx\n", __func__, iova);
-	} else {
-		dev_err(&pb->pdev->dev,
-				"%s: mmu pretch read error occurred (interrupt "
-				"overflow)", __func__);
-	}
-
-	/* An MMU prefetch error is a catastrophic error for the IPU.
-	 * Complete and report the error on all DMA channels.
-	 */
-	dma_report_error_all_channels(pb, -ENOTRECOVERABLE);
-
-	/* TODO(ahampson):  Initiate a reset of the IPU and block new operations
-	 * until the IPU comes out of reset.  As part of the reset process any
-	 * MIPI or STP waiters should be released.  b/33455713
-	 */
-}
-
-static void paintbox_mmu_interrupt(struct paintbox_data *pb)
-{
-	uint32_t status = readl(pb->io.axi_base + MMU_ISR);
-	writel(status, pb->io.axi_base + MMU_ISR);
-
-	if (status & MMU_ISR_FLUSH_FULL_ERR_MASK)
-		dev_err(&pb->pdev->dev, "%s: mmu flush fifo full\n", __func__);
-
-	if (status & MMU_ISR_FLUSH_MEMRD_ERR_MASK)
-		paintbox_mmu_flush_error_interrupt(pb, "memory read", false);
-
-	if (status & MMU_ISR_FLUSH_INVALID_TABLE_MASK)
-		paintbox_mmu_flush_error_interrupt(pb, "invalid table", false);
-
-	if (status & MMU_ISR_TWE_MEMRD_ERR_MASK)
-		paintbox_mmu_table_walk_error_interrupt(pb, "read error",
-				false);
-
-	if (status & MMU_ISR_TWE_ACCESS_VIO_MASK)
-		paintbox_mmu_table_walk_error_interrupt(pb, "permission error",
-				false);
-
-	if (status & MMU_ISR_TWE_INVALID_TABLE_MASK)
-		paintbox_mmu_table_walk_error_interrupt(pb, "invalid table",
-				false);
-
-	if (status & MMU_ISR_PREFETCH_MEMRD_ERR_MASK)
-		paintbox_mmu_prefetch_error_interrupt(pb, false);
-
-	status = readl(pb->io.axi_base + MMU_ISR_OVF);
-	writel(status, pb->io.axi_base + MMU_ISR_OVF);
-
-	if (status & MMU_ISR_OVF_FLUSH_FULL_ERR_MASK)
-		dev_err(&pb->pdev->dev, "%s: mmu flush fifo full (interrupt "
-				"overflow)\n", __func__);
-
-	if (status & MMU_ISR_OVF_FLUSH_MEMRD_ERR_MASK)
-		paintbox_mmu_flush_error_interrupt(pb, "memory read", true);
-
-	if (status & MMU_ISR_OVF_FLUSH_INVALID_TABLE_MASK)
-		paintbox_mmu_flush_error_interrupt(pb, "invalid table", true);
-
-	if (status & MMU_ISR_OVF_TWE_MEMRD_ERR_MASK)
-		paintbox_mmu_table_walk_error_interrupt(pb, "read error", true);
-
-	if (status & MMU_ISR_OVF_TWE_ACCESS_VIO_MASK)
-		paintbox_mmu_table_walk_error_interrupt(pb, "permission error",
-				true);
-
-	if (status & MMU_ISR_OVF_TWE_INVALID_TABLE_MASK)
-		paintbox_mmu_table_walk_error_interrupt(pb, "invalid table",
-				true);
-
-	if (status & MMU_ISR_OVF_PREFETCH_MEMRD_ERR_MASK)
-		paintbox_mmu_prefetch_error_interrupt(pb, true);
-}
-
 static irqreturn_t paintbox_io_interrupt(int irq, void *arg)
 {
 	struct paintbox_data *pb = (struct paintbox_data *)arg;
@@ -821,7 +639,7 @@ static void io_enable_bif_interrupt(struct paintbox_data *pb)
 	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);;
 }
 
-static void io_enable_mmu_interrupt(struct paintbox_data *pb)
+void paintbox_enable_mmu_interrupt(struct paintbox_data *pb)
 {
 	unsigned long irq_flags;
 	uint32_t ipu_imr;
@@ -830,6 +648,20 @@ static void io_enable_mmu_interrupt(struct paintbox_data *pb)
 
 	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
 	ipu_imr |= pb->io.bif_mask;
+	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
+
+	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);;
+}
+
+void paintbox_disable_mmu_interrupt(struct paintbox_data *pb)
+{
+	unsigned long irq_flags;
+	uint32_t ipu_imr;
+
+	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
+
+	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
+	ipu_imr &= ~pb->io.bif_mask;
 	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
 
 	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);;
@@ -844,17 +676,6 @@ int paintbox_io_axi_init(struct paintbox_data *pb)
 		BIF_IMR_TO_ERR_DMA_RD_MASK, pb->io.axi_base + BIF_IMR);
 
 	io_enable_bif_interrupt(pb);
-
-	writel(MMU_IMR_PREFETCH_MEMRD_ERR_MASK |
-			MMU_IMR_TWE_ACCESS_VIO_MASK |
-			MMU_IMR_TWE_MEMRD_ERR_MASK |
-			MMU_IMR_FLUSH_MEMRD_ERR_MASK |
-			MMU_IMR_TWE_INVALID_TABLE_MASK |
-			MMU_IMR_FLUSH_FULL_ERR_MASK |
-			MMU_IMR_FLUSH_INVALID_TABLE_MASK,
-			pb->io.axi_base + MMU_IMR);
-
-	io_enable_mmu_interrupt(pb);
 
 #ifdef CONFIG_DEBUG_FS
 	paintbox_debug_create_entry(pb, &pb->io.axi_debug, pb->debug_root,
