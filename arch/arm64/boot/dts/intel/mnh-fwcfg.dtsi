@@ -131,7 +131,7 @@ firmware_config {
         };
         wafer_upper {
                 compatible = "intel,mnh_efuse";
-                //dtnode = "/testnode@0";
+                dtnode = "/chosen";
                 dtprop = "wafer_upper";
                 row1    = <4>;
                 row2    = <5>;
@@ -140,7 +140,7 @@ firmware_config {
         };
         wafer_lower {
                 compatible = "intel,mnh_efuse";
-                //dtnode = "/testnode@0";
+                dtnode = "/chosen";
                 dtprop = "wafer_lower";
                 row1    = <6>;
                 row2    = <7>;
