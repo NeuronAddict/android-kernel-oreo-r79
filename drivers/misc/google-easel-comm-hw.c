@@ -328,7 +328,9 @@ int easelcomm_hw_init(void)
 {
 	int ret;
 
-	ret = mnh_reg_hotplug_callback(&easelcomm_hw_ap_hotplug_callback);
+	mutex_init(&app_dma_mutex);
+
+	ret = mnh_sm_reg_hotplug_callback(&easelcomm_hw_ap_hotplug_callback);
 	if (WARN_ON(ret))
 		return ret;
 
