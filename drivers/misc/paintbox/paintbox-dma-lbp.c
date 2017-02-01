@@ -99,8 +99,14 @@ int dma_setup_dram_to_lbp_transfer(struct paintbox_data *pb,
 {
 	int ret;
 
-	if (config->src.dram.len_bytes > DMA_MAX_IMG_TRANSFER_LEN)
+	if (config->src.dram.len_bytes > DMA_MAX_IMG_TRANSFER_LEN) {
+		dev_err(&pb->pdev->dev,
+				"%s: dma channel%u transfer too large, %llu > "
+				"%llu bytes", __func__, channel->channel_id,
+				config->dst.dram.len_bytes,
+				DMA_MAX_IMG_TRANSFER_LEN);
 		return -ERANGE;
+	}
 
 	ret = ipu_dma_attach_buffer(pb, transfer, &config->src.dram,
 			DMA_TO_DEVICE);
@@ -123,12 +129,7 @@ int dma_setup_dram_to_lbp_transfer(struct paintbox_data *pb,
 	if (ret < 0)
 		goto err_exit;
 
-	dev_dbg(&pb->pdev->dev,
-			"%s: dma channel%u: va %p dma addr %pad ->lbp%u lb%u "
-			"%llu bytes\n", __func__, config->channel_id,
-			transfer->buf_vaddr, &transfer->dma_addr,
-			config->dst.lbp.lbp_id, config->dst.lbp.lb_id,
-			config->src.dram.len_bytes);
+	LOG_DMA_DRAM_TO_LBP_TRANSFER(pb, channel, transfer, config);
 
 	return 0;
 
@@ -147,8 +148,14 @@ int dma_setup_lbp_to_dram_transfer(struct paintbox_data *pb,
 {
 	int ret;
 
-	if (config->dst.dram.len_bytes > DMA_MAX_IMG_TRANSFER_LEN)
+	if (config->dst.dram.len_bytes > DMA_MAX_IMG_TRANSFER_LEN) {
+		dev_err(&pb->pdev->dev,
+				"%s: dma channel%u transfer too large, %llu > "
+				"%llu bytes", __func__, channel->channel_id,
+				config->dst.dram.len_bytes,
+				DMA_MAX_IMG_TRANSFER_LEN);
 		return -ERANGE;
+	}
 
 	ret = ipu_dma_attach_buffer(pb, transfer, &config->dst.dram,
 			DMA_FROM_DEVICE);
@@ -171,12 +178,7 @@ int dma_setup_lbp_to_dram_transfer(struct paintbox_data *pb,
 	if (ret < 0)
 		goto err_exit;
 
-	dev_dbg(&pb->pdev->dev,
-			"%s: dma channel%u: lbp%u lb%u -> va %p dma addr %pad "
-			"%llu bytes\n", __func__, config->channel_id,
-			config->src.lbp.lbp_id, config->src.lbp.lb_id,
-			transfer->buf_vaddr, &transfer->dma_addr,
-			config->dst.dram.len_bytes);
+	LOG_DMA_LBP_TO_DRAM_TRANSFER(pb, channel, transfer, config);
 
 	return 0;
 
@@ -197,8 +199,9 @@ int dma_setup_mipi_to_lbp_transfer(struct paintbox_data *pb,
 
 	if (config->dst.lbp.gather) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma%u: gather mode not supported for MIPI "
-				"transfers", __func__, channel->channel_id);
+				"%s: dma channel%u gather mode not supported "
+				"for MIPI transfers", __func__,
+				channel->channel_id);
 		return -EINVAL;
 	}
 
@@ -228,6 +231,8 @@ int dma_setup_mipi_to_lbp_transfer(struct paintbox_data *pb,
 	if (ret < 0)
 		return ret;
 
+	LOG_DMA_MIPI_TO_LBP_TRANSFER(pb, channel, transfer, config);
+
 	return 0;
 }
 
@@ -242,8 +247,9 @@ int dma_setup_lbp_to_mipi_transfer(struct paintbox_data *pb,
 
 	if (config->src.lbp.gather) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma%u: gather mode not supported for MIPI "
-				"transfers", __func__, channel->channel_id);
+				"%s: dma channel%u gather mode not supported "
+				"for MIPI transfers", __func__,
+				channel->channel_id);
 		return -EINVAL;
 	}
 
@@ -272,6 +278,8 @@ int dma_setup_lbp_to_mipi_transfer(struct paintbox_data *pb,
 	ret = set_dma_transfer_region_parameters(pb, channel, transfer, config);
 	if (ret < 0)
 		return ret;
+
+	LOG_DMA_LBP_TO_MIPI_TRANSFER(pb, channel, transfer, config);
 
 	return 0;
 }

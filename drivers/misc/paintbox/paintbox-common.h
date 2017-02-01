@@ -18,8 +18,14 @@
 
 #include <linux/dma-buf.h>
 #include <linux/dma-mapping.h>
+#include <linux/iommu.h>
 #include <linux/miscdevice.h>
 #include <linux/paintbox.h>
+
+#ifdef CONFIG_PAINTBOX_IOMMU
+#include <linux/paintbox-iommu.h>
+#endif
+
 #include <linux/platform_device.h>
 #include <linux/scatterlist.h>
 
@@ -106,6 +112,13 @@ struct paintbox_power {
 
 struct paintbox_mmu {
 	struct paintbox_debug debug;
+	struct dentry *enable_dentry;
+#ifdef CONFIG_PAINTBOX_IOMMU
+	struct paintbox_iommu_pdata pdata;
+	struct device iommu_dev;
+	struct iommu_group *group;
+	bool enabled;
+#endif
 };
 
 struct paintbox_io {
@@ -365,6 +378,8 @@ struct paintbox_dma {
 	struct paintbox_dma_channel *channels;
 	unsigned int num_channels;
 	void __iomem *dma_base;
+	struct dentry *bif_outstanding_dentry;
+	unsigned int bif_outstanding;
 
 	/* Access to the discard queue and discard count is controlled by
 	 * pb->dma.dma_lock.
@@ -396,6 +411,14 @@ struct paintbox_stp {
 	unsigned int stp_id;
 	unsigned int interrupt_count;
 	bool pm_enabled;
+
+	/* cache of the stp's enabled bit, must hold pb->stp.lock to access */
+	bool enabled;
+
+	/* these fields are used for program counter histogram tracking */
+	uint32_t disabled;
+	uint32_t running;
+	uint32_t* stalled;
 };
 
 struct paintbox_stp_common {
@@ -502,6 +525,9 @@ struct paintbox_data {
 	struct ipu_capabilities caps;
 	size_t vdbg_log_len;
 	char *vdbg_log;
+
+	uint64_t perf_stp_sample_mask;
+	struct task_struct *perf_thread;
 };
 
 static inline uint8_t lbp_id_to_noc_id(uint8_t lbp_id)

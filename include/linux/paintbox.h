@@ -249,6 +249,18 @@ struct stp_interrupt_config {
 	uint32_t interrupt_id;
 };
 
+/* this structure must be followed by
+ * sizeof(uint32_t) * inst_mem_size_in_instructions bytes
+ */
+struct stp_pc_histogram {
+	/* input parameters */
+	uint32_t stp_id;
+
+	/* output parameters */
+	uint32_t disabled;
+	uint32_t running;
+};
+
 struct ipu_sram_write {
 	const void __user *buf;
 	size_t len_bytes;
@@ -464,6 +476,9 @@ struct mipi_interrupt_config {
 #define PB_UNBIND_STP_INTERRUPT       _IOW('p', 63, unsigned int)
 #define PB_STOP_DMA_TRANSFER          _IOW('p', 64, unsigned int)
 #define PB_FLUSH_DMA_TRANSFERS        _IOW('p', 65, struct dma_transfer_flush)
+#define PB_STP_PC_HISTOGRAM_ENABLE    _IOW('p', 66, unsigned long)
+#define PB_STP_PC_HISTOGRAM_READ      _IOWR('p', 67, struct stp_pc_histogram)
+#define PB_STP_PC_HISTOGRAM_CLEAR     _IOW('p', 68, unsigned long)
 
 /* Test ioctls
  * The following ioctls are for testing and are not to be used for normal

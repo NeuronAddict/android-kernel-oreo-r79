@@ -20,7 +20,6 @@
 
 #include "paintbox-common.h"
 
-
 #define DMA_DEBUG_BUFFER_SIZE (DMA_NUM_REGS * REG_DEBUG_BUFFER_SIZE)
 
 #ifdef VERBOSE_DEBUG
@@ -34,6 +33,60 @@ void log_dma_registers(struct paintbox_data *pb,
 #define LOG_DMA_REGISTERS(pb, channel)		\
 do { } while (0)
 #endif
+
+#ifdef DEBUG
+void paintbox_log_dma_dram_to_lbp_transfer(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel,
+		struct paintbox_dma_transfer *transfer,
+		struct dma_transfer_config *config);
+void paintbox_log_dma_lbp_to_dram_transfer(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel,
+		struct paintbox_dma_transfer *transfer,
+		struct dma_transfer_config *config);
+void paintbox_log_dma_dram_to_stp_transfer(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel,
+		struct paintbox_dma_transfer *transfer,
+		struct dma_transfer_config *config);
+void paintbox_log_dma_mipi_to_lbp_transfer(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel,
+		struct paintbox_dma_transfer *transfer,
+		struct dma_transfer_config *config);
+void paintbox_log_dma_lbp_to_mipi_transfer(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel,
+		struct paintbox_dma_transfer *transfer,
+		struct dma_transfer_config *config);
+void paintbox_log_dma_mipi_to_dram_transfer(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel,
+		struct paintbox_dma_transfer *transfer,
+		struct dma_transfer_config *config);
+
+#define LOG_DMA_DRAM_TO_LBP_TRANSFER(pb, channel, transfer, config)	\
+	paintbox_log_dma_dram_to_lbp_transfer(pb, channel, transfer, config)
+#define LOG_DMA_LBP_TO_DRAM_TRANSFER(pb, channel, transfer, config)	\
+	paintbox_log_dma_lbp_to_dram_transfer(pb, channel, transfer, config)
+#define LOG_DMA_DRAM_TO_STP_TRANSFER(pb, channel, transfer, config)	\
+	paintbox_log_dma_dram_to_stp_transfer(pb, channel, transfer, config)
+#define LOG_DMA_MIPI_TO_LBP_TRANSFER(pb, channel, transfer, config)	\
+	paintbox_log_dma_mipi_to_lbp_transfer(pb, channel, transfer, config)
+#define LOG_DMA_LBP_TO_MIPI_TRANSFER(pb, channel, transfer, config)	\
+	paintbox_log_dma_lbp_to_mipi_transfer(pb, channel, transfer, config)
+#define LOG_DMA_MIPI_TO_DRAM_TRANSFER(pb, channel, transfer, config)	\
+	paintbox_log_dma_mipi_to_dram_transfer(pb, channel, transfer, config)
+#else
+#define LOG_DMA_DRAM_TO_LBP_TRANSFER(pb, channel, transfer, config)	\
+do { } while (0)
+#define LOG_DMA_LBP_TO_DRAM_TRANSFER(pb, channel, transfer, config)	\
+do { } while (0)
+#define LOG_DMA_DRAM_TO_STP_TRANSFER(pb, channel, transfer, config)	\
+do { } while (0)
+#define LOG_DMA_MIPI_TO_LBP_TRANSFER(pb, channel, transfer, config)	\
+do { } while (0)
+#define LOG_DMA_LBP_TO_MIPI_TRANSFER(pb, channel, transfer, config)	\
+do { } while (0)
+#define LOG_DMA_MIPI_TO_DRAM_TRANSFER(pb, channel, transfer, config)	\
+do { } while (0)
+#endif
+
 
 int dump_dma_registers(struct paintbox_debug *debug, char *buf,
 		size_t len);

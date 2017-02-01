@@ -14,6 +14,7 @@
  */
 
 #include <linux/completion.h>
+#include <linux/delay.h>
 #include <linux/dma-mapping.h>
 #include <linux/kernel.h>
 #include <linux/paintbox.h>
@@ -38,6 +39,8 @@
 
 
 #define MAX_DMA_STOP_ATTEMPTS 2
+
+#define DMA_RESET_HOLD_PERIOD 10 /* us */
 
 /* The caller to this function must hold pb->dma.dma_lock. */
 void dma_select_channel(struct paintbox_data *pb, uint32_t channel_id)
@@ -112,6 +115,9 @@ static void dma_report_completion(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel,
 		struct paintbox_dma_transfer *transfer, int err)
 {
+	dev_dbg(&pb->pdev->dev, "dma channel%u: transfer %p completed err %d\n",
+			channel->channel_id, transfer, err);
+
 	if (transfer->notify_on_completion) {
 		list_add_tail(&transfer->entry, &channel->completed_list);
 
@@ -144,6 +150,9 @@ int bind_dma_interrupt_ioctl(struct paintbox_data *pb,
 		return ret;
 	}
 
+	dev_dbg(&pb->pdev->dev, "dma channel%u bind irq%u\n", req.channel_id,
+			req.interrupt_id);
+
 	ret = bind_dma_interrupt(pb, session, channel, req.interrupt_id);
 
 	init_waiters(pb, channel->irq);
@@ -170,14 +179,13 @@ int unbind_dma_interrupt_ioctl(struct paintbox_data *pb,
 	ret = unbind_dma_interrupt(pb, session, channel);
 	if (ret < 0) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma channel%u: unable to unbind interrupt,"
-				" %d\n", __func__, channel_id, ret);
+				"dma channel%u unbind irq failed, err %d\n",
+				channel_id, ret);
 		mutex_unlock(&pb->lock);
 		return ret;
 	}
 
-	dev_dbg(&pb->pdev->dev, "%s: dma channel%u: unbind interrupt\n",
-			__func__, channel_id);
+	dev_dbg(&pb->pdev->dev, "dma channel%u unbind irq\n", channel_id);
 
 	mutex_unlock(&pb->lock);
 
@@ -204,7 +212,6 @@ static void dma_reset_channel_locked(struct paintbox_data *pb,
 		ipu_pm_disable_dma_channel(pb, channel->channel_id);
 		return;
 	}
-
 
 	dma_select_channel(pb, channel->channel_id);
 
@@ -301,6 +308,9 @@ void dma_stop_transfer(struct paintbox_data *pb,
 
 	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 
+	dev_dbg(&pb->pdev->dev, "dma channel%u stopping\n",
+			channel->channel_id);
+
 	/* Wait for the EOF frame interrupt to occur.  If we timeout waiting
 	 * for the interrupt or the completion is interrupted by a signal then
 	 * the DMA channel will be reset below.
@@ -371,6 +381,8 @@ void dma_stop_transfer(struct paintbox_data *pb,
 		ipu_pm_disable_dma_channel(pb, channel->channel_id);
 
 	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
+
+	dev_dbg(&pb->pdev->dev, "dma channel%u stopped\n", channel->channel_id);
 }
 
 /* The caller to this function must hold pb->lock */
@@ -379,6 +391,8 @@ void release_dma_channel(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel)
 {
 	unsigned long irq_flags;
+
+	dev_dbg(&pb->pdev->dev, "dma channel%u release\n", channel->channel_id);
 
 	dma_stop_transfer(pb, channel);
 
@@ -459,8 +473,8 @@ struct paintbox_dma_channel *dma_handle_mipi_stream_allocated(
 	 */
 	if (pb->dma.channels[channel_id].session != session) {
 		dev_err(&pb->pdev->dev,
-				"%s: DMA channel%u is not part of this session,"
-				" MIPI %s stream%u can not be used.\n",
+				"%s: dma channel%u is not part of this session,"
+				" mipi %s stream%u can not be used.\n",
 				__func__, channel_id,
 				stream->is_input ? "input" : "output",
 				stream->stream_id);
@@ -527,6 +541,9 @@ int flush_dma_transfers_ioctl(struct paintbox_data *pb,
 		return ret;
 	}
 
+	dev_dbg(&pb->pdev->dev, "dma channel%u flush transfers\n",
+			req.channel_id);
+
 	if (req.flush_pending)
 		drain_queue(pb, &channel->pending_list,
 				&channel->pending_count);
@@ -568,6 +585,8 @@ int allocate_dma_channel_ioctl(struct paintbox_data *pb,
 		mutex_unlock(&pb->lock);
 		return -EACCES;
 	}
+
+	dev_dbg(&pb->pdev->dev, "dma channel%u allocated\n", channel_id);
 
 	channel->session = session;
 	list_add_tail(&channel->session_entry, &session->dma_list);
@@ -695,6 +714,9 @@ int read_dma_transfer_ioctl(struct paintbox_data *pb,
 		return -EFAULT;
 	}
 
+	dev_dbg(&pb->pdev->dev, "dma channel%u read transfer\n",
+			channel->channel_id);
+
 	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
 
 	if (list_empty(&channel->completed_list)) {
@@ -731,7 +753,6 @@ static void commit_transfer_to_hardware(struct paintbox_data *pb,
 {
 	struct paintbox_dma_transfer *transfer;
 	struct paintbox_dma *dma = &pb->dma;
-	uint32_t val;
 
 	transfer = list_entry(channel->pending_list.next,
 			struct paintbox_dma_transfer, entry);
@@ -755,12 +776,7 @@ static void commit_transfer_to_hardware(struct paintbox_data *pb,
 			DMA_CHAN_IMG_LAYOUT_L);
 	writel(transfer->chan_img_layout_high, dma->dma_base +
 			DMA_CHAN_IMG_LAYOUT_H);
-
-	val = readl(dma->dma_base + DMA_CHAN_BIF_XFER);
-	val &= ~DMA_CHAN_STRIPE_HEIGHT_MASK;
-	val |= transfer->chan_bif_xfer;
-	writel(val, dma->dma_base + DMA_CHAN_BIF_XFER);
-
+	writel(transfer->chan_bif_xfer, dma->dma_base + DMA_CHAN_BIF_XFER);
 	writel(transfer->chan_va_low, dma->dma_base + DMA_CHAN_VA_L);
 	writel(transfer->chan_va_high, dma->dma_base + DMA_CHAN_VA_H);
 	writel(transfer->chan_va_bdry_low, dma->dma_base + DMA_CHAN_VA_BDRY_L);
@@ -801,8 +817,6 @@ int stop_dma_transfer_ioctl(struct paintbox_data *pb,
 		return ret;
 	}
 
-	dev_dbg(&pb->pdev->dev, "%s: dma%u: stop\n",  __func__, channel_id);
-
 	dma_stop_transfer(pb, channel);
 
 	mutex_unlock(&pb->lock);
@@ -825,19 +839,19 @@ int start_dma_transfer_ioctl(struct paintbox_data *pb,
 		return ret;
 	}
 
-	dev_dbg(&pb->pdev->dev, "%s: dma%u: start\n",  __func__, channel_id);
+	dev_dbg(&pb->pdev->dev, "dma channel%u start\n", channel_id);
 
 	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
 
 	if (list_empty(&channel->pending_list)) {
-		dev_err(&pb->pdev->dev, "dma ch%u: no pending transfers\n",
+		dev_err(&pb->pdev->dev, "dma channel%u no pending transfers\n",
 				channel->channel_id);
 		ret = -ENOENT;
 		goto err_exit;
 	}
 
 	if (channel->active_count >= MAX_ACTIVE_TRANSFERS) {
-		dev_err(&pb->pdev->dev, "dma ch%u: too many transfers\n",
+		dev_err(&pb->pdev->dev, "dma channel%u too many transfers\n",
 				channel->channel_id);
 		ret = -EAGAIN;
 		goto err_exit;
@@ -881,54 +895,14 @@ int get_completed_transfer_count_ioctl(struct paintbox_data *pb,
 
 	mutex_unlock(&pb->lock);
 
-	return ret;
-}
-
-#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
-int dma_test_reset_ioctl(struct paintbox_data *pb,
-		struct paintbox_session *session, unsigned long arg)
-{
-	unsigned long irq_flags;
-	uint32_t ctrl;
-
-	mutex_lock(&pb->lock);
-
-	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
-
-	ctrl = readl(pb->dma.dma_base + DMA_CHAN_CTRL_L);
-	ctrl |= DMA_RESET;
-	writel(ctrl, pb->dma.dma_base + DMA_CHAN_CTRL_L);
-	ctrl &= ~DMA_RESET;
-	writel(ctrl, pb->dma.dma_base + DMA_CHAN_CTRL_L);
-
-	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
-
-	mutex_unlock(&pb->lock);
-
-	return 0;
-}
-
-int dma_test_channel_reset_ioctl(struct paintbox_data *pb,
-		struct paintbox_session *session, unsigned long arg)
-{
-	unsigned int channel_id = (unsigned int)arg;
-	struct paintbox_dma_channel *channel;
-	int ret = 0;
-
-	mutex_lock(&pb->lock);
-	channel = get_dma_channel(pb, session, channel_id, &ret);
-	if (ret >= 0)
-		dma_reset_channel(pb, channel);
-
-	mutex_unlock(&pb->lock);
+	dev_dbg(&pb->pdev->dev,
+			"dma channel%u get completed transfer count %d\n",
+			channel_id, ret);
 
 	return ret;
 }
-#endif
 
-/* This function must be called in an interrupt context and the caller must
- * hold pb->dma.dma_lock.
- */
+/* The caller to this function must hold pb->dma.dma_lock */
 static void dma_report_channel_error_locked(struct paintbox_data *pb,
 		unsigned int channel_id, int err)
 {
@@ -998,6 +972,64 @@ void dma_report_error_all_channels(struct paintbox_data *pb, int err)
 	spin_unlock(&pb->dma.dma_lock);
 }
 
+/* The caller to this function must hold pb->dma.dma_lock */
+static void paintbox_dma_reset_locked(struct paintbox_data *pb)
+{
+	unsigned int channel_id;
+
+	writel(DMA_RESET, pb->dma.dma_base + DMA_CTRL);
+
+	/* TODO(ahampson):  There should be no need to hold the DMA reset
+	 * register high for a minimum period but the FPGA will lockup if the
+	 * reset register is cleared immediately following a VA Error Interrupt.
+	 * This needs to be evaluated on the real hardware.
+	 *
+	 */
+	udelay(DMA_RESET_HOLD_PERIOD);
+	writel(0, pb->dma.dma_base + DMA_CTRL);
+
+	/* Notify all channels that there has been a DMA block reset */
+	for (channel_id = 0; channel_id < pb->dma.num_channels; channel_id++)
+		dma_report_channel_error_locked(pb, channel_id, -EIO);
+}
+
+#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
+int dma_test_reset_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg)
+{
+	unsigned long irq_flags;
+
+	mutex_lock(&pb->lock);
+
+	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
+
+	paintbox_dma_reset_locked(pb);
+
+	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
+
+	mutex_unlock(&pb->lock);
+
+	return 0;
+}
+
+int dma_test_channel_reset_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg)
+{
+	unsigned int channel_id = (unsigned int)arg;
+	struct paintbox_dma_channel *channel;
+	int ret = 0;
+
+	mutex_lock(&pb->lock);
+	channel = get_dma_channel(pb, session, channel_id, &ret);
+	if (ret >= 0)
+		dma_reset_channel(pb, channel);
+
+	mutex_unlock(&pb->lock);
+
+	return ret;
+}
+#endif
+
 /* This function must be called in an interrupt context */
 void dma_set_mipi_error(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel, int err)
@@ -1008,11 +1040,11 @@ void dma_set_mipi_error(struct paintbox_data *pb,
 
 	/* Verify that there is an active transfer. */
 	if (!channel->active_count) {
+		spin_unlock(&pb->dma.dma_lock);
 		dev_err(&pb->pdev->dev,
 				"%s: dma channel%u unable to set error, no"
 				"active transfer\n", __func__,
 				channel->channel_id);
-		spin_unlock(&pb->dma.dma_lock);
 		return;
 	}
 
@@ -1034,6 +1066,108 @@ void dma_set_mipi_error(struct paintbox_data *pb,
 	spin_unlock(&pb->dma.dma_lock);
 }
 
+/* This function must be called in an interrupt context and the caller must
+ * hold pb->dma.dma_lock.
+ */
+void paintbox_dma_eof_interrupt(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel,
+		struct paintbox_dma_transfer *transfer)
+{
+	struct paintbox_dma_transfer *next_transfer;
+	int err = transfer->error;
+
+	channel->stats.eof_interrupts++;
+
+	/* If there was a stop request then clear it. */
+	if (channel->stop_request) {
+		channel->stop_request = false;
+		complete(&channel->stop_completion);
+		/* In the case of a MIPI error and a cancel error then the
+		 * cancel will take precedence.
+		 */
+		err = -ECANCELED;
+	}
+
+	dev_dbg(&pb->pdev->dev, "dma channel%u EOF err %d\n",
+			channel->channel_id, err);
+
+	dma_report_completion(pb, channel, transfer, err);
+
+	/* If there was an error or there are no pending transfers then return
+	 * now.
+	 */
+	if (err || list_empty(&channel->pending_list))
+		return;
+
+	/* There should be space in the active queue if not then there is a
+	 * bug.
+	 */
+	if (WARN_ON(channel->active_count >= MAX_ACTIVE_TRANSFERS))
+		return;
+
+	next_transfer = list_entry(channel->pending_list.next,
+			struct paintbox_dma_transfer, entry);
+
+	if (next_transfer->auto_load_transfer)
+		commit_transfer_to_hardware(pb, channel);
+}
+
+/* This function must be called in an interrupt context and the caller must
+ * hold pb->dma.dma_lock.
+ */
+void paintbox_dma_va_interrupt(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel,
+		struct paintbox_dma_transfer *transfer)
+{
+	channel->stats.va_interrupts++;
+
+	/* If there was a stop request then clear it.  The VA error takes
+	 * precedence over the stop request.
+	 */
+	if (channel->stop_request) {
+		channel->stop_request = false;
+		complete(&channel->stop_completion);
+	}
+
+	dev_dbg(&pb->pdev->dev, "dma channel%u VA ERR %d\n",
+			channel->channel_id, -EIO);
+
+	if (!transfer) {
+		dev_warn(&pb->pdev->dev,
+				"%s: channel%u no active transfer\n", __func__,
+				channel->channel_id);
+		return;
+	}
+
+	dma_report_completion(pb, channel, transfer, -EIO);
+
+	/* TODO(ahampson):  This will need to be escalated to a full IPU reset
+	 * once that logic is implemented.  A DMA reset will get the DMA block
+	 * moving again but it may have lost SSP pointers.  A full IPU reset
+	 * is the only way to fully recover.  b/34518459
+	 */
+#ifdef CONFIG_PAINTBOX_V1
+	paintbox_dma_reset_locked(pb);
+#endif
+}
+
+/* This function must be called with pb->dma.dma_lock held */
+static inline struct paintbox_dma_transfer *pop_active_transfer(
+		struct paintbox_dma_channel *channel)
+{
+	struct paintbox_dma_transfer *transfer;
+
+	transfer = list_entry(channel->active_list.next,
+				struct paintbox_dma_transfer, entry);
+	if (channel->active_count == 0)
+		return NULL;
+
+	list_del(&transfer->entry);
+	channel->active_count--;
+
+	return transfer;
+}
+
 /* This function must be called in an interrupt context */
 irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 		uint32_t channel_mask)
@@ -1044,7 +1178,7 @@ irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 			channel_id++, channel_mask >>= 1) {
 		struct paintbox_dma_channel *channel;
 		struct paintbox_dma_transfer *transfer;
-		uint32_t status, mode, src;
+		uint32_t status, overflow_status, src;
 
 		if (!(channel_mask & 0x01))
 			continue;
@@ -1054,82 +1188,69 @@ irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 		channel = &pb->dma.channels[channel_id];
 		channel->stats.irq_activations++;
 
-		transfer = list_entry(channel->active_list.next,
-				struct paintbox_dma_transfer, entry);
-		list_del(&transfer->entry);
-
-		channel->active_count--;
-		WARN_ON(channel->active_count < 0);
-
 		dma_select_channel(pb, channel_id);
 
+		/* Each DMA channel has an ISR register and an ISR_OVF register.
+		 * If if an interrupt occurs on the channel then the appropriate
+		 * bit will be set in the ISR register.  If a second interupt
+		 * occurs before the first ISR bit is cleared then the
+		 * appropriate bit will be set in the ISR_OVF register.
+		 */
 		status = readl(pb->dma.dma_base + DMA_CHAN_ISR);
+		overflow_status = readl(pb->dma.dma_base + DMA_CHAN_ISR_OVF);
 		writel(status, pb->dma.dma_base + DMA_CHAN_ISR);
 
-		mode = readl(pb->dma.dma_base + DMA_CHAN_MODE_RO);
-		src = (mode & DMA_CHAN_SRC_MASK) >> DMA_CHAN_SRC_SHIFT;
+		transfer = pop_active_transfer(channel);
+		if (transfer) {
+			src = (transfer->chan_mode & DMA_CHAN_SRC_MASK) >>
+					DMA_CHAN_SRC_SHIFT;
 
-		/* If this is a MIPI_IN transfer then notify the MIPI code that
-		 * the DMA transfer has completed.
-		 */
-		if (src == DMA_CHAN_SRC_MIPI_IN)
-			mipi_input_handle_dma_completed(pb,
-					channel->mipi_stream);
+			/* If this is a MIPI_IN transfer then notify the MIPI
+			 * code that the DMA transfer has completed.
+			 */
+			if (src == DMA_CHAN_SRC_MIPI_IN)
+				mipi_input_handle_dma_completed(pb,
+						channel->mipi_stream);
 
-		/* If there is a stop request then stop the current transfers
-		 * and signal the waiters if there are any.  Do not load any
-		 * new transfers either.  The runtime will need to start the
-		 * channel again to load the next transfer.
-		 */
-		if (channel->stop_request) {
-			channel->stop_request = false;
-
-			complete(&channel->stop_completion);
-			dma_report_completion(pb, channel, transfer,
-					-ECANCELED);
-			spin_unlock(&pb->dma.dma_lock);
-			continue;
+			if (status & DMA_CHAN_INT_VA_ERR)
+				paintbox_dma_va_interrupt(pb, channel,
+						transfer);
+			else if (status & DMA_CHAN_INT_EOF)
+				paintbox_dma_eof_interrupt(pb, channel,
+						transfer);
+		} else {
+			dev_warn(&pb->pdev->dev,
+					"%s: channel%u no active transfer ISR "
+					"0x%08x ISR_OVF 0x%08x\n", __func__,
+					channel->channel_id, status,
+					overflow_status);
 		}
 
-		if (status & DMA_CHAN_INT_VA_ERR) {
-			channel->stats.va_interrupts++;
-			dma_report_completion(pb, channel, transfer, -EIO);
-		} else if (status & DMA_CHAN_INT_EOF) {
-			channel->stats.eof_interrupts++;
+		/* Check the ISR_OVF status register in case a second
+		 * interrupt occured.  If there has been a second interrupt then
+		 * pop the other active transfer off the active transfer queue
+		 * and process it.
+		 */
+		if (overflow_status) {
+			writel(overflow_status, pb->dma.dma_base +
+					DMA_CHAN_ISR_OVF);
 
-			/* If the transfer error field is set then there has
-			 * been an error for this transfer reported from outside
-			 * of DMA, e.g. MIPI overflow error.
-			 */
-			dma_report_completion(pb, channel, transfer,
-					transfer->error ?
-					transfer->error : 0);
-
-			if (list_empty(&channel->pending_list)) {
-				/* If there are no active transfers then power
-				 * down the DMA channel.
-				 */
-				if (channel->active_count == 0)
-					ipu_pm_disable_dma_channel(pb,
-							channel_id);
-
-				spin_unlock(&pb->dma.dma_lock);
-				continue;
+			transfer = pop_active_transfer(channel);
+			if (transfer) {
+				if (overflow_status & DMA_CHAN_INT_VA_ERR)
+					paintbox_dma_va_interrupt(pb, channel,
+							transfer);
+				else if (overflow_status & DMA_CHAN_INT_EOF)
+					paintbox_dma_eof_interrupt(pb, channel,
+							transfer);
+			} else {
+				dev_warn(&pb->pdev->dev,
+						"%s: channel%u no active "
+						"transfer ISR 0x%08x ISR_OVF "
+						"0x%08x\n", __func__,
+						channel->channel_id, status,
+						overflow_status);
 			}
-
-			if (channel->active_count >= MAX_ACTIVE_TRANSFERS) {
-				spin_unlock(&pb->dma.dma_lock);
-				dev_err(&pb->pdev->dev,
-						"dma channel%u: too many "
-						"transfers\n", channel_id);
-				continue;
-			}
-
-			transfer = list_entry(channel->pending_list.next,
-				struct paintbox_dma_transfer, entry);
-
-			if (transfer->auto_load_transfer)
-				commit_transfer_to_hardware(pb, channel);
 		}
 
 		/* If there are no active transfers then power down the DMA
@@ -1146,12 +1267,17 @@ irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 
 int paintbox_dma_init(struct paintbox_data *pb)
 {
+	uint32_t bif_xfer;
 	unsigned int i;
 
 	pb->dma.dma_base = pb->reg_base + IPU_DMA_OFFSET;
 
 	pb->dma.num_channels = readl(pb->dma.dma_base + DMA_CAP0) &
 			MAX_DMA_CHAN_MASK;
+
+	bif_xfer = readl(pb->dma.dma_base + DMA_CHAN_BIF_XFER);
+	pb->dma.bif_outstanding = ((bif_xfer & DMA_CHAN_OUTSTANDING_MASK) >>
+			DMA_CHAN_OUTSTANDING_SHIFT) + 1;
 
 	spin_lock_init(&pb->dma.dma_lock);
 	INIT_LIST_HEAD(&pb->dma.discard_list);

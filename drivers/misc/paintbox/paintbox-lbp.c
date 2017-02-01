@@ -13,15 +13,12 @@
  * GNU General Public License for more details.
  */
 
-#include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/device.h>
-#include <linux/dma-mapping.h>
 #include <linux/err.h>
 #include <linux/kernel.h>
 #include <linux/list.h>
 #include <linux/mutex.h>
-#include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/stddef.h>
 #include <linux/types.h>
@@ -30,336 +27,16 @@
 #include "paintbox-common.h"
 #include "paintbox-debug.h"
 #include "paintbox-lbp.h"
+#include "paintbox-lbp-debug.h"
 #include "paintbox-power.h"
 #include "paintbox-regs.h"
 #include "paintbox-regs-supplemental.h"
 #include "paintbox-sram.h"
 #include "paintbox-stp.h"
 
-
 /* The IPU uses a 4x4 block when transferring pixels */
 #define LB_BLOCK_TRANSFER_HEIGHT 4
 #define LB_BLOCK_TRANSFER_WIDTH  4
-
-#ifdef CONFIG_DEBUG_FS
-static uint64_t lbp_reg_entry_read(struct paintbox_debug_reg_entry *reg_entry)
-{
-	struct paintbox_debug *debug = reg_entry->debug;
-	struct paintbox_lbp *lbp = container_of(debug, struct paintbox_lbp,
-			debug);
-	struct paintbox_data *pb = debug->pb;
-	uint64_t val;
-
-	mutex_lock(&pb->lock);
-
-	writel(lbp->pool_id, pb->lbp.reg_base + LBP_SEL);
-	val = readq(pb->lbp.reg_base + reg_entry->reg_offset);
-
-	mutex_unlock(&pb->lock);
-
-	return val;
-}
-
-static void lbp_reg_entry_write(struct paintbox_debug_reg_entry *reg_entry,
-		uint64_t val)
-{
-	struct paintbox_debug *debug = reg_entry->debug;
-	struct paintbox_lbp *lbp = container_of(debug, struct paintbox_lbp,
-			debug);
-	struct paintbox_data *pb = debug->pb;
-
-	mutex_lock(&pb->lock);
-
-	writel(lbp->pool_id, pb->lbp.reg_base + LBP_SEL);
-	writeq(val, pb->lbp.reg_base + reg_entry->reg_offset);
-
-	mutex_unlock(&pb->lock);
-}
-
-static uint64_t lb_reg_entry_read(struct paintbox_debug_reg_entry *reg_entry)
-{
-	struct paintbox_debug *debug = reg_entry->debug;
-	struct paintbox_lb *lb = container_of(debug, struct paintbox_lb, debug);
-	struct paintbox_lbp *lbp = lb->lbp;
-	struct paintbox_data *pb = debug->pb;
-	uint64_t val;
-
-	mutex_lock(&pb->lock);
-
-	writel(lbp->pool_id | (lb->lb_id << LBP_SEL_LB_SEL_SHIFT),
-			pb->lbp.reg_base + LBP_SEL);
-	val = readq(pb->lbp.reg_base + LB_BLOCK_START + reg_entry->reg_offset);
-
-	mutex_unlock(&pb->lock);
-
-	return val;
-}
-
-static void lb_reg_entry_write(struct paintbox_debug_reg_entry *reg_entry,
-		uint64_t val)
-{
-	struct paintbox_debug *debug = reg_entry->debug;
-	struct paintbox_lb *lb = container_of(debug, struct paintbox_lb, debug);
-	struct paintbox_lbp *lbp = lb->lbp;
-	struct paintbox_data *pb = debug->pb;
-
-	mutex_lock(&pb->lock);
-
-	writel(lbp->pool_id | (lb->lb_id << LBP_SEL_LB_SEL_SHIFT),
-			pb->lbp.reg_base + LBP_SEL);
-	writeq(val, pb->lbp.reg_base + LB_BLOCK_START + reg_entry->reg_offset);
-
-	mutex_unlock(&pb->lock);
-}
-#endif
-
-#if defined(CONFIG_DEBUG_FS) || defined(VERBOSE_DEBUG)
-
-static const char *lbp_reg_names[LBP_NUM_REGS] = {
-	REG_NAME_ENTRY(LBP_SEL),
-	REG_NAME_ENTRY(LBP_CTRL),
-	REG_NAME_ENTRY(LBP_STAT),
-	REG_NAME_ENTRY(LBP_CAP0),
-	REG_NAME_ENTRY(LBP_CAP1),
-	REG_NAME_ENTRY(LBP_RAM_CTRL),
-	REG_NAME_ENTRY(LBP_RAM_DATA0),
-	REG_NAME_ENTRY(LBP_RAM_DATA1),
-	REG_NAME_ENTRY(LBP_RAM_DATA2),
-	REG_NAME_ENTRY(LBP_RAM_DATA3),
-	REG_NAME_ENTRY(LBP_PMON_CFG),
-	REG_NAME_ENTRY(LBP_PMON_CNT_0_CFG),
-	REG_NAME_ENTRY(LBP_PMON_CNT_0),
-	REG_NAME_ENTRY(LBP_PMON_CNT_0_STS),
-	REG_NAME_ENTRY(LBP_PMON_CNT_1_CFG),
-	REG_NAME_ENTRY(LBP_PMON_CNT_1),
-	REG_NAME_ENTRY(LBP_PMON_CNT_1_STS),
-	REG_NAME_ENTRY(LB_CTRL0),
-	REG_NAME_ENTRY(LB_OFFSET),
-	REG_NAME_ENTRY(LB_BDRY),
-	REG_NAME_ENTRY(LB_IMG_SIZE),
-	REG_NAME_ENTRY(LB_SB_SIZE),
-	REG_NAME_ENTRY(LB_BASE),
-	REG_NAME_ENTRY(LB_STAT),
-	REG_NAME_ENTRY(LB_L_PARAM)
-};
-
-static inline int dump_lbp_reg(struct paintbox_data *pb, uint32_t reg_offset,
-		char *buf, int *written, size_t len)
-{
-	const char *reg_name = lbp_reg_names[REG_INDEX(reg_offset)];
-	return dump_ipu_register64(pb, pb->lbp.reg_base, reg_offset, reg_name,
-			buf, written, len);
-}
-
-static int dump_lbp_reg_verbose(struct paintbox_data *pb, uint32_t reg_offset,
-		char *buf, int *written, size_t len, const char *format, ...)
-{
-	va_list args;
-	int ret;
-
-	ret = dump_lbp_reg(pb, reg_offset, buf, written, len);
-	if (ret < 0)
-		return ret;
-
-	va_start(args, format);
-
-	ret = dump_ipu_vprintf(pb, buf, written, len, format, args);
-
-	va_end(args);
-
-	return ret;
-}
-
-int dump_lbp_registers(struct paintbox_debug *debug, char *buf, size_t len)
-{
-	struct paintbox_lbp *lbp = container_of(debug, struct paintbox_lbp,
-			debug);
-	struct paintbox_data *pb = debug->pb;
-	unsigned int reg_offset;
-	uint64_t val;
-	int ret, written = 0;
-
-	writel(lbp->pool_id, pb->lbp.reg_base + LBP_SEL);
-
-	val = readq(pb->lbp.reg_base + LBP_SEL);
-	ret = dump_lbp_reg_verbose(pb, LBP_SEL, buf, &written, len,
-			"\tLB_SEL 0x%02x LBP_SEL 0x%02x\n",
-			(val & LBP_SEL_LB_SEL_MASK) >> LBP_SEL_LB_SEL_SHIFT,
-			val & LBP_SEL_LBP_SEL_MASK);
-	if (ret < 0)
-		return ret;
-
-	val = readq(pb->lbp.reg_base + LBP_CTRL);
-	ret = dump_lbp_reg_verbose(pb, LBP_CTRL, buf, &written, len,
-			"\tLB_INIT 0x%02x LB_RESET 0x%04x RESET %d LBP_ENA "
-			"0x%02x\n",
-			(val & LBP_CTRL_LB_INIT_MASK) >> LBP_CTRL_LB_INIT_SHIFT,
-			(val & LBP_CTRL_LB_RESET_MASK) >>
-			LBP_CTRL_LB_RESET_SHIFT,
-			!!(val & LBP_CTRL_LBP_RESET_MASK),
-			val & LBP_CTRL_LB_ENA_MASK);
-	if (ret < 0)
-		return ret;
-
-	ret = dump_lbp_reg(pb, LBP_STAT, buf, &written, len);
-	if (ret < 0)
-		return ret;
-
-	val = readq(pb->lbp.reg_base + LBP_CAP0);
-	ret = dump_lbp_reg_verbose(pb, LBP_CAP0, buf, &written, len,
-			"\tMAX_RPTR %u MAX_FB_ROWS %u MAX_CHAN %u MAX_LB %u\n",
-			(val & LBP_CAP0_MAX_RPTR_MASK) >>
-			LBP_CAP0_MAX_RPTR_SHIFT,
-			(val & LBP_CAP0_MAX_FB_ROWS_MASK) >>
-			LBP_CAP0_MAX_FB_ROWS_SHIFT,
-			(val & LBP_CAP0_MAX_CHAN_MASK) >>
-			LBP_CAP0_MAX_CHAN_SHIFT,
-			val & LBP_CAP0_MAX_LB_MASK);
-	if (ret < 0)
-		return ret;
-
-	val = readq(pb->lbp.reg_base + LBP_CAP1);
-	ret = dump_lbp_reg_verbose(pb, LBP_CAP1, buf, &written, len,
-			"\tMEM_SIZE %u bytes\n", val);
-	if (ret < 0)
-		return ret;
-
-	for (reg_offset = LBP_RAM_CTRL; reg_offset < LBP_POOL_BLOCK_LEN;
-			reg_offset += IPU_REG_WIDTH) {
-		if (!lbp_reg_names[REG_INDEX(reg_offset)])
-			continue;
-
-		ret = dump_lbp_reg(pb, reg_offset, buf, &written, len);
-		if (ret < 0)
-			return ret;
-	}
-
-	return written;
-}
-
-int dump_lb_registers(struct paintbox_debug *debug, char *buf, size_t len)
-{
-	struct paintbox_lb *lb = container_of(debug, struct paintbox_lb, debug);
-	struct paintbox_lbp *lbp = lb->lbp;
-	struct paintbox_data *pb = debug->pb;
-	uint64_t val;
-	int ret, written = 0;
-
-	writel(lbp->pool_id | (lb->lb_id << LBP_SEL_LB_SEL_SHIFT),
-			pb->lbp.reg_base + LBP_SEL);
-
-	val = readq(pb->lbp.reg_base + LB_CTRL0);
-	ret = dump_lbp_reg_verbose(pb, LB_CTRL0, buf, &written, len,
-			"\tREUSE_ROWS %u FB_ROWS %u CHANs %u RPTRs %u\n",
-			(val & LB_CTRL0_REUSE_ROWS_MASK) >>
-			LB_CTRL0_REUSE_ROWS_SHIFT,
-			(val & LB_CTRL0_FB_ROWS_MASK) >>
-			LB_CTRL0_FB_ROWS_SHIFT,
-			(val & LB_CTRL0_NUM_CHAN_MASK) >>
-			LB_CTRL0_NUM_CHAN_SHIFT,
-			val & LB_CTRL0_NUM_RPTR_MASK);
-	if (ret < 0)
-		return ret;
-
-	val = readq(pb->lbp.reg_base + LB_OFFSET);
-	ret = dump_lbp_reg_verbose(pb, LB_OFFSET, buf, &written, len,
-			"\tFB_OFFSET %d OFFSET_CHAN %u OFFSET_Y %d OFFSET_X %d"
-			"\n",
-			(int8_t)((val & LB_OFFSET_FB_OFFSET_MASK) >>
-			LB_OFFSET_FB_OFFSET_SHIFT),
-			(val & LB_OFFSET_OFFSET_CHAN_MASK) >>
-			LB_OFFSET_OFFSET_CHAN_SHIFT,
-			(int16_t)((val & LB_OFFSET_OFFSET_Y_MASK) >>
-			LB_OFFSET_OFFSET_Y_SHIFT),
-			(int16_t)(val & LB_OFFSET_OFFSET_X_MASK));
-	if (ret < 0)
-		return ret;
-
-	val = readq(pb->lbp.reg_base + LB_BDRY);
-	ret = dump_lbp_reg_verbose(pb, LB_BDRY, buf, &written, len,
-			"\tBDRY_VAL 0x%04x BDRY 0x%x\n",
-			(val & LB_BDRY_BDRY_VAL_MASK) >> LB_BDRY_BDRY_VAL_SHIFT,
-			val & LB_BDRY_BDRY_MASK);
-	if (ret < 0)
-		return ret;
-
-	val = readq(pb->lbp.reg_base + LB_IMG_SIZE);
-	ret = dump_lbp_reg_verbose(pb, LB_IMG_SIZE, buf, &written, len,
-			"\tHEIGHT %upx WIDTH %upx\n",
-			(val & LB_IMG_SIZE_IMG_HEIGHT_MASK) >>
-			LB_IMG_SIZE_IMG_HEIGHT_SHIFT,
-			val & LB_IMG_SIZE_IMG_WIDTH_MASK);
-	if (ret < 0)
-		return ret;
-
-	val = readq(pb->lbp.reg_base + LB_SB_SIZE);
-	ret = dump_lbp_reg_verbose(pb, LB_SB_SIZE, buf, &written, len,
-			"\tSB_ROWS %u SB_COLS %u\n",
-			(val & LB_SB_SIZE_SB_ROWS_MASK) >>
-			LB_SB_SIZE_SB_ROWS_SHIFT,
-			val & LB_SB_SIZE_SB_COLS_MASK);
-	if (ret < 0)
-		return ret;
-
-	val = readq(pb->lbp.reg_base + LB_BASE);
-	ret = dump_lbp_reg_verbose(pb, LB_BASE, buf, &written, len,
-			"\tSB_BASE_ADDR 0x%08x FB_BASE_ADDR 0x%08x\n",
-			((val & LB_BASE_SB_BASE_ADDR_MASK) >>
-			LB_BASE_SB_BASE_ADDR_SHIFT) << LB_ADDR_ALIGN_SHIFT,
-			(val & LB_BASE_FB_BASE_ADDR_MASK) <<
-			LB_ADDR_ALIGN_SHIFT);
-	if (ret < 0)
-		return ret;
-
-	val = readq(pb->lbp.reg_base + LB_STAT);
-	ret = dump_lbp_reg_verbose(pb, LB_STAT, buf, &written, len,
-			"\tRPTR2 EMPTY %d RPTR1 EMPTY %d RTPR0 EMPTY %d FULL %d"
-			"\n",
-			!!(val & LB_STAT_EMPTY2), !!(val & LB_STAT_EMPTY1),
-			!!(val & LB_STAT_EMPTY0), !!(val & LB_STAT_FULL));
-	if (ret < 0)
-		return ret;
-
-	val = readq(pb->lbp.reg_base + LB_L_PARAM);
-	ret = dump_lbp_reg_verbose(pb, LB_L_PARAM, buf, &written, len,
-			"\tL_WIDTH %u L_INC %u\n",
-			(val & LB_L_PARAM_L_WIDTH_MASK) >>
-			LB_L_PARAM_L_WIDTH_SHIFT, val & LB_L_PARAM_L_INC_MASK);
-	if (ret < 0)
-		return ret;
-
-	return written;
-}
-
-#endif
-
-#ifdef VERBOSE_DEBUG
-static void log_lbp_registers(struct paintbox_data *pb,
-		struct paintbox_lbp *lbp, struct paintbox_lb *lb,
-		const char *msg)
-{
-	writel(lbp->pool_id | lb->lb_id << LBP_SEL_LB_SEL_SHIFT,
-			pb->lbp.reg_base + LBP_SEL);
-
-	dump_lbp_registers(&pb->lbps[lbp->pool_id].debug,
-			pb->vdbg_log, pb->vdbg_log_len);
-	dev_info(&pb->pdev->dev, "%s\nlbp%u:\n%s", msg, lbp->pool_id,
-			pb->vdbg_log);
-
-	dump_lb_registers(&pb->lbps[lbp->pool_id].lbs[lb->lb_id].debug,
-			pb->vdbg_log, pb->vdbg_log_len);
-	dev_info(&pb->pdev->dev, "lbp%u lb%u:\n%s", lb->lbp->pool_id, lb->lb_id,
-			pb->vdbg_log);
-}
-
-#define LOG_LBP_REGISTERS(pb, lbp, lb)		\
-	log_lbp_registers(pb, lbp, lb, __func__)
-
-#else
-
-#define LOG_LBP_REGISTERS(pb, lbp, lb)		\
-do { } while (0)
-#endif
 
 static int validate_lb_config(struct paintbox_data *pb,
 		struct paintbox_lbp *lbp, struct line_buffer_config *lb_config)
@@ -375,7 +52,7 @@ static int validate_lb_config(struct paintbox_data *pb,
 
 	if (lb_config->num_reuse_rows > LB_REUSE_ROWS_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: lb%u.%u: invalid reuse rows, %u >= %u\n",
+				"%s: lb%u lb%u: invalid reuse rows, %u >= %u\n",
 				__func__, lb_config->lb_pool_id,
 				lb_config->lb_id, lb_config->num_reuse_rows,
 				LB_REUSE_ROWS_MAX);
@@ -384,8 +61,8 @@ static int validate_lb_config(struct paintbox_data *pb,
 
 	if (lb_config->num_read_ptrs > pb->lbp.max_rptrs) {
 		dev_err(&pb->pdev->dev,
-				"%s: lb%u.%u: invalid max read ptrs, %u > %u\n",
-				__func__, lb_config->lb_pool_id,
+				"%s: lb%u lb%u: invalid max read ptrs, %u > %u"
+				"\n", __func__, lb_config->lb_pool_id,
 				lb_config->lb_id, lb_config->num_read_ptrs,
 				pb->lbp.max_rptrs);
 		return -EINVAL;
@@ -393,7 +70,7 @@ static int validate_lb_config(struct paintbox_data *pb,
 
 	if (lb_config->fb_rows > pb->lbp.max_fb_rows) {
 		dev_err(&pb->pdev->dev,
-				"%s: lb%u.%u: invalid fb_rows, %u > %u\n",
+				"%s: lb%u lb%u invalid fb_rows, %u > %u\n",
 				__func__, lb_config->lb_pool_id,
 				lb_config->lb_id, lb_config->fb_rows,
 				pb->lbp.max_fb_rows);
@@ -403,7 +80,7 @@ static int validate_lb_config(struct paintbox_data *pb,
 	if (lb_config->x_offset_pixels > LB_OFFSET_MAX ||
 			lb_config->x_offset_pixels < LB_OFFSET_MIN) {
 		dev_err(&pb->pdev->dev,
-				"%s: lbp%u lb%u: x offset out of bounds, %d <= "
+				"%s: lbp%u lb%u x offset out of bounds, %d <= "
 				"%d <= %d\n", __func__, lb_config->lb_pool_id,
 				lb_config->lb_id, LB_OFFSET_MIN,
 				lb_config->x_offset_pixels, LB_OFFSET_MAX);
@@ -413,7 +90,7 @@ static int validate_lb_config(struct paintbox_data *pb,
 	if (lb_config->y_offset_pixels > LB_OFFSET_MAX ||
 			lb_config->y_offset_pixels < LB_OFFSET_MIN) {
 		dev_err(&pb->pdev->dev,
-				"%s: lbp%u lb%u: y offset out of bounds, %d <= "
+				"%s: lbp%u lb%u y offset out of bounds, %d <= "
 				"%d <= %d\n", __func__, lb_config->lb_pool_id,
 				lb_config->lb_id, LB_OFFSET_MIN,
 				lb_config->y_offset_pixels, LB_OFFSET_MAX);
@@ -422,7 +99,7 @@ static int validate_lb_config(struct paintbox_data *pb,
 
 	if (lb_config->chan_offset_pixels > LB_OFFSET_CHAN_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: lb%u.%u: invalid CHAN offset, %u > %u\n",
+				"%s: lb%u lb%u invalid CHAN offset, %u > %u\n",
 				__func__, lb_config->lb_pool_id,
 				lb_config->lb_id, lb_config->chan_offset_pixels,
 				LB_OFFSET_CHAN_MAX);
@@ -431,7 +108,7 @@ static int validate_lb_config(struct paintbox_data *pb,
 
 	if ((lb_config->ipu_fb_base_addr & LB_ADDR_ALIGN_MASK) != 0) {
 		dev_err(&pb->pdev->dev,
-				"%s: lb%u.%u: FB base alignment error, 0x%x\n",
+				"%s: lb%u lb%u FB base alignment error, 0x%x\n",
 				__func__, lb_config->lb_pool_id,
 				lb_config->lb_id, lb_config->ipu_fb_base_addr);
 		return -EINVAL;
@@ -439,31 +116,11 @@ static int validate_lb_config(struct paintbox_data *pb,
 
 	if ((lb_config->ipu_sb_base_addr & LB_ADDR_ALIGN_MASK) != 0) {
 		dev_err(&pb->pdev->dev,
-				"%s: lb%u.%u: SB base alignment error, 0x%x\n",
-				__func__, lb_config->lb_pool_id,
+				"%s: lbp%u lb%u: SB base alignment error, 0x%x"
+				"\n", __func__, lb_config->lb_pool_id,
 				lb_config->lb_id, lb_config->ipu_fb_base_addr);
 		return -EINVAL;
 	}
-
-	dev_dbg(&pb->pdev->dev, "lbp%u.%u width: %u height: %u channels: %u\n",
-			lb_config->lb_pool_id, lb_config->lb_id,
-			lb_config->width_pixels, lb_config->height_pixels,
-			lb_config->num_channels);
-	dev_dbg(&pb->pdev->dev,
-			"\tfb offset %u x offset: %d y offset: %d chan offset "
-			"%d\n", lb_config->fb_offset_pixels,
-			lb_config->x_offset_pixels, lb_config->y_offset_pixels,
-			lb_config->chan_offset_pixels);
-	dev_dbg(&pb->pdev->dev,
-			"\rptrs: %u reuse rows: %u fb rows: %u sb rows: %u\n",
-			lb_config->num_read_ptrs, lb_config->num_reuse_rows,
-			lb_config->fb_rows, lb_config->sb_rows);
-	dev_dbg(&pb->pdev->dev, "\fb base addr: 0x%08x sb base addr 0x%08x\n",
-			lb_config->ipu_fb_base_addr,
-			lb_config->ipu_sb_base_addr);
-	dev_dbg(&pb->pdev->dev, "\tpadding method: %u value: %u\n",
-			lb_config->padding.method,
-			lb_config->padding.value_or_period);
 
 	return 0;
 }
@@ -562,9 +219,11 @@ void reset_lb(struct paintbox_data *pb, unsigned int lbp_id, unsigned int lb_id)
 }
 
 /* The caller to this function must hold pb->lock */
-void release_lbp(struct paintbox_data *pb,
-		struct paintbox_session *session, struct paintbox_lbp *lbp)
+void release_lbp(struct paintbox_data *pb, struct paintbox_session *session,
+		struct paintbox_lbp *lbp)
 {
+	dev_dbg(&pb->pdev->dev, "lbp%u release\n", lbp->pool_id);
+
 	/* The LBP access control masks are not implemented on the V1 hardware.
 	 */
 #ifndef CONFIG_PAINTBOX_V1
@@ -590,7 +249,7 @@ int allocate_lbp_ioctl(struct paintbox_data *pb,
 	struct paintbox_lbp *lbp;
 
 	if (pool_id >= pb->caps.num_lbps) {
-		dev_err(&pb->pdev->dev, "%s: invalid lb pool id %d\n", __func__,
+		dev_err(&pb->pdev->dev, "%s: invalid lbp id %d\n", __func__,
 				pool_id);
 		return -EINVAL;
 	}
@@ -599,7 +258,7 @@ int allocate_lbp_ioctl(struct paintbox_data *pb,
 
 	lbp = &pb->lbp.lbps[pool_id];
 	if (lbp->session) {
-		dev_err(&pb->pdev->dev, "%s: access error, lb pool id %d\n",
+		dev_err(&pb->pdev->dev, "%s: access error, lbp id %d\n",
 				__func__, pool_id);
 		mutex_unlock(&pb->lock);
 		return -EACCES;
@@ -622,6 +281,8 @@ int allocate_lbp_ioctl(struct paintbox_data *pb,
 	/* Grant access to all STPs in this session. */
 	enable_stp_access_to_lbp(pb, session, lbp);
 #endif
+
+	dev_dbg(&pb->pdev->dev, "lbp%u allocated\n", pool_id);
 
 	mutex_unlock(&pb->lock);
 
@@ -661,9 +322,9 @@ static int write_l_param_register(struct paintbox_data *pb,
 	l_inc = width_rounded;
 	if (l_inc > LB_L_INC_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: lbp%u lb%u: invalid l_inc valid %u "
-				"(max %u)\n", __func__, lb->lbp->pool_id,
-				lb->lb_id, l_inc, LB_L_INC_MAX);
+				"%s: lbp%u lb%u invalid l_inc valid %u (max %u)"
+				"\n", __func__, lb->lbp->pool_id, lb->lb_id,
+				l_inc, LB_L_INC_MAX);
 		return -EINVAL;
 	}
 
@@ -673,9 +334,9 @@ static int write_l_param_register(struct paintbox_data *pb,
 	l_width = width_rounded + sb_cols_rounded;
 	if (l_width > LB_L_WIDTH_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: lbp%u lb%u: invalid l_width valid %u "
-				"(max %u)\n", __func__, lb->lbp->pool_id,
-				lb->lb_id, l_width, LB_L_WIDTH_MAX);
+				"%s: lbp%u lb%u: invalid l_width valid %u (max "
+				"%u)\n", __func__, lb->lbp->pool_id, lb->lb_id,
+				l_width, LB_L_WIDTH_MAX);
 		return -EINVAL;
 	}
 
@@ -821,6 +482,8 @@ int setup_lb_ioctl(struct paintbox_data *pb,
 
 	lb->configured = true;
 
+	LOG_LINE_BUFFER_SETUP(pb, &lb_config);
+
 	LOG_LBP_REGISTERS(pb, lbp, lb);
 
 	mutex_unlock(&pb->lock);
@@ -903,7 +566,7 @@ static int validate_sram_transfer(struct paintbox_data *pb,
 {
 	if (sram_byte_addr + len_bytes > pb->lbp.mem_size_bytes) {
 		dev_err(&pb->pdev->dev,
-				"%s: lbp%u: memory transfer out of range: SRAM "
+				"%s: lbp%u memory transfer out of range: SRAM "
 				"addr 0x%08x + %lu > %u bytes\n",
 				__func__, lbp->pool_id, sram_byte_addr,
 				len_bytes, pb->lbp.mem_size_bytes);
@@ -946,7 +609,7 @@ int write_lbp_memory_ioctl(struct paintbox_data *pb,
 			req.buf, req.len_bytes);
 	if (ret < 0)
 		dev_err(&pb->pdev->dev,
-				"%s: lbp%u: write error addr: 0x%04x "
+				"%s: lbp%u write error addr: 0x%04x "
 				"ram_ctrl 0x%016llx err = %d\n",
 				__func__, req.id, req.sram_byte_addr,
 				readq(pb->lbp.reg_base + LBP_RAM_CTRL), ret);
@@ -989,7 +652,7 @@ int read_lbp_memory_ioctl(struct paintbox_data *pb,
 			req.buf, req.len_bytes);
 	if (ret < 0)
 		dev_err(&pb->pdev->dev,
-				"%s: lbp%u: read error addr: 0x%04x "
+				"%s: lbp%u read error addr: 0x%04x "
 				"ram_ctrl 0x%016llx err = %d\n", __func__,
 				req.id, req.sram_byte_addr,
 				readq(pb->lbp.reg_base + LBP_RAM_CTRL), ret);
@@ -1014,7 +677,7 @@ int reset_lbp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 		return ret;
 	}
 
-	dev_dbg(&pb->pdev->dev, "%s: lbp%u\n",  __func__, lbp->pool_id);
+	dev_dbg(&pb->pdev->dev, "lbp%u reset\n", lbp->pool_id);
 
 	writel(lbp->pool_id, pb->lbp.reg_base + LBP_SEL);
 
@@ -1057,8 +720,7 @@ int reset_lb_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 		return -EINVAL;
 	}
 
-	dev_dbg(&pb->pdev->dev, "%s: lbp%u lb%u\n",  __func__, lbp->pool_id,
-			req.lb_id);
+	dev_dbg(&pb->pdev->dev, "lbp%u lb%u reset\n",  lbp->pool_id, req.lb_id);
 
 	writel(lbp->pool_id, pb->lbp.reg_base + LBP_SEL);
 
@@ -1090,30 +752,14 @@ static int init_lbp(struct paintbox_data *pb, unsigned int lbp_index)
 	if (!lbp->lbs)
 		return -ENOMEM;
 
-#ifdef CONFIG_DEBUG_FS
-	paintbox_debug_create_entry(pb, &lbp->debug, pb->debug_root, "lbp",
-			lbp->pool_id, dump_lbp_registers, NULL, lbp);
-
-	paintbox_debug_create_reg_entries(pb, &lbp->debug, lbp_reg_names,
-			LBP_POOL_NUM_REGS, lbp_reg_entry_write,
-			lbp_reg_entry_read);
-#endif
+	paintbox_lbp_debug_init(pb, lbp);
 
 	for (i = 0; i < pb->lbp.max_lbs; i++) {
 		struct paintbox_lb *lb = &lbp->lbs[i];
 		lb->lbp = lbp;
 		lb->lb_id = i;
 
-#ifdef CONFIG_DEBUG_FS
-		paintbox_debug_create_entry(pb, &lb->debug,
-				lbp->debug.debug_dir, "lb", lb->lb_id,
-				dump_lb_registers, NULL, lb);
-
-		paintbox_debug_create_reg_entries(pb, &lb->debug,
-				&lbp_reg_names[REG_INDEX(LB_BLOCK_START)],
-				LB_NUM_REGS, lb_reg_entry_write,
-				lb_reg_entry_read);
-#endif
+		paintbox_lb_debug_init(pb, lbp, lb);
 	}
 
 #ifdef VERBOSE_DEBUG

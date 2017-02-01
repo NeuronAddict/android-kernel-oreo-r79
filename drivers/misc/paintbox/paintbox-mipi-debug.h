@@ -32,6 +32,22 @@ int dump_mipi_input_stream_registers(struct paintbox_debug *debug, char *buf,
 int dump_mipi_output_stream_registers(struct paintbox_debug *debug, char *buf,
 		size_t len);
 
+#ifdef DEBUG
+void paintbox_log_mipi_input_setup(struct paintbox_data *pb,
+		struct mipi_stream_setup *setup);
+void paintbox_log_mipi_output_setup(struct paintbox_data *pb,
+		struct mipi_stream_setup *setup);
+
+#define LOG_MIPI_INPUT_SETUP(pb, config)				\
+	paintbox_log_mipi_input_setup(pb, config)
+#define LOG_MIPI_OUTPUT_SETUP(pb, config)				\
+	paintbox_log_mipi_output_setup(pb, config)
+#else
+#define LOG_MIPI_INPUT_SETUP(pb, config)				\
+do { } while (0)
+#define LOG_MIPI_OUTPUT_SETUP(pb, config)				\
+do { } while (0)
+#endif
 
 #ifdef VERBOSE_DEBUG
 void log_mipi_registers(struct paintbox_data *pb,

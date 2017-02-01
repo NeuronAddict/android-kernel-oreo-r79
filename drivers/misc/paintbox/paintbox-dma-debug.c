@@ -93,6 +93,213 @@ static const char *dma_reg_names[DMA_NUM_REGS] = {
 	REG_NAME_ENTRY(DMA_SPARE)
 };
 
+static void paintbox_log_dma_common_transfer(struct paintbox_data *pb,
+		struct dma_transfer_config *config)
+{
+	dev_info(&pb->pdev->dev,
+			"\twidth %upx height %upx planes %u components %u bit"
+			" depth %u bits\n", config->img.width_pixels,
+			config->img.height_pixels, config->img.planes,
+			config->img.components, config->img.bit_depth);
+	dev_info(&pb->pdev->dev,
+			"\tplane stride %llu bytes row stride %u bytes\n",
+			config->img.plane_stride_bytes,
+			config->img.row_stride_bytes);
+	dev_info(&pb->pdev->dev,
+			"\tstart X %dpx start Y %dpx block4x4 %d mipi raw "
+			"format %d rgba format %d\n",
+			config->img.start_x_pixels,
+			config->img.start_y_pixels, config->img.block4x4,
+			config->img.mipi_raw_format, config->img.rgba_format);
+	dev_info(&pb->pdev->dev,
+			"\tsheet width %upx sheet height %u x stripe height %u "
+			"rows\n",
+			config->sheet_width, config->sheet_height,
+			config->stripe_height);
+	dev_info(&pb->pdev->dev,
+			"\tnoc outstanding %u retry interval %u\n",
+			config->noc_outstanding, config->retry_interval);
+	dev_info(&pb->pdev->dev, "\tnotify on completion %d auto load %d\n",
+			config->notify_on_completion,
+			config->auto_load_transfer);
+}
+
+/* The caller to this function must hold pb->lock */
+void paintbox_log_dma_dram_to_lbp_transfer(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel,
+		struct paintbox_dma_transfer *transfer,
+		struct dma_transfer_config *config)
+{
+	dev_info(&pb->pdev->dev, "dma channel%u setup transfer %p\n",
+			channel->channel_id, transfer);
+	if (config->src.dram.buffer_type == DMA_DRAM_BUFFER_USER) {
+		dev_info(&pb->pdev->dev,
+				"\tva %p dma addr %pad %llu bytes -> lbp%u lb%u"
+				" rptr id %u\n", config->src.dram.host_vaddr,
+				&transfer->dma_addr, config->src.dram.len_bytes,
+				config->dst.lbp.lbp_id, config->dst.lbp.lb_id,
+				config->dst.lbp.read_ptr_id);
+	} else {
+		dev_info(&pb->pdev->dev,
+				"\tdma buf fd %d dma_addr %pad %llu bytes -> "
+				"lbp%u lb%u rptr id %u\n",
+				config->src.dram.dma_buf_fd,
+				&transfer->dma_addr, config->src.dram.len_bytes,
+				config->dst.lbp.lbp_id, config->dst.lbp.lb_id,
+				config->dst.lbp.read_ptr_id);
+	}
+
+	dev_info(&pb->pdev->dev,
+				"\tlb start X %dpx lb start Y %dpx gather %d\n",
+				config->dst.lbp.start_x_pixels,
+				config->dst.lbp.start_y_pixels,
+				config->dst.lbp.gather);
+
+	paintbox_log_dma_common_transfer(pb, config);
+}
+
+/* The caller to this function must hold pb->lock */
+void paintbox_log_dma_lbp_to_dram_transfer(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel,
+		struct paintbox_dma_transfer *transfer,
+		struct dma_transfer_config *config)
+{
+	dev_info(&pb->pdev->dev, "dma channel%u setup transfer %p\n",
+			channel->channel_id, transfer);
+	if (config->dst.dram.buffer_type == DMA_DRAM_BUFFER_USER) {
+		dev_info(&pb->pdev->dev,
+				"\tlbp%u lb%u rptr id %u -> va %p dma addr %pad"
+				" %llu bytes\n", config->src.lbp.lbp_id,
+				config->src.lbp.lb_id,
+				config->src.lbp.read_ptr_id,
+				config->dst.dram.host_vaddr,
+				&transfer->dma_addr,
+				config->dst.dram.len_bytes);
+	} else {
+		dev_info(&pb->pdev->dev,
+				"\tlbp%u lb%u rptr id %u -> dma buf fd %d "
+				"dma_addr %pad %llu bytes\n",
+				config->src.lbp.lbp_id, config->src.lbp.lb_id,
+				config->src.lbp.read_ptr_id,
+				config->dst.dram.dma_buf_fd,
+				&transfer->dma_addr,
+				config->dst.dram.len_bytes);
+	}
+
+	dev_info(&pb->pdev->dev,
+				"\tlb start X %dpx lb start Y %dpx gather %d\n",
+				config->src.lbp.start_x_pixels,
+				config->src.lbp.start_y_pixels,
+				config->src.lbp.gather);
+
+	paintbox_log_dma_common_transfer(pb, config);
+}
+
+/* The caller to this function must hold pb->lock */
+void paintbox_log_dma_dram_to_stp_transfer(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel,
+		struct paintbox_dma_transfer *transfer,
+		struct dma_transfer_config *config)
+{
+	dev_info(&pb->pdev->dev, "dma channel%u setup transfer %p\n",
+			channel->channel_id, transfer);
+
+	if (config->src.dram.buffer_type == DMA_DRAM_BUFFER_USER) {
+		dev_info(&pb->pdev->dev,
+				"\tva %p dma addr %pad %llu bytes -> stp%u sram"
+				" addr 0x%08x\n", config->src.dram.host_vaddr,
+				&transfer->dma_addr, config->src.dram.len_bytes,
+				config->dst.stp.stp_id,
+				config->dst.stp.sram_addr);
+	} else {
+		dev_info(&pb->pdev->dev,
+				"\tdma buf fd %d dma_addr %pad %llu bytes -> "
+				"stp%u sram addr 0x%08x\n",
+				config->src.dram.dma_buf_fd,
+				&transfer->dma_addr, config->src.dram.len_bytes,
+				config->dst.stp.stp_id,
+				config->dst.stp.sram_addr);
+	}
+
+	paintbox_log_dma_common_transfer(pb, config);
+}
+
+/* The caller to this function must hold pb->lock */
+void paintbox_log_dma_mipi_to_lbp_transfer(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel,
+		struct paintbox_dma_transfer *transfer,
+		struct dma_transfer_config *config)
+{
+	dev_info(&pb->pdev->dev, "dma channel%u setup transfer %p\n",
+			channel->channel_id, transfer);
+	dev_info(&pb->pdev->dev,
+			"\tmipi input stream%u -> lbp%u lb%u rptr id %u\n",
+			channel->mipi_stream->stream_id,
+			config->dst.lbp.lbp_id, config->dst.lbp.lb_id,
+			config->dst.lbp.read_ptr_id);
+	dev_info(&pb->pdev->dev,
+			"\tlb start X %dpx lb start Y %dpx gather %d\n",
+			config->dst.lbp.start_x_pixels,
+			config->dst.lbp.start_y_pixels, config->dst.lbp.gather);
+
+	paintbox_log_dma_common_transfer(pb, config);
+}
+
+/* The caller to this function must hold pb->lock */
+void paintbox_log_dma_lbp_to_mipi_transfer(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel,
+		struct paintbox_dma_transfer *transfer,
+		struct dma_transfer_config *config)
+{
+	dev_info(&pb->pdev->dev, "dma channel%u setup transfer %p\n",
+			channel->channel_id, transfer);
+	dev_info(&pb->pdev->dev,
+			"\tlbp%u lb%u rptr id %u -> mipi output stream %u\n",
+			config->src.lbp.lbp_id, config->src.lbp.lb_id,
+			config->src.lbp.read_ptr_id,
+			channel->mipi_stream->stream_id);
+	dev_info(&pb->pdev->dev,
+			"\tlb start x %d px lb start y %d px gather %d\n",
+			config->src.lbp.start_x_pixels,
+			config->src.lbp.start_y_pixels, config->src.lbp.gather);
+
+	paintbox_log_dma_common_transfer(pb, config);
+}
+
+/* The caller to this function must hold pb->lock */
+void paintbox_log_dma_mipi_to_dram_transfer(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel,
+		struct paintbox_dma_transfer *transfer,
+		struct dma_transfer_config *config)
+{
+	dev_info(&pb->pdev->dev, "dma channel%u setup transfer %p\n",
+			channel->channel_id, transfer);
+	if (config->dst.dram.buffer_type == DMA_DRAM_BUFFER_USER) {
+		dev_info(&pb->pdev->dev,
+				"\tmipi input stream%u -> va %p dma addr %pad "
+				"%llu bytes\n", channel->mipi_stream->stream_id,
+				config->dst.dram.host_vaddr,
+				&transfer->dma_addr,
+				config->dst.dram.len_bytes);
+	} else {
+		dev_info(&pb->pdev->dev,
+				"\tmipi input stream%u -> dma buf fd %d "
+				"dma_addr %pad %llu bytes\n",
+				channel->mipi_stream->stream_id,
+				config->dst.dram.dma_buf_fd,
+				&transfer->dma_addr,
+				config->dst.dram.len_bytes);
+	}
+
+	dev_info(&pb->pdev->dev,
+				"\tlb start X %dpx lb start Y %dpx gather %d\n",
+				config->src.lbp.start_x_pixels,
+				config->src.lbp.start_y_pixels,
+				config->src.lbp.gather);
+
+	paintbox_log_dma_common_transfer(pb, config);
+}
+
 static uint64_t dma_reg_entry_read(struct paintbox_debug_reg_entry *reg_entry)
 {
 	struct paintbox_debug *debug = reg_entry->debug;
@@ -884,6 +1091,58 @@ int dump_dma_channel_stats(struct paintbox_debug *debug, char *buf,
 	return written;
 }
 
+static int paintbox_dma_bif_oustanding_show(struct seq_file *s, void *p)
+{
+	struct paintbox_data *pb = s->private;
+	seq_printf(s, "%u\n", pb->dma.bif_outstanding);
+	return 0;
+}
+
+static int paintbox_dma_bif_outstanding_open(struct inode *inode,
+		struct file *file)
+{
+	return single_open(file, paintbox_dma_bif_oustanding_show,
+			inode->i_private);
+}
+
+static ssize_t paintbox_dma_bif_outstanding_write(struct file *file,
+		const char __user *user_buf, size_t count, loff_t *ppos)
+{
+	struct seq_file *s = (struct seq_file *)file->private_data;
+	struct paintbox_data *pb = s->private;
+	unsigned int val;
+	int ret;
+
+	ret = kstrtouint_from_user(user_buf, count, 0, &val);
+	if (ret == 0) {
+		if (val < DMA_CHAN_OUTSTANDING_MIN ||
+				val > DMA_CHAN_OUTSTANDING_MAX) {
+			dev_err(&pb->pdev->dev,
+					"%s: invalid BIF outstanding value %u"
+					"(%u..%u)\n", __func__, val,
+					DMA_CHAN_OUTSTANDING_MIN,
+					DMA_CHAN_OUTSTANDING_MAX);
+			return -ERANGE;
+		}
+
+		pb->dma.bif_outstanding = val;
+		return count;
+	}
+
+	dev_err(&pb->pdev->dev, "%s: invalid value, err = %d", __func__, ret);
+
+	return ret;
+}
+
+static const struct file_operations dma_bif_outstanding_fops = {
+	.open = paintbox_dma_bif_outstanding_open,
+	.write = paintbox_dma_bif_outstanding_write,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+	.owner = THIS_MODULE,
+};
+
 void paintbox_dma_channel_debug_init(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel)
 {
@@ -909,6 +1168,15 @@ void paintbox_dma_debug_init(struct paintbox_data *pb)
 			-1, dump_dma_registers, NULL, &pb->dma);
 
 	ret = paintbox_debug_alloc_reg_entries(pb, &pb->dma.debug, reg_count);
+
+	pb->dma.bif_outstanding_dentry = debugfs_create_file("bif_outstanding",
+			S_IRUSR | S_IRGRP | S_IWUSR, pb->dma.debug.debug_dir,
+			pb, &dma_bif_outstanding_fops);
+	if (IS_ERR(pb->dma.bif_outstanding_dentry)) {
+		dev_err(&pb->pdev->dev, "%s: err = %ld", __func__,
+				PTR_ERR(pb->dma.bif_outstanding_dentry));
+		return;
+	}
 
 	for (i = 0, reg_index = 0; i < DMA_CTRL_NUM_REGS &&
 			reg_index < REG_INDEX(DMA_CTRL_BLOCK_LEN);

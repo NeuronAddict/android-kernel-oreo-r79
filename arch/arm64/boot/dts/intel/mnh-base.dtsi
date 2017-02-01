@@ -43,6 +43,28 @@
                 hardware-id = <0x0 0x6>;
         };
 
+	easel-ion@0 {
+		compatible = "easel,ion";
+
+		heap_sys_user@0 {
+			heap-name = "sys_user";
+			heap-range = <0x0 0x0 0x0 0x0>;
+			heap-type = "ion_system";
+		};
+
+		heap_sys_contig@0 {
+			heap-name = "sys_contig";
+			heap-range = <0x0 0x0 0x0 0x0>;
+			heap-type = "ion_system_contig";
+		};
+
+		heap_cma@0 {
+			heap-name = "cma";
+			heap-range = <0x0 0x0 0x0 0x0>;
+			heap-type = "ion_cma";
+		};
+	};
+
 	mipi_tx0: mipidevice@04010000 {
 		compatible = "snps,mipicsi_device";
 		reg = <0x0 0x04010000 0x0 0xFFF>;

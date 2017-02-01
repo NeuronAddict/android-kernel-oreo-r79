@@ -343,4 +343,15 @@ config MTK_IOMMU
 
 	  If unsure, say N here.
 
+config PAINTBOX_IOMMU
+	bool "Paintbox IOMMU support"
+	depends on PAINTBOX
+	select IOMMU_API
+	select IOMMU_IO_PGTABLE_LPAE
+	select IOMMU_IOVA
+	help
+	  Support for Paintbox IOMMU
+
+	  Say Y here to enable IOMMU suppport on the Paintbox IPU.
+
 endif # IOMMU_SUPPORT

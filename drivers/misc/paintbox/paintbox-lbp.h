@@ -20,13 +20,6 @@
 
 #include "paintbox-common.h"
 
-
-/* Size of the debug buffer used for debugfs or verbose logging.  These values
- * should be reevaluated whenever the dump_*_registers functions are changed.
- */
-#define LBP_DEBUG_BUFFER_SIZE (LBP_NUM_REGS * REG_DEBUG_BUFFER_SIZE)
-#define LB_DEBUG_BUFFER_SIZE (LB_NUM_REGS * REG_DEBUG_BUFFER_SIZE)
-
 int allocate_lbp_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 int release_lbp_ioctl(struct paintbox_data *pb,
@@ -57,10 +50,5 @@ void release_lbp(struct paintbox_data *pb, struct paintbox_session *session,
 		struct paintbox_lbp *lbp);
 void reset_lb(struct paintbox_data *pb, unsigned int lbp_id,
 		unsigned int lb_id);
-
-#if defined(CONFIG_DEBUG_FS) || defined(VERBOSE_DEBUG)
-int dump_lbp_registers(struct paintbox_debug *debug, char *buf, size_t len);
-int dump_lb_registers(struct paintbox_debug *debug, char *buf, size_t len);
-#endif
 
 #endif /* __PAINTBOX_LBP_H__ */

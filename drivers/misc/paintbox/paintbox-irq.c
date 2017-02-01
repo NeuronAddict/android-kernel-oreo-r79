@@ -51,14 +51,18 @@ static void release_all_waiters(struct paintbox_data *pb,
 	list_for_each_entry_safe(waiter, waiter_next, &irq->session->wait_list,
 			session_entry) {
 		uint64_t waiting_for_mask = (waiter->wait->interrupt_mask_all |
-				waiter->wait->interrupt_mask_any) & ~waiter->wait->interrupt_mask_fired;
+				waiter->wait->interrupt_mask_any) &
+				~waiter->wait->interrupt_mask_fired;
 		if ((waiting_for_mask & mask) == 0)
-			/* this waiting thread isn't looking for this interrupt id */
+			/* this waiting thread isn't looking for this interrupt
+			 * id
+			 */
 			continue;
 
 		if (waiter->wait->error != 0)
-			/* we've already stored an error in this thread (and woken it up) but
-			 * it hasn't taken itself out of the list yet.
+			/* we've already stored an error in this thread (and
+			 * woken it up) but it hasn't taken itself out of the
+			 * list yet.
 			 */
 			continue;
 
@@ -158,7 +162,7 @@ int bind_dma_interrupt(struct paintbox_data *pb,
 	if (irq->source != IRQ_SRC_NONE) {
 		spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
 		dev_err(&pb->pdev->dev,
-				"%s: dma channel%u: unable to bind int%u\n",
+				"%s: dma channel%u unable to bind int%u\n",
 				__func__, channel->channel_id, interrupt_id);
 		return -EEXIST;
 	}
@@ -168,9 +172,6 @@ int bind_dma_interrupt(struct paintbox_data *pb,
 	channel->irq = irq;
 
 	spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
-
-	dev_dbg(&pb->pdev->dev, "%s: dma channel%u: bind int%u" , __func__,
-			channel->channel_id, interrupt_id);
 
 	return 0;
 }
@@ -220,7 +221,7 @@ int bind_stp_interrupt(struct paintbox_data *pb,
 	if (irq->source != IRQ_SRC_NONE) {
 		spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
 		dev_err(&pb->pdev->dev,
-				"%s: stp%u: unable to bind int%u\n", __func__,
+				"%s: stp%u unable to bind int%u\n", __func__,
 				stp->stp_id, interrupt_id);
 		return -EEXIST;
 	}
@@ -230,9 +231,6 @@ int bind_stp_interrupt(struct paintbox_data *pb,
 	stp->irq = irq;
 
 	spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
-
-	dev_dbg(&pb->pdev->dev, "%s: stp%u: bind int%u" , __func__, stp->stp_id,
-			interrupt_id);
 
 	return 0;
 }
@@ -282,7 +280,7 @@ int bind_mipi_interrupt(struct paintbox_data *pb,
 	if (irq->source != IRQ_SRC_NONE) {
 		spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
 		dev_err(&pb->pdev->dev,
-				"%s: mipi stream%u: unable to bind int%u\n",
+				"%s: mipi stream%u unable to bind int%u\n",
 				__func__, stream->stream_id, interrupt_id);
 		return -EEXIST;
 	}
@@ -293,9 +291,6 @@ int bind_mipi_interrupt(struct paintbox_data *pb,
 	stream->irq = irq;
 
 	spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
-
-	dev_dbg(&pb->pdev->dev, "%s: mipi stream%u: bind int%u" , __func__,
-			stream->stream_id, interrupt_id);
 
 	return 0;
 }
@@ -352,11 +347,13 @@ int interrupt_wait_finished(const struct interrupt_wait *wait)
 {
 	uint64_t all = wait->interrupt_mask_fired & wait->interrupt_mask_all;
 	return (wait->interrupt_mask_fired & wait->interrupt_mask_any) ||
-			(wait->interrupt_mask_all && all == wait->interrupt_mask_all);
+			(wait->interrupt_mask_all && all ==
+			wait->interrupt_mask_all);
 }
 
 size_t interrupt_wait_size(int num_stps) {
-	return sizeof(struct interrupt_wait) + (num_stps - 1) * sizeof(uint16_t);
+	return sizeof(struct interrupt_wait) + (num_stps - 1) *
+			sizeof(uint16_t);
 }
 
 int wait_for_interrupt_ioctl(struct paintbox_data *pb,
@@ -389,18 +386,20 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 	wait->interrupt_id_error = -1;  /* invalid interrupt id */
 
 	dev_dbg(&pb->pdev->dev, "%s: mask_all:%llx mask_any:%llx, timeout %lld",
-			__func__, wait->interrupt_mask_all, wait->interrupt_mask_any,
-			wait->timeout_ns);
+			__func__, wait->interrupt_mask_all,
+			wait->interrupt_mask_any, wait->timeout_ns);
 
 	mutex_lock(&pb->lock);
 
-	/* prevent the interrupt handler from changing the state of completions */
+	/* prevent the interrupt handler from changing the state of completions
+	 */
 	spin_lock_irqsave(&pb->irq_lock, irq_flags);
 
 	interrupt_mask = wait->interrupt_mask_all | wait->interrupt_mask_any;
 
 	/* grab interrupts that have already occurred */
-	for (interrupt_id = 0; interrupt_mask; interrupt_id++, interrupt_mask >>= 1) {
+	for (interrupt_id = 0; interrupt_mask; interrupt_id++,
+			interrupt_mask >>= 1) {
 		struct paintbox_irq *irq;
 		int get_interrupt_result;
 
@@ -408,10 +407,11 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 			/* not waiting for this interrupt id */
 			continue;
 
-		irq = get_interrupt(pb, session, interrupt_id, &get_interrupt_result);
+		irq = get_interrupt(pb, session, interrupt_id,
+				&get_interrupt_result);
 		if (get_interrupt_result < 0) {
-			/* Trying to access an interrupt that we shouldn't.  Something is very
-			 * wrong, return ASAP.
+			/* Trying to access an interrupt that we shouldn't.
+			 * Something is very wrong, return ASAP.
 			 */
 			wait->error = get_interrupt_result;
 			wait->interrupt_id_error = interrupt_id;
@@ -419,21 +419,26 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 		}
 
 		if (try_wait_for_completion(&irq->completion)) {
-			/* data from non-stp interrupts is 0 or a -errno code.  If it is an error
-			 * the wait will end.
+			/* data from non-stp interrupts is 0 or a -errno code.
+			 * If it is an error the wait will end.
 			 *
-			 * data from stp interrupts are interrupt codes.  They need to be recorded
-			 * but might not cause the wait to end so they are handled differently.
+			 * data from stp interrupts are interrupt codes.  They
+			 * need to be recorded but might not cause the wait to
+			 * end so they are handled differently.
 			 */
 			int data = irq_pop_interrupt_data(irq);
 			if (irq->source == IRQ_SRC_STP) {
 				/* normal stp interrupt */
-				unsigned int stp_index = stp_id_to_index(irq->stp->stp_id);
-				wait->interrupt_code[stp_index] = (uint16_t)data;
-				wait->interrupt_mask_fired |= 1ULL << interrupt_id;
+				unsigned int stp_index = stp_id_to_index(
+						irq->stp->stp_id);
+				wait->interrupt_code[stp_index] =
+						(uint16_t)data;
+				wait->interrupt_mask_fired |= 1ULL <<
+						interrupt_id;
 			} else if (data == 0) {
 				/* normal (non-stp) interrupt */
-				wait->interrupt_mask_fired |= 1ULL << interrupt_id;
+				wait->interrupt_mask_fired |= 1ULL <<
+						interrupt_id;
 			} else {
 				/* error */
 				wait->error = data;
@@ -443,8 +448,8 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 		}
 	}
 
-	/* If we got all of the interrupts we need to continue or an error, we can
-	 * return now
+	/* If we got all of the interrupts we need to continue or an error, we
+	 * can return now
 	 */
 	if (interrupt_wait_finished(wait) || wait->error) {
 		spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
@@ -454,7 +459,9 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 		goto cleanup_and_exit;
 	}
 
-	/* add this thread to the end of the list of threads waiting for interrupts */
+	/* add this thread to the end of the list of threads waiting for
+	 * interrupts
+	 */
 	paintbox_waiter.wait = wait;
 	init_completion(&paintbox_waiter.completion);
 	list_add_tail(&paintbox_waiter.session_entry, &session->wait_list);
@@ -463,28 +470,34 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 	mutex_unlock(&pb->lock);
 
 #ifdef CONFIG_PAINTBOX_SIMULATOR_SUPPORT
-	/* tell the simulator to run until the wait conditions have been satisfied */
+	/* tell the simulator to run until the wait conditions have been
+	 * satisfied
+	 */
 	ret = sim_execute(pb, wait);
 	if (ret < 0)
 		goto cleanup_and_exit;
 #endif
 
 	if (wait->timeout_ns == LONG_MAX)
-		ret = wait_for_completion_interruptible(&paintbox_waiter.completion);
+		ret = wait_for_completion_interruptible(
+				&paintbox_waiter.completion);
 	else {
 		long time_remaining;
 
-		/* wait_for_completion_interruptible_timeout returns -ERESTARTSYS if
-		 * it receives a signal.  Otherwise it returns the number of jiffies
-		 * until the timeout.  So 0 means it timed out
+		/* wait_for_completion_interruptible_timeout returns
+		 * -ERESTARTSYS if it receives a signal.  Otherwise it returns
+		 * the number of jiffies until the timeout.  So 0 means it timed
+		 * out
 		 */
 		time_remaining = wait_for_completion_interruptible_timeout(
-				&paintbox_waiter.completion, nsecs_to_jiffies64(wait->timeout_ns));
+				&paintbox_waiter.completion,
+				nsecs_to_jiffies64(wait->timeout_ns));
 		if (time_remaining == 0) {
 			wait->timeout_ns = 0;
 			ret = -ETIMEDOUT;
 		}	else if (time_remaining < 0) {
-			/* TODO(ahampson) This really needs to be re-examined after reading this:
+			/* TODO(ahampson) This really needs to be re-examined
+			 * after reading this:
 			 * https://goo.gl/dcqBPP
 			 */
 			unsigned long elapsed = jiffies - start;
@@ -513,19 +526,21 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 	spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
 	mutex_unlock(&pb->lock);
 
-	/* decide on a return value.  At this point, |ret| one of 0, -ETIMEOUT or
-	 * -ERESTARTSYS
+	/* decide on a return value.  At this point, |ret| one of 0, -ETIMEOUT
+	 * or -ERESTARTSYS
 	 */
 	if (wait->error) {
-		/* irq errors take precidence over 0, -ETIMEOUT or -ERESTARTSYS */
+		/* irq errors take precidence over 0, -ETIMEOUT or -ERESTARTSYS
+		 */
 		ret = wait->error;
 		goto cleanup_and_exit;
 	}
 
 	if (interrupt_wait_finished(wait)) {
-		/* This is very unlikely, but it is possible that between waking up from
-		 * wait_for_completion_interruptible* and getting the irq_lock that another
-		 * interrupt was received that satified the wait condition.
+		/* This is very unlikely, but it is possible that between waking
+		 * up from wait_for_completion_interruptible* and getting the
+		 * irq_lock that another interrupt was received that satified
+		 * the wait condition.
 		 */
 		ret = 0;
 		goto cleanup_and_exit;
@@ -551,8 +566,8 @@ void signal_waiters(struct paintbox_data *pb, struct paintbox_irq *irq,
 
 	/* why not check IRQ pointer against null and return before locking?
 	 * Probably not a problem on Easel but on a future SMP system it may be
-	 * possible for one CPU to be processing an interrupt while another CPU is in
-	 * the process of releasing the IRQ object.
+	 * possible for one CPU to be processing an interrupt while another CPU
+	 * is in the process of releasing the IRQ object.
 	 */
 	if (!irq) {
 		spin_unlock(&pb->irq_lock);
@@ -561,48 +576,58 @@ void signal_waiters(struct paintbox_data *pb, struct paintbox_irq *irq,
 
 	mask = 1ULL << irq->interrupt_id;
 
-	/* waiting threads have priority on getting interrupts (longest waiting first)
+	/* waiting threads have priority on getting interrupts (longest waiting
+	 * first)
 	 */
 	list_for_each_entry_safe(waiter, waiter_next, &irq->session->wait_list,
 			session_entry) {
 
 		uint64_t waiting_for_mask = (waiter->wait->interrupt_mask_all |
-				waiter->wait->interrupt_mask_any) & ~waiter->wait->interrupt_mask_fired;
+				waiter->wait->interrupt_mask_any) &
+				~waiter->wait->interrupt_mask_fired;
 
 		if ((waiting_for_mask & mask) == 0)
-			/* this waiting thread isn't looking for this interrupt id */
-			continue;
-
-		if (waiter->wait->error != 0)
-			/* we've already stored an error in this thread (and woken it up) but
-			 * it hasn't taken itself out of the list yet.
+			/* this waiting thread isn't looking for this interrupt
+			 * id
 			 */
 			continue;
 
-		/* data from non-stp interrupts is 0 or a -errno code.  If it is an error
-		 * the wait will end.
+		if (waiter->wait->error != 0)
+			/* we've already stored an error in this thread (and
+			 * woken it up) but it hasn't taken itself out of the
+			 * list yet.
+			 */
+			continue;
+
+		/* data from non-stp interrupts is 0 or a -errno code.  If it is
+		 * an error the wait will end.
 		 *
-		 * data from stp interrupts are interrupt codes.  They need to be recorded
-		 * but might not cause the wait to end so they are handled differently.
+		 * data from stp interrupts are interrupt codes.  They need to
+		 * be recorded but might not cause the wait to end so they are
+		 * handled differently.
 		 */
 		if (irq->source == IRQ_SRC_STP) {
 			/* normal stp interrupt */
 			int stp_index = stp_id_to_index(irq->stp->stp_id);
-			waiter->wait->interrupt_code[stp_index] = (uint16_t)data;
-			waiter->wait->interrupt_mask_fired |= 1ULL << irq->interrupt_id;
+			waiter->wait->interrupt_code[stp_index] =
+					(uint16_t)data;
+			waiter->wait->interrupt_mask_fired |= 1ULL <<
+					irq->interrupt_id;
 		} else if (data == 0) {
 			/* normal (non-stp) interrupt */
-			waiter->wait->interrupt_mask_fired |= 1ULL << irq->interrupt_id;
+			waiter->wait->interrupt_mask_fired |= 1ULL <<
+					irq->interrupt_id;
 		} else {
 			/* error */
 			waiter->wait->error = data;
 			waiter->wait->interrupt_id_error = irq->interrupt_id;
 		}
 
-		/* if the signal is an error or the thread's wait conditions have been
-		 * satisfied, wake the thread
+		/* if the signal is an error or the thread's wait conditions
+		 * have been satisfied, wake the thread
 		 */
-		if (interrupt_wait_finished(waiter->wait) || waiter->wait->error)
+		if (interrupt_wait_finished(waiter->wait) ||
+				waiter->wait->error)
 			complete(&waiter->completion);
 
 		/* we've recorded the interrupt, we're done */

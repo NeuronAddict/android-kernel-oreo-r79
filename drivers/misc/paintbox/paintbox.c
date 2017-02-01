@@ -41,12 +41,14 @@
 #include "paintbox-io.h"
 #include "paintbox-irq.h"
 #include "paintbox-lbp.h"
+#include "paintbox-lbp-debug.h"
 #include "paintbox-mipi.h"
 #include "paintbox-mipi-debug.h"
 #include "paintbox-mmu.h"
 #include "paintbox-power.h"
 #include "paintbox-regs.h"
 #include "paintbox-stp.h"
+#include "paintbox-stp-pc-histogram.h"
 #include "paintbox-stp-sim.h"
 #include "paintbox-stp-sram.h"
 
@@ -135,10 +137,6 @@ static int paintbox_release(struct inode *ip, struct file *fp)
 	list_for_each_entry_safe(stream, stream_next,
 			&session->mipi_output_list, session_entry)
 		release_mipi_stream(pb, session, stream);
-
-#ifdef CONFIG_PAINTBOX_FPGA_SUPPORT
-	paintbox_fpga_soft_reset(pb);
-#endif
 
 	/* release_interrupt above should have woken up all sleeping threads.
 	 * block here until all threads have removed themselves from
@@ -259,6 +257,12 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 		return bind_stp_interrupt_ioctl(pb, session, arg);
 	case PB_UNBIND_STP_INTERRUPT:
 		return unbind_stp_interrupt_ioctl(pb, session, arg);
+	case PB_STP_PC_HISTOGRAM_CLEAR:
+		return stp_pc_histogram_clear_ioctl(pb, session, arg);
+	case PB_STP_PC_HISTOGRAM_ENABLE:
+		return stp_pc_histogram_enable_ioctl(pb, session, arg);
+	case PB_STP_PC_HISTOGRAM_READ:
+		return stp_pc_histogram_read_ioctl(pb, session, arg);
 	case PB_SETUP_DMA_TRANSFER:
 		return setup_dma_transfer_ioctl(pb, session, arg);
 	case PB_READ_DMA_TRANSFER:
@@ -358,7 +362,8 @@ static void paintbox_deinit(struct paintbox_data *pb)
 
 	paintbox_lbp_deinit(pb);
 
-	kfree(pb->stp.stps);
+	paintbox_stp_deinit(pb);
+
 	kfree(pb->irqs);
 	kfree(pb->dma.channels);
 	kfree(pb->vdbg_log);
@@ -445,15 +450,16 @@ static int pb_debug_regs_show(struct seq_file *s, void *unused)
 	}
 
 	for (i = 0; i < pb->lbp.num_lbps; i++) {
-		ret = dump_lbp_registers(&pb->lbp.lbps[i].debug, buf + written,
-				len - written);
+		ret = paintbox_dump_lbp_registers(&pb->lbp.lbps[i].debug,
+				buf + written, len - written);
 		if (ret < 0)
 			goto err_exit;
 
 		written += ret;
 
 		for (j = 0; j < pb->caps.max_line_buffers; j++) {
-			ret = dump_lb_registers(&pb->lbp.lbps[i].lbs[j].debug,
+			ret = paintbox_dump_lb_registers(
+					&pb->lbp.lbps[i].lbs[j].debug,
 					buf + written, len - written);
 			if (ret < 0)
 				goto err_exit;

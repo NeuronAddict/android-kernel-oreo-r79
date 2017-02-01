@@ -56,6 +56,7 @@ int unbind_stp_interrupt_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 
 int paintbox_stp_init(struct paintbox_data *pb);
+int paintbox_stp_deinit(struct paintbox_data *pb);
 
 /* The caller to this function must hold pb->lock */
 int validate_stp(struct paintbox_data *pb, struct paintbox_session *session,

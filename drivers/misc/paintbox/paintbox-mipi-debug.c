@@ -26,6 +26,47 @@
 #include "paintbox-mipi-debug.h"
 #include "paintbox-regs.h"
 
+void paintbox_log_mipi_input_setup(struct paintbox_data *pb,
+		struct mipi_stream_setup *setup)
+{
+	dev_info(&pb->pdev->dev, "mipi input stream%u setup\n",
+			setup->stream_id);
+	dev_info(&pb->pdev->dev,
+			"\twidth %upx height %upx virtual channel %u data type "
+			"%u data proc %u\n", setup->img_width,
+			setup->img_height, setup->virtual_channel,
+			setup->data_type, setup->unpacked_data_type);
+	dev_info(&pb->pdev->dev,
+			"\tseg start %u seg end %u segs per row %u seg words "
+			"per row %u stripe_height %u\n", setup->input.seg_start,
+			setup->seg_end, setup->segs_per_row,
+			setup->input.seg_words_per_row, setup->stripe_height);
+	dev_info(&pb->pdev->dev,
+			"\tenable on setup %u free running %u frame count %d\n",
+			setup->enable_on_setup, setup->free_running,
+			setup->frame_count);
+}
+
+void paintbox_log_mipi_output_setup(struct paintbox_data *pb,
+		struct mipi_stream_setup *setup)
+{
+	dev_info(&pb->pdev->dev, "mipi output stream%u setup\n",
+			setup->stream_id);
+	dev_info(&pb->pdev->dev,
+			"\twidth %upx height %upx virtual channel %u data type "
+			"%u data proc %u\n", setup->img_width,
+			setup->img_height, setup->virtual_channel,
+			setup->data_type, setup->unpacked_data_type);
+	dev_info(&pb->pdev->dev,
+			"\tseg end %u segs per row %u stripe height %u\n",
+			setup->seg_end, setup->segs_per_row,
+			setup->stripe_height);
+	dev_info(&pb->pdev->dev,
+			"\tenable on setup %u enable row sync %u free running "
+			"%u frame count %d\n", setup->enable_on_setup,
+			setup->output.enable_row_sync, setup->free_running,
+			setup->frame_count);
+}
 
 static uint64_t mipi_reg_entry_read(struct paintbox_debug_reg_entry *reg_entry)
 {

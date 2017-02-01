@@ -35,10 +35,23 @@
 #include "paintbox-regs.h"
 #include "paintbox-sram.h"
 #include "paintbox-stp.h"
+#include "paintbox-stp-pc-histogram.h"
 #include "paintbox-stp-sim.h"
 #include "paintbox-stp-sram.h"
 #include "paintbox-sim-regs.h"
 
+/* To save 1000s of cycles in the perf thread's inner loop, we keep a cache of
+ * each stp's enabled bit in the paintbox_stp structure.  Ensure that this bit
+ * is kept up-to-date by passing every STP_CTRL write through this function
+ *
+ * The caller to this function must hold pb->stp.lock
+ */
+static inline void stp_ctrl_write(struct paintbox_data *pb,
+		struct paintbox_stp *stp, uint32_t ctrl)
+{
+	writel(ctrl, pb->stp.reg_base + STP_CTRL);
+	stp->enabled = (ctrl & STP_CTRL_ENA_MASK) != 0;
+}
 
 #ifdef CONFIG_DEBUG_FS
 static uint64_t stp_reg_entry_read(struct paintbox_debug_reg_entry *reg_entry)
@@ -304,7 +317,7 @@ void enable_stp_access_to_lbp(struct paintbox_data *pb,
 		writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
 		ctrl = readl(pb->stp.reg_base + STP_CTRL);
 		ctrl |= 1 << (lbp->pool_id + STP_CTRL_LBP_MASK_SHIFT);
-		writel(ctrl, pb->stp.reg_base + STP_CTRL);
+		stp_ctrl_write(pb, stp, ctrl);
 
 		spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 	}
@@ -330,7 +343,7 @@ void disable_stp_access_to_lbp(struct paintbox_data *pb,
 		writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
 		ctrl = readl(pb->stp.reg_base + STP_CTRL);
 		ctrl &= ~(1 << (lbp->pool_id + STP_CTRL_LBP_MASK_SHIFT));
-		writel(ctrl, pb->stp.reg_base + STP_CTRL);
+		stp_ctrl_write(pb, stp, ctrl);
 
 		spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 	}
@@ -345,7 +358,7 @@ static void set_lbp_access_mask(struct paintbox_data *pb,
 
 	spin_lock_irqsave(&pb->stp.stp.lock, irq_flags);
 
-	writel(stp_id, pb->stp.reg_base + STP_SEL);
+	writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
 
 	/* Grant access to all LBPs associated with this session */
 	lbp_mask = 0;
@@ -357,7 +370,7 @@ static void set_lbp_access_mask(struct paintbox_data *pb,
 	ctrl = readl(pb->stp.reg_base + STP_CTRL);
 	ctrl &= ~STP_CTRL_LBP_MASK_MASK;
 	ctrl |= lbp_mask;
-	writel(ctrl, pb->stp.reg_base + STP_CTRL);
+	stp_ctrl_write(pb, stp, ctrl);
 
 	spin_unlock_irqrestore(&pb->stp.stp.lock, irq_flags);
 }
@@ -426,6 +439,20 @@ int allocate_stp_ioctl(struct paintbox_data *pb,
 				STP_CAP_HALO_MEM_SHIFT);
 	}
 
+	if (!stp->stalled) {
+		size_t stalled_size = pb->stp.inst_mem_size_in_instructions *
+				sizeof(stp->stalled[0]);
+		stp->stalled = kzalloc(stalled_size, GFP_KERNEL);
+		if (!stp->stalled) {
+			pr_err("Failed to allocate stalled array %zub",
+			       stalled_size);
+			mutex_unlock(&pb->lock);
+			return -ENOMEM;
+		}
+	}
+
+	dev_dbg(&pb->pdev->dev, "stp%u allocated\n", stp_id);
+
 	mutex_unlock(&pb->lock);
 
 	return 0;
@@ -436,22 +463,21 @@ void release_stp(struct paintbox_data *pb, struct paintbox_session *session,
 		struct paintbox_stp *stp)
 {
 	unsigned long irq_flags;
-#ifdef CONFIG_PAINTBOX_SIMULATOR_SUPPORT
-	int ret;
+	int stp_index;
+	uint64_t stp_mask = 1;
 
-	/* Make sure the STP is idle before stopping it.  Currently this is only
-	 * done for the Simulator.  The FPGA does not have a similar mechanism
-	 * How the post-DMA interrupt cleanup on the hardware will work is TBD.
-	 */
-	ret = sim_wait_for_idle(pb, stp);
-	if (ret < 0)
-		return;
-#endif
+	/* If this STP has pc sampling enabled, we need to disable it */
+	stp_index = stp_id_to_index(stp->stp_id);
+	stp_mask <<= stp_index;
+	if (pb->perf_stp_sample_mask & stp_mask) {
+		uint64_t next_mask = pb->perf_stp_sample_mask & ~stp_mask;
+		stp_pc_histogram_enable(pb, next_mask);
+	}
 
 	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
 	writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
-	writel(0, pb->stp.reg_base + STP_CTRL);
+	stp_ctrl_write(pb, stp, 0);
 
 	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 
@@ -506,7 +532,7 @@ int stp_ctrl_set(struct paintbox_data *pb,
 
 	ctrl = readl(pb->stp.reg_base + STP_CTRL);
 	ctrl |= set_mask;
-	writel(ctrl, pb->stp.reg_base + STP_CTRL);
+	stp_ctrl_write(pb, stp, ctrl);
 
 	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 
@@ -537,9 +563,9 @@ int stp_ctrl_set_and_clear(struct paintbox_data *pb,
 
 	ctrl = readl(pb->stp.reg_base + STP_CTRL);
 	ctrl |= set_mask;
-	writel(ctrl, pb->stp.reg_base + STP_CTRL);
+	stp_ctrl_write(pb, stp, ctrl);
 	ctrl &= ~set_mask;
-	writel(ctrl, pb->stp.reg_base + STP_CTRL);
+	stp_ctrl_write(pb, stp, ctrl);
 
 	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 
@@ -554,7 +580,6 @@ int start_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 	unsigned int stp_id = (unsigned int)arg;
 	struct paintbox_stp *stp;
 	unsigned long irq_flags;
-	uint64_t stat;
 	uint32_t ctrl;
 	int ret;
 
@@ -565,30 +590,16 @@ int start_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 		return ret;
 	}
 
-	dev_dbg(&pb->pdev->dev, "%s: stp%u\n",  __func__, stp_id);
+	dev_dbg(&pb->pdev->dev, "stp%u start\n", stp_id);
 
 	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
 	writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
 
-	stat = readq(pb->stp.reg_base + STP_STAT);
-
 	ctrl = readl(pb->stp.reg_base + STP_CTRL);
 	ctrl |= STP_CTRL_ENA_MASK;
 
-	/* If the processor is stalled (due to a stall.b16 <- src8) instruction
-	 * then set and clear the RESUME bit.
-	 */
-	if (stat & STP_STAT_STALLED_MASK)
-		ctrl |= STP_CTRL_RESUME_MASK;
-
-	writel(ctrl, pb->stp.reg_base + STP_CTRL);
-
-	/* The RESUME bit is not self clearing. */
-	if (stat & STP_STAT_STALLED_MASK) {
-		ctrl &= ~STP_CTRL_RESUME_MASK;
-		writel(ctrl, pb->stp.reg_base + STP_CTRL);
-	}
+	stp_ctrl_write(pb, stp, ctrl);
 
 	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 
@@ -613,7 +624,7 @@ int stop_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 		return ret;
 	}
 
-	dev_dbg(&pb->pdev->dev, "%s: stp%u\n",  __func__, stp->stp_id);
+	dev_dbg(&pb->pdev->dev, "stp%u stop\n", stp->stp_id);
 
 	/* Make sure the STP is idle before stopping it.  Currently this is only
 	 * done for the Simulator.  The FPGA does not have a similar mechanism
@@ -631,7 +642,7 @@ int stop_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 
 	ctrl = readl(pb->stp.reg_base + STP_CTRL);
 	ctrl &= ~STP_CTRL_ENA_MASK;
-	writel(ctrl, pb->stp.reg_base + STP_CTRL);
+	stp_ctrl_write(pb, stp, ctrl);
 
 	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 
@@ -646,7 +657,7 @@ int resume_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 		unsigned long arg)
 {
 	unsigned int stp_id = (unsigned int)arg;
-	dev_dbg(&pb->pdev->dev, "%s: stp%u\n",  __func__, stp_id);
+	dev_dbg(&pb->pdev->dev, "stp%u resume\n", stp_id);
         /* Resume bit is self-clearing */
 	return stp_ctrl_set(pb, session, stp_id, STP_CTRL_RESUME_MASK);
 }
@@ -655,7 +666,7 @@ int reset_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 		unsigned long arg)
 {
 	unsigned int stp_id = (unsigned int)arg;
-	dev_dbg(&pb->pdev->dev, "%s: stp%u\n",  __func__, stp_id);
+	dev_dbg(&pb->pdev->dev, "stp%u reset\n", stp_id);
 	return stp_ctrl_set_and_clear(pb, session, stp_id, STP_CTRL_RESET_MASK);
 }
 
@@ -664,6 +675,7 @@ int init_stp(struct paintbox_data *pb, struct paintbox_stp *stp)
 {
 	unsigned long irq_flags;
 	uint64_t ctrl;
+
 #ifdef CONFIG_PAINTBOX_SIMULATOR_SUPPORT
 	int ret;
 
@@ -683,10 +695,12 @@ int init_stp(struct paintbox_data *pb, struct paintbox_stp *stp)
 	/* Stop and reset the processor */
 	ctrl = readl(pb->stp.reg_base + STP_CTRL);
 	ctrl &= ~STP_CTRL_ENA_MASK;
-	writel(STP_CTRL_RESET_MASK, pb->stp.reg_base + STP_CTRL);
-	writel(ctrl, pb->stp.reg_base + STP_CTRL);
+	stp_ctrl_write(pb, stp, STP_CTRL_RESET_MASK);
+	stp_ctrl_write(pb, stp, ctrl);
 
 	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
+
+	stp_pc_histogram_clear(stp, pb->stp.inst_mem_size_in_instructions);
 
 	return 0;
 }
@@ -704,6 +718,8 @@ int init_stp_ioctl(struct paintbox_data *pb,
 		mutex_unlock(&pb->lock);
 		return ret;
 	}
+
+	dev_dbg(&pb->pdev->dev, "stp%u init\n", stp_id);
 
 	ret = init_stp(pb, stp);
 
@@ -745,6 +761,9 @@ int setup_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 		return -ERANGE;
 	}
 
+	dev_dbg(&pb->pdev->dev, "stp%u setup program len %zu bytes\n",
+			stp->stp_id, config.len);
+
 	/* TODO(ahampson):  The assembler generates the pISA in the byte order
 	 * expected by the DV.  In order for the pISA to be used by the hardware
 	 * the instruction buffer needs to be byte swapped.  This will
@@ -784,7 +803,6 @@ int get_program_state_ioctl(struct paintbox_data *pb,
 	struct paintbox_stp *stp;
 	unsigned long irq_flags;
 	uint64_t stat;
-	uint32_t ctrl;
 	int ret;
 
 	user_program_state = (struct stp_program_state __user *)arg;
@@ -802,19 +820,19 @@ int get_program_state_ioctl(struct paintbox_data *pb,
 	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
 	writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
-	ctrl = readl(pb->stp.reg_base + STP_CTRL);
 	stat = readq(pb->stp.reg_base + STP_STAT);
+
+	program_state.enabled = stp->enabled;
 
 	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 
-	program_state.enabled = (ctrl & STP_CTRL_ENA_MASK) != 0;
 	program_state.stalled = (stat & STP_STAT_STALLED_MASK) != 0;
 	program_state.program_counter =
 			(stat & STP_STAT_PC_MASK) >> STP_STAT_PC_SHIFT;
 
-	dev_dbg(&pb->pdev->dev, "%s: stp%u enabled=%u stalled=%u pc 0x%08x\n",
-			__func__, stp->stp_id, program_state.enabled, program_state.stalled,
-			program_state.program_counter);
+	dev_dbg(&pb->pdev->dev, "stp%u enabled %u stalled %u pc 0x%08x\n",
+			stp->stp_id, program_state.enabled,
+			program_state.stalled, program_state.program_counter);
 
 	mutex_unlock(&pb->lock);
 
@@ -884,6 +902,9 @@ int bind_stp_interrupt_ioctl(struct paintbox_data *pb,
 		return ret;
 	}
 
+	dev_dbg(&pb->pdev->dev, "stp%u bind irq%u\n", req.stp_id,
+			req.interrupt_id);
+
 	ret = bind_stp_interrupt(pb, session, stp, req.interrupt_id);
 
 	init_waiters(pb, stp->irq);
@@ -916,8 +937,7 @@ int unbind_stp_interrupt_ioctl(struct paintbox_data *pb,
 		return ret;
 	}
 
-	dev_dbg(&pb->pdev->dev, "%s: stp%u: unbind interrupt\n", __func__,
-			stp_id);
+	dev_dbg(&pb->pdev->dev, "stp%u unbind irq\n", stp_id);
 
 	mutex_unlock(&pb->lock);
 
@@ -953,7 +973,7 @@ irqreturn_t paintbox_stp_interrupt(struct paintbox_data *pb, uint64_t stp_mask)
 				STP_STAT_INT_CODE_MASK) >>
 				STP_STAT_INT_CODE_SHIFT);
 
-		writel(ctrl & ~STP_CTRL_INT_MASK, pb->stp.reg_base + STP_CTRL);
+		stp_ctrl_write(pb, stp, ctrl & ~STP_CTRL_INT_MASK);
 
 		stp->interrupt_count++;
 
@@ -965,7 +985,7 @@ irqreturn_t paintbox_stp_interrupt(struct paintbox_data *pb, uint64_t stp_mask)
 	return IRQ_HANDLED;
 }
 
-static int init_stp_entry(struct paintbox_data *pb, unsigned int stp_index)
+static void init_stp_entry(struct paintbox_data *pb, unsigned int stp_index)
 {
 	struct paintbox_stp *stp = &pb->stp.stps[stp_index];
 
@@ -985,8 +1005,6 @@ static int init_stp_entry(struct paintbox_data *pb, unsigned int stp_index)
 
 	dev_dbg(&pb->pdev->dev, "stp%u: base %p len %lu\n", stp->stp_id,
 			pb->stp.reg_base, STP_BLOCK_LEN);
-
-	return 0;
 }
 
 int paintbox_stp_init(struct paintbox_data *pb)
@@ -1011,6 +1029,26 @@ int paintbox_stp_init(struct paintbox_data *pb)
 
 	for (stp_index = 0; stp_index < pb->stp.num_stps; stp_index++)
 		init_stp_entry(pb, stp_index);
+
+	return 0;
+}
+
+static void deinit_stp_entry(struct paintbox_data *pb, unsigned int stp_index)
+{
+	struct paintbox_stp *stp = &pb->stp.stps[stp_index];
+
+	if (stp->stalled)
+		kfree(stp->stalled);
+}
+
+int paintbox_stp_deinit(struct paintbox_data *pb)
+{
+	unsigned int stp_index;
+
+	for (stp_index = 0; stp_index < pb->caps.num_stps; stp_index++)
+		deinit_stp_entry(pb, stp_index);
+
+	kfree(pb->stp.stps);
 
 	return 0;
 }

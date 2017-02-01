@@ -40,3 +40,9 @@ config ION_HISI
 	  Choose this option if you wish to use ion on Hisilicon Platform.
 
 source "drivers/staging/android/ion/hisilicon/Kconfig"
+
+config ION_EASEL
+	tristate "Ion for Easel"
+	depends on ARCH_MNH && ION
+	help
+	 Choose this option if you wish to use ion on Easel

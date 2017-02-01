@@ -205,8 +205,14 @@ int dma_setup_dram_to_stp_transfer(struct paintbox_data *pb,
 {
 	int ret;
 
-	if (config->src.dram.len_bytes > DMA_MAX_IMG_TRANSFER_LEN)
+	if (config->src.dram.len_bytes > DMA_MAX_IMG_TRANSFER_LEN) {
+		dev_err(&pb->pdev->dev,
+				"%s: dma channel%u: transfer too large, %llu > "
+				"%llu bytes", __func__, channel->channel_id,
+				config->dst.dram.len_bytes,
+				DMA_MAX_IMG_TRANSFER_LEN);
 		return -ERANGE;
+	}
 
 	if (!access_ok(VERIFY_READ, config->src.dram.host_vaddr,
 			config->src.dram.len_bytes))
@@ -236,6 +242,8 @@ int dma_setup_dram_to_stp_transfer(struct paintbox_data *pb,
 	ret = set_dma_transfer_region_parameters(pb, channel, transfer, config);
 	if (ret < 0)
 		goto err_exit;
+
+	LOG_DMA_DRAM_TO_STP_TRANSFER(pb, channel, transfer, config);
 
 	return 0;
 

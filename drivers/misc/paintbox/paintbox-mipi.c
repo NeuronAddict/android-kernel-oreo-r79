@@ -180,6 +180,8 @@ int allocate_mipi_input_stream_ioctl(struct paintbox_data *pb,
 
 	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
 
+	dev_dbg(&pb->pdev->dev, "mipi input stream%u allocated\n", stream_id);
+
 	mutex_unlock(&pb->lock);
 
 	return 0;
@@ -230,6 +232,8 @@ int allocate_mipi_output_stream_ioctl(struct paintbox_data *pb,
 
 	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
 
+	dev_dbg(&pb->pdev->dev, "mipi output stream%u allocated\n", stream_id);
+
 	mutex_unlock(&pb->lock);
 
 	return 0;
@@ -241,6 +245,10 @@ void release_mipi_stream(struct paintbox_data *pb,
 		struct paintbox_mipi_stream *stream)
 {
 	unsigned long irq_flags;
+
+	dev_dbg(&pb->pdev->dev, "mipi %s stream%u released\n",
+			stream->is_input ? "input" : "output",
+			stream->stream_id);
 
 	/* Disable the MIPI stream and the stream interrupts. */
 	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
@@ -496,9 +504,9 @@ int enable_mipi_stream_ioctl(struct paintbox_data *pb,
 
 	if (!req.free_running && req.frame_count <= 0) {
 		dev_err(&pb->pdev->dev,
-				"%s: mipi %u: stream is not free running and "
-				"frame count is invalid, %d <= 0\n", __func__,
-				req.stream_id, req.frame_count);
+				"%s: mipi stream%u stream is not free running "
+				"and frame count is invalid, %d <= 0\n",
+				__func__, req.stream_id, req.frame_count);
 		return -EINVAL;
 	}
 
@@ -515,7 +523,7 @@ int enable_mipi_stream_ioctl(struct paintbox_data *pb,
 	 */
 	if (!stream->dma_channel) {
 		dev_err(&pb->pdev->dev,
-				"%s: mipi %s stream%u: no corresponding DMA "
+				"%s: mipi %s stream%u no corresponding dma "
 				"channel\n", __func__, is_input ? "input" :
 				"output", stream->stream_id);
 		mutex_unlock(&pb->lock);
@@ -536,11 +544,10 @@ int enable_mipi_stream_ioctl(struct paintbox_data *pb,
 		mutex_unlock(&pb->lock);
 
 		dev_dbg(&pb->pdev->dev,
-				"%s: mipi %s stream%u: updating stream running "
+				"mipi %s stream%u updating stream running "
 				"period, free running %d frame_count %u\n",
-				__func__, is_input ? "input" : "output",
-				req.stream_id, stream->free_running,
-				stream->frame_count);
+				is_input ? "input" : "output", req.stream_id,
+				stream->free_running, stream->frame_count);
 		return 0;
 	}
 
@@ -557,16 +564,17 @@ int enable_mipi_stream_ioctl(struct paintbox_data *pb,
 
 	mutex_unlock(&pb->lock);
 
-	dev_dbg(&pb->pdev->dev, "%s: mipi %s stream%u: enable stream free "
-			"running %d frame_count %u\n", __func__,
-			is_input ? "input" : "output", req.stream_id,
-			stream->free_running, stream->frame_count);
+	dev_dbg(&pb->pdev->dev,
+			"mipi %s stream%u enable stream free running %d "
+			"frame_count %u\n", is_input ? "input" : "output",
+			req.stream_id, stream->free_running,
+			stream->frame_count);
 
 	/* Log a missed interrupt if it occurred but don't propagate the error
 	 * up.
 	 */
 	if (ret == -EINTR) {
-		dev_warn(&pb->pdev->dev, "%s: mipi %s stream%u: may have missed"
+		dev_warn(&pb->pdev->dev, "%s: mipi %s stream%u may have missed "
 				"an interrupt\n", __func__, is_input ? "input" :
 				"output", stream->stream_id);
 		ret = 0;
@@ -591,6 +599,9 @@ int disable_mipi_stream_ioctl(struct paintbox_data *pb,
 		mutex_unlock(&pb->lock);
 		return ret;
 	}
+
+	dev_dbg(&pb->pdev->dev, "mipi %s stream%u disable\n", is_input ?
+			"input" : "output", stream->stream_id);
 
 	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
 
@@ -622,14 +633,11 @@ int disable_mipi_stream_ioctl(struct paintbox_data *pb,
 
 	mutex_unlock(&pb->lock);
 
-	dev_dbg(&pb->pdev->dev, "%s: mipi %s stream%u: disable stream\n",
-			__func__, is_input ? "input" : "output", stream_id);
-
 	/* Log a missed interrupt if it occurred but don't propagate the error
 	 * up.
 	 */
 	if (ret == -EINTR) {
-		dev_warn(&pb->pdev->dev, "%s: mipi %s stream%u: may have missed"
+		dev_warn(&pb->pdev->dev, "%s: mipi %s stream%u may have missed "
 				"an interrupt\n", __func__, is_input ? "input" :
 				"output", stream_id);
 		ret = 0;
@@ -663,8 +671,8 @@ int get_mipi_frame_number_ioctl(struct paintbox_data *pb,
 
 	mutex_unlock(&pb->lock);
 
-	dev_dbg(&pb->pdev->dev, "%s: mipi input stream%u: frame number %d\n",
-			__func__, stream_id, ret);
+	dev_dbg(&pb->pdev->dev, "mipi input stream%u frame number %d\n",
+			stream_id, ret);
 
 	return ret;
 }
@@ -675,7 +683,7 @@ static int validate_mipi_stream_setup(struct paintbox_data *pb,
 	/* Virtual channel range is the same for input and output streams */
 	if (setup->virtual_channel > MPI_VC_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: mipi %s stream%u: virtual channel %u is "
+				"%s: mipi %s stream%u virtual channel %u is "
 				"not supported, max virtual channel is %u\n",
 				__func__, is_input ? "input" : "output",
 				setup->stream_id, setup->virtual_channel,
@@ -688,7 +696,7 @@ static int validate_mipi_stream_setup(struct paintbox_data *pb,
 	 */
 	if (setup->data_type > MPI_DT_IN_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: mipi %s stream%u: packed data type %u is "
+				"%s: mipi %s stream%u packed data type %u is "
 				"invalid, valid range 0..%u\n", __func__,
 				is_input ? "input" : "output", setup->stream_id,
 				setup->data_type, MPI_DT_IN_MAX);
@@ -700,7 +708,7 @@ static int validate_mipi_stream_setup(struct paintbox_data *pb,
 	 */
 	if (setup->unpacked_data_type > MPI_DT_PROC_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: mipi %s stream%u: unpacked data type %u is"
+				"%s: mipi %s stream%u unpacked data type %u is"
 				" invalid, valid range 0..%u\n", __func__,
 				is_input ? "input" : "output", setup->stream_id,
 				setup->data_type, MPI_DT_IN_MAX);
@@ -712,7 +720,7 @@ static int validate_mipi_stream_setup(struct paintbox_data *pb,
 	 */
 	if (setup->img_width > MPI_IMG_WIDTH_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: mipi %s stream%u: invalid width %u > %u\n",
+				"%s: mipi %s stream%u invalid width %u > %u\n",
 				__func__, is_input ? "input" : "output",
 				setup->stream_id, setup->img_width,
 				MPI_IMG_WIDTH_MAX);
@@ -721,7 +729,7 @@ static int validate_mipi_stream_setup(struct paintbox_data *pb,
 
 	if (setup->img_height > MPI_IMG_HEIGHT_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: mipi %s stream%u: invalid height %u > %u"
+				"%s: mipi %s stream%u invalid height %u > %u"
 				"\n", __func__, is_input ? "input" : "output",
 				setup->stream_id, setup->img_height,
 				MPI_IMG_HEIGHT_MAX);
@@ -733,7 +741,7 @@ static int validate_mipi_stream_setup(struct paintbox_data *pb,
 	 */
 	if (setup->stripe_height % MPI_STRP_HEIGHT_ROW_ALIGN != 0) {
 		dev_err(&pb->pdev->dev,
-				"%s: mipi %s stream%u: stripe height needs to "
+				"%s: mipi %s stream%u stripe height needs to "
 				"be aligned to %u rows, requested stripe height"
 				" was %u\n", __func__, is_input ? "input" :
 				"output", setup->stream_id,
@@ -746,7 +754,7 @@ static int validate_mipi_stream_setup(struct paintbox_data *pb,
 	if (setup->seg_end < MPI_SEG_END_MIN ||
 			setup->seg_end > MPI_SEG_END_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: mipi %s stream%u: segment end %u is out of"
+				"%s: mipi %s stream%u segment end %u is out of"
 				" range (%u..%u)\n", __func__, is_input ?
 				"input" : "output", setup->stream_id,
 				setup->seg_end, MPI_SEG_END_MIN,
@@ -758,7 +766,7 @@ static int validate_mipi_stream_setup(struct paintbox_data *pb,
 	if (setup->segs_per_row < MPI_SEGS_PER_ROW_MIN ||
 			setup->segs_per_row > MPI_SEGS_PER_ROW_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: mipi %s stream%u: requested segments per "
+				"%s: mipi %s stream%u requested segments per "
 				"row %u is out of range (%u..%u)\n", __func__,
 				is_input ? "input" : "output", setup->stream_id,
 				setup->segs_per_row, MPI_SEGS_PER_ROW_MIN,
@@ -769,21 +777,12 @@ static int validate_mipi_stream_setup(struct paintbox_data *pb,
 	if (setup->enable_on_setup && !setup->free_running &&
 			setup->frame_count <= 0) {
 		dev_err(&pb->pdev->dev,
-				"%s: mipi %u: stream is not free running and "
-				"frame count is invalid, %d <= 0\n", __func__,
+				"%s: mipi %s stream%u: stream is not free "
+				"running and frame count is invalid, %d <= 0\n",
+				__func__, is_input ? "input" : "output",
 				setup->stream_id, setup->frame_count);
 		return -EINVAL;
 	}
-
-	dev_dbg(&pb->pdev->dev,
-			"\tvirtual channels %u data type: %u data proc %u\n",
-			setup->virtual_channel, setup->data_type,
-			setup->unpacked_data_type);
-	dev_dbg(&pb->pdev->dev, "\twidth %u height %u seg end %u segs per row "
-			"%u\n", setup->img_width, setup->img_height,
-			setup->seg_end, setup->segs_per_row);
-	dev_dbg(&pb->pdev->dev, "\tfree running: %u frame count: %d\n",
-			setup->free_running, setup->frame_count);
 
 	return 0;
 }
@@ -793,15 +792,13 @@ static int validate_mipi_input_stream_setup(struct paintbox_data *pb,
 {
 	int ret;
 
-	dev_dbg(&pb->pdev->dev, "mipi input stream%u\n", setup->stream_id);
-
 	ret = validate_mipi_stream_setup(pb, setup, true /* is_input */);
 	if (ret < 0)
 		return ret;
 
 	if (setup->input.seg_start > MPI_SEG_START_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: mipi input stream%u: segment start %u is "
+				"%s: mipi input stream%u segment start %u is "
 				"too large, max %u\n", __func__,
 				setup->stream_id, setup->input.seg_start,
 				MPI_SEG_START_MAX);
@@ -812,7 +809,7 @@ static int validate_mipi_input_stream_setup(struct paintbox_data *pb,
 			setup->input.seg_words_per_row >
 			MPI_SEG_WORDS_PER_ROW_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: mipi input stream%u: requested segment "
+				"%s: mipi input stream%u requested segment "
 				"words per row %u is out of range (%u..%u)\n",
 				__func__, setup->stream_id,
 				setup->input.seg_words_per_row,
@@ -824,17 +821,13 @@ static int validate_mipi_input_stream_setup(struct paintbox_data *pb,
 	if (setup->stripe_height < MPI_STRP_HEIGHT_MIN || setup->stripe_height >
 			MPI_STRP_HEIGHT_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: mipi input stream%u: requested stripe "
+				"%s: mipi input stream%u requested stripe "
 				"height %u is out of range (%u..%u)\n",
 				__func__, setup->stream_id,
 				setup->stripe_height, MPI_STRP_HEIGHT_MIN,
 				MPI_STRP_HEIGHT_MAX);
 		return -EINVAL;
 	}
-
-	dev_dbg(&pb->pdev->dev, "\tseg start %u, seg words per row %u stripe "
-			"height %u\n", setup->input.seg_start,
-			setup->input.seg_words_per_row, setup->stripe_height);
 
 	return 0;
 }
@@ -844,8 +837,6 @@ static int validate_mipi_output_stream_setup(struct paintbox_data *pb,
 {
 	int ret;
 
-	dev_dbg(&pb->pdev->dev, "mipi output stream%u\n", setup->stream_id);
-
 	ret = validate_mipi_stream_setup(pb, setup, false /* is_input */);
 	if (ret < 0)
 		return ret;
@@ -853,14 +844,12 @@ static int validate_mipi_output_stream_setup(struct paintbox_data *pb,
 	if (setup->stripe_height < MPO_STRP_HEIGHT_MIN || setup->stripe_height >
 			MPO_STRP_HEIGHT_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: mipi output stream%u: requested stripe "
+				"%s: mipi output stream%u requested stripe "
 				"height %u out of range (%u..%u)\n", __func__,
 				setup->stream_id, setup->stripe_height,
 				MPO_STRP_HEIGHT_MIN, MPO_STRP_HEIGHT_MAX);
 		return -EINVAL;
 	}
-
-	dev_dbg(&pb->pdev->dev, "\tstripe height %u\n", setup->stripe_height);
 
 	return 0;
 }
@@ -873,6 +862,8 @@ int setup_mipi_input_stream(struct paintbox_data *pb,
 	unsigned long irq_flags;
 	uint32_t val;
 	int ret = 0;
+
+	LOG_MIPI_INPUT_SETUP(pb, setup);
 
 	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
 
@@ -938,7 +929,7 @@ int setup_mipi_input_stream(struct paintbox_data *pb,
 	 */
 	if (ret == -EINTR)
 		dev_warn(&pb->pdev->dev,
-				"%s: mipi input stream%u: possible missed "
+				"%s: mipi input stream%u possible missed "
 				"interrupt\n", __func__, stream->stream_id);
 
 	return 0;
@@ -952,6 +943,8 @@ int setup_mipi_output_stream(struct paintbox_data *pb,
 	unsigned long irq_flags;
 	uint32_t val;
 	int ret = 0;
+
+	LOG_MIPI_OUTPUT_SETUP(pb, setup);
 
 	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
 
@@ -1011,7 +1004,7 @@ int setup_mipi_output_stream(struct paintbox_data *pb,
 	 */
 	if (ret == -EINTR)
 		dev_warn(&pb->pdev->dev,
-				"%s: mipi output stream%u: possible missed "
+				"%s: mipi output stream%u possible missed "
 				"interrupt\n", __func__, stream->stream_id);
 
 	return 0;
@@ -1060,9 +1053,8 @@ static void reset_mipi_stream(struct paintbox_data *pb,
 			pb->io_ipu.ipu_base + stream->ctrl_offset);
 	writel(0, pb->io_ipu.ipu_base + stream->ctrl_offset);
 
-	dev_dbg(&pb->pdev->dev, "%s: mipi %s stream%u: reset\n", __func__,
-			stream->is_input ? "input" : "output",
-			stream->stream_id);
+	dev_dbg(&pb->pdev->dev, "mipi %s stream%u reset\n", stream->is_input ?
+			"input" : "output", stream->stream_id);
 }
 
 /* The caller to this function must hold pb->io_ipu.mipi_lock. */
@@ -1085,11 +1077,12 @@ void mipi_request_cleanup(struct paintbox_data *pb,
 	 */
 	if (stream->is_clean) {
 		spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
-		dev_dbg(&pb->pdev->dev, "%s: mipi %s stream%u: already clean\n",
-			__func__, stream->is_input ? "input" : "output",
-			stream->stream_id);
 		return;
 	}
+
+	dev_dbg(&pb->pdev->dev, "mipi %s stream%u cleanup requested\n",
+			stream->is_input ? "input" : "output",
+			stream->stream_id);
 
 	/* If a cleanup operation has not been started then start one now. */
 	if (!stream->cleanup_in_progress) {
@@ -1120,10 +1113,6 @@ void mipi_request_cleanup(struct paintbox_data *pb,
 	 * it asynchronously.
 	 */
 	cancel_delayed_work_sync(&stream->cleanup_work);
-
-	dev_dbg(&pb->pdev->dev, "%s: mipi %s stream%u: cleanup\n", __func__,
-			stream->is_input ? "input" : "output",
-			stream->stream_id);
 }
 
 /* The caller to this function must hold pb->lock. */
@@ -1168,11 +1157,16 @@ int verify_cleanup_completion(struct paintbox_data *pb,
 
 	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
 
-	if (ret < 0)
+	if (ret < 0) {
 		dev_err(&pb->pdev->dev,
-				"%s: mipi %s stream%u: cleanup failed, stream "
+				"%s: mipi %s stream%u cleanup failed, stream "
 				"reset\n", __func__, stream->is_input ?
 				"input" : "output", stream->stream_id);
+	} else {
+		dev_dbg(&pb->pdev->dev, "mipi %s stream%u overflow cleanup "
+				"complete\n", stream->is_input ? "input" :
+				"output", stream->stream_id);
+	}
 
 	return ret;
 }
@@ -1244,7 +1238,7 @@ int cleanup_mipi_stream_ioctl(struct paintbox_data *pb,
 	 */
 	if (!stream->dma_channel) {
 		dev_err(&pb->pdev->dev,
-				"%s: mipi %s stream%u: no corresponding DMA "
+				"%s: mipi %s stream%u no corresponding DMA "
 				"channel\n", __func__, is_input ? "input" :
 				"output", stream_id);
 		mutex_unlock(&pb->lock);
@@ -1255,9 +1249,6 @@ int cleanup_mipi_stream_ioctl(struct paintbox_data *pb,
 	 * MIPI stream.  This will also initiate a MIPI cleanup operation.
 	 */
 	dma_stop_transfer(pb, stream->dma_channel);
-
-	dev_dbg(&pb->pdev->dev, "%s: mipi %s stream%u: cleanup\n", __func__,
-			is_input ? "input" : "output", stream_id);
 
 	mutex_unlock(&pb->lock);
 
@@ -1289,6 +1280,10 @@ int bind_mipi_interrupt_ioctl(struct paintbox_data *pb,
 
 	init_waiters(pb, stream->irq);
 
+	dev_dbg(&pb->pdev->dev, "mipi %s stream%u bind irq%u\n",
+			stream->is_input ? "input" : "output", req.stream_id,
+			req.interrupt_id);
+
 	mutex_unlock(&pb->lock);
 
 	return ret;
@@ -1312,14 +1307,14 @@ int unbind_mipi_interrupt_ioctl(struct paintbox_data *pb,
 	ret = unbind_mipi_interrupt(pb, session, stream);
 	if (ret < 0) {
 		dev_err(&pb->pdev->dev,
-				"%s: mipi stream%u: unable to unbind interrupt,"
-				" %d\n", __func__, stream_id, ret);
+				"%s: mipi stream%u: unable to unbind irq, err "
+				"%d\n", __func__, stream_id, ret);
 		mutex_unlock(&pb->lock);
 		return ret;
 	}
 
-	dev_dbg(&pb->pdev->dev, "%s: mipi stream%u: unbind interrupt\n",
-			__func__, stream_id);
+	dev_dbg(&pb->pdev->dev, "mipi %s stream%u unbind irq\n",
+			stream->is_input ? "input" : "output", stream_id);
 
 	mutex_unlock(&pb->lock);
 
@@ -1345,6 +1340,9 @@ static void paintbox_mipi_input_sof_interrupt(struct paintbox_data *pb,
 {
 	stream->input.frame_in_progress = true;
 
+	dev_dbg(&pb->pdev->dev, "mipi input stream%u SOF interrupt\n",
+			stream->stream_id);
+
 	mipi_report_completion(pb, stream, 0);
 
 	/* If the stream is free running then exit now and skip the frame count
@@ -1365,6 +1363,10 @@ static void paintbox_mipi_input_sof_interrupt(struct paintbox_data *pb,
 
 		mipi_input_clear_control(pb, stream, MPI_STRM_EN |
 				MPI_STRM_SOF_IMR);
+
+		dev_dbg(&pb->pdev->dev,
+				"mipi input stream%u last frame, disabled\n",
+				stream->stream_id);
 	}
 }
 
@@ -1402,6 +1404,10 @@ static void paintbox_mipi_output_eof_interrupt(struct paintbox_data *pb,
 	}
 
 	mipi_output_clear_control(pb, stream, ctrl_clear_mask);
+
+	dev_dbg(&pb->pdev->dev,
+			"mipi output stream%u EOF interrupt enabled %u\n",
+			stream->stream_id, stream->enabled);
 }
 
 /* This function must be called in an interrupt context */
@@ -1411,6 +1417,10 @@ static void paintbox_mipi_input_ovf_interrupt(struct paintbox_data *pb,
 	uint32_t ctrl = readl(pb->io_ipu.ipu_base + MPI_STRM_CTRL);
 	if (ctrl & MPI_STRM_CLEANUP) {
 		stream->cleanup_in_progress = true;
+
+		dev_dbg(&pb->pdev->dev,
+				"mipi input stream%u OVF interrupt (cleanup "
+				"started)\n", stream->stream_id);
 
 		/* The hardware will also initiate a cleanup operation
 		 * on an overflow.  We don't want to wait for the
@@ -1423,16 +1433,14 @@ static void paintbox_mipi_input_ovf_interrupt(struct paintbox_data *pb,
 		queue_delayed_work(system_wq, &stream->cleanup_work,
 				usecs_to_jiffies(MIPI_CLEANUP_TIMEOUT_US));
 	} else {
-		/* If the cleanup bit is not set then the cleanup
-		 * operation has already concluded or it might not have
-		 * been initiated.  The former indicates that there may
-		 * significant interrupt latency, the latter may
-		 * indicate a hardware bug.
+		/* If the cleanup bit is not set then the cleanup operation has
+		 * already concluded.
 		 */
-		dev_alert(&pb->pdev->dev,
-			"%s: mipi input stream%u: overflow interrupt "
-			"without cleanup\n", __func__,
-			stream->stream_id);
+		stream->is_clean = true;
+
+		dev_dbg(&pb->pdev->dev,
+				"mipi input stream%u OVF interrupt (cleanup "
+				"completed)\n", stream->stream_id);
 	}
 
 	mipi_report_completion(pb, stream, -EIO);

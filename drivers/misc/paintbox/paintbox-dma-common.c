@@ -281,6 +281,8 @@ int set_dma_transfer_region_parameters(struct paintbox_data *pb,
 	}
 
 	transfer->chan_bif_xfer = config->stripe_height;
+	transfer->chan_bif_xfer |= (pb->dma.bif_outstanding - 1) <<
+			DMA_CHAN_OUTSTANDING_SHIFT;
 	transfer->chan_noc_xfer_low = config->sheet_width;
 	transfer->chan_noc_xfer_low |= config->sheet_height <<
 			DMA_CHAN_SHEET_HEIGHT_SHIFT;

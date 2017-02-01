@@ -23,6 +23,7 @@
 #include "paintbox-common.h"
 #include "paintbox-dma.h"
 #include "paintbox-dma-common.h"
+#include "paintbox-dma-debug.h"
 #include "paintbox-dma-dram.h"
 #include "paintbox-dma-mipi.h"
 #include "paintbox-regs.h"
@@ -36,8 +37,14 @@ int dma_setup_mipi_to_dram_transfer(struct paintbox_data *pb,
 {
 	int ret;
 
-	if (config->dst.dram.len_bytes > DMA_MAX_IMG_TRANSFER_LEN)
+	if (config->dst.dram.len_bytes > DMA_MAX_IMG_TRANSFER_LEN) {
+		dev_err(&pb->pdev->dev,
+				"%s: dma channel%u: transfer too large, %llu > "
+				"%llu bytes", __func__, channel->channel_id,
+				config->dst.dram.len_bytes,
+				DMA_MAX_IMG_TRANSFER_LEN);
 		return -ERANGE;
+	}
 
 	if (!access_ok(VERIFY_WRITE, config->dst.dram.host_vaddr,
 			config->dst.dram.len_bytes))
@@ -69,11 +76,7 @@ int dma_setup_mipi_to_dram_transfer(struct paintbox_data *pb,
 	if (ret < 0)
 		goto err_exit;
 
-	dev_dbg(&pb->pdev->dev,
-			"%s: dma channel%u: mipi input -> va %p dma addr %pad "
-			"%llu bytes\n", __func__, config->channel_id,
-			transfer->buf_vaddr, &transfer->dma_addr,
-			config->dst.dram.len_bytes);
+	LOG_DMA_MIPI_TO_DRAM_TRANSFER(pb, channel, transfer, config);
 
 	return 0;
 
