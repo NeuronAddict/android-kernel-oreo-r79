@@ -2118,3 +2118,11 @@ config ASN1
 	  functions to call on what tags.
 
 source "kernel/Kconfig.locks"
+
+config PROCFS_MOUNT
+	bool "Ask kernel to mount /proc before user init program"
+	default n
+	help
+	  Some program loaders assume the existence of /proc file system.
+	  Use this option to ask kernel to mount /proc before the very first
+	  user init program.
