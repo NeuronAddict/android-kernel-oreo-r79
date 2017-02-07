@@ -87,3 +87,14 @@ int mipicsi_util_write_top(uint16_t offset, uint32_t value)
 	reg.value = value;
 	return mipicsi_top_write(&reg);
 }
+
+int mipicsi_util_read_top(uint16_t offset, uint32_t *value)
+{
+	struct mipicsi_top_reg reg;
+
+	reg.dev = MIPI_TOP;
+	reg.offset = offset;
+	mipicsi_top_read(&reg);
+	*value = reg.value;
+	return 0;
+}

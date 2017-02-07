@@ -160,13 +160,13 @@ int mipicsi_top_dphy_write(struct mipicsi_top_reg *reg)
 	case MIPI_RX0:
 	case MIPI_RX1:
 	case MIPI_RX2:
-		mipicsi_host_dphy_write(reg->dev, (uint8_t)reg->offset,
+		mipicsi_host_dphy_write(reg->dev, (uint16_t)reg->offset,
 					(uint8_t)reg->value);
 		return 0;
 
 	case MIPI_TX0:
 	case MIPI_TX1:
-		mipicsi_dev_dphy_write(reg->dev, (uint8_t)reg->offset,
+		mipicsi_dev_dphy_write(reg->dev, (uint16_t)reg->offset,
 				       (uint8_t)reg->value);
 		return 0;
 
@@ -535,9 +535,10 @@ int mipicsi_top_set_mux(struct mipicsi_top_mux *mux)
 	tx_mode_reg = TOP_OUTf_LOCAL(TX0_MODE, TX0_FORCE_OFF,
 				     force_off, tx_mode_reg);
 
-	pr_info("%s bypass: %d, sink: %d source %d, rx_mode 0x%08X,\
-                tx_mode 0x%08X\n",__func__, bypass, mux->sink, mux->source,
-		rx_mode, tx_mode);
+	pr_err("%s bypass: %d, sink: %d source %d",
+	       __func__, bypass, mux->sink, mux->source);
+	pr_err("%s rx_mode 0x%x,tx_mode 0x%x\n",
+	       __func__, rx_mode_reg, tx_mode_reg);
 
 	switch (mux->source) {
 	case MIPI_RX0:
@@ -710,7 +711,7 @@ void mipicsi_top_get_mux(struct mipicsi_top_mux_data *mux_data)
 		mux_data->links[i].sink = MIPI_IPU;
 		i++;
 	}
-	if (reg_val & (TOP_MASK(RX1_MODE, RX1_BYP_TX1_EN))) {
+	if (reg_val & (TOP_MASK(RX1_MODE, RX1_BYP_TX0_EN))) {
 		mux_data->links[i].source = MIPI_RX1;
 		mux_data->links[i].sink = MIPI_TX0;
 		i++;

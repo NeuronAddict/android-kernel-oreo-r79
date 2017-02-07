@@ -87,18 +87,18 @@ void config_clk_data_timing(enum mipicsi_top_dev dev, uint32_t mbps)
 	 * MIPI D-Phy 2.0 Spec minimum timing + % padding
 	 * Note: Tclk-post is higher than spec due to Synopsys limitation
 	 */
-	tclk_lp_ns = PAD_TIME(50);
-	tclk_prep_ns = MIN(PAD_TIME(38), 95);
-	tclk_zero_ns = PAD_TIME(300-tclk_prep_ns);
-	tclk_trail_ns = PAD_TIME(60);
-	tclk_exit_ns = PAD_TIME(100);
-	tclk_post_ns = PAD_TIME(60+130*ui_ps/1000);
+	tclk_lp_ns = PAD(50);
+	tclk_prep_ns = MIN(PAD(38), TRIM(95));
+	tclk_zero_ns = PAD(300-tclk_prep_ns);
+	tclk_trail_ns = PAD(60);
+	tclk_exit_ns = PAD(100);
+	tclk_post_ns = PAD(60+52*ui_ps/1000);
 
-	ths_lp_ns = PAD_TIME(50);
-	ths_prep_ns = MIN(PAD_TIME(40+4*ui_ps/1000), 85+6*ui_ps/1000);
-	ths_zero_ns = PAD_TIME(145+10*ui_ps/1000-ths_prep_ns);
-	ths_trail_ns = PAD_TIME(MAX(8*ui_ps/1000, 60+4*ui_ps/1000));
-	ths_exit_ns = PAD_TIME(100);
+	ths_lp_ns = PAD(50);
+	ths_prep_ns = MIN(PAD(40+4*ui_ps/1000), TRIM(85+6*ui_ps/1000));
+	ths_zero_ns = PAD(145+10*ui_ps/1000-ths_prep_ns);
+	ths_trail_ns = PAD(MAX(8*ui_ps/1000, 60+4*ui_ps/1000));
+	ths_exit_ns = PAD(100);
 
 	pr_info("\n\nui_ps=%d, byteclk_ps=%d\n", ui_ps, byteclk_ps);
 
@@ -117,119 +117,180 @@ void config_clk_data_timing(enum mipicsi_top_dev dev, uint32_t mbps)
 
 		/* CLK LP */
 		value = ROUNDUP((tclk_lp_ns-TLP_CONST_TIME)*1000, byteclk_ps);
-		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_TCLK_LP, (1<<7) | value);
+		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_TCLK_LP,
+				       (1<<7) | value);
 
 		/* CLK Prepare */
-		value = ROUNDUP((tclk_prep_ns-PREP_CONST_TIME)*1000, byteclk_ps)-1;
-		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_TCLK_PREP, (1<<7) | value);
+		value = ROUNDUP((tclk_prep_ns-PREP_CONST_TIME)*1000,
+				byteclk_ps)-1;
+		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_TCLK_PREP,
+				       (1<<7) | value);
 
 		/* CLK Zero */
-		value = ROUNDUP((tclk_zero_ns-ZERO_CONST_TIME)*1000, byteclk_ps)-1;
-		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_TCLK_ZERO, (1<<7) | value);
+		value = ROUNDUP((tclk_zero_ns-ZERO_CONST_TIME)*1000,
+				byteclk_ps)-1;
+		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_TCLK_ZERO,
+				       (1<<7) | value);
 
 		/* CLK Trail */
-		value = ROUNDUP((tclk_trail_ns-TRAIL_CONST_TIME)*1000, byteclk_ps)-1;
-		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_TCLK_TRAIL, (1<<7) | value);
+		value = ROUNDUP((tclk_trail_ns-TRAIL_CONST_TIME)*1000,
+				byteclk_ps)-1;
+		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_TCLK_TRAIL,
+				       (1<<7) | value);
 
 		/* CLK Exit */
-		value = ROUNDUP((tclk_exit_ns-EXIT_CONST_TIME)*1000, byteclk_ps)-1;
+		value = ROUNDUP((tclk_exit_ns-EXIT_CONST_TIME)*1000,
+				byteclk_ps)-1;
 		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_TCLK_EXIT, (1<<5)
 				       | value);
 
 		/* CLK Post */
-		value = ROUNDUP((tclk_post_ns-POST_CONST_TIME)*1000, byteclk_ps)-1;
+		value = ROUNDUP((tclk_post_ns-POST_CONST_TIME)*1000,
+				byteclk_ps)-1;
 		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_TCLK_POST, (1<<5)
 				       | value);
 
 		/* HS LP */
 		value = ROUNDUP((ths_lp_ns-TLP_CONST_TIME)*1000, byteclk_ps)-1;
-		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_THS_LP, (1<<7) | value);
+		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_THS_LP,
+				       (1<<7) | value);
 
 		/* HS Prepare */
 		value = ROUNDUP((ths_prep_ns+PREP_CONST_TIME+ui_ps/2000)
 				*1000, byteclk_ps)-1;;
-		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_THS_PREP, (1<<7) | value);
+		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_THS_PREP,
+				       (1<<7) | value);
 
 		/* HS Zero */
-		value = ROUNDUP((ths_zero_ns-ZERO_CONST_TIME)*1000, byteclk_ps)-1;
-		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_THS_ZERO, (1<<7) | value);
+		value = ROUNDUP((ths_zero_ns-ZERO_CONST_TIME)*1000,
+				byteclk_ps)-1;
+		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_THS_ZERO,
+				       (1<<7) | value);
 
 		/* HS Trail */
 		value = ROUNDUP((ths_trail_ns-TRAIL_CONST_TIME+ui_ps/2000)
 				*1000, byteclk_ps) - 1;
-		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_THS_TRAIL, (1<<7) | value);
+		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_THS_TRAIL,
+				       (1<<7) | value);
 
 		/* HS Exit */
-		value = ROUNDUP((ths_exit_ns-EXIT_CONST_TIME)*1000, byteclk_ps)+1;
-		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_THS_EXIT, (1<<5) | value);
+		value = ROUNDUP((ths_exit_ns-EXIT_CONST_TIME)*1000,
+				byteclk_ps)+1;
+		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_THS_EXIT,
+				       (1<<5) | value);
 
 		/* Phy Stop Wait time */
 		mipicsi_pll_get_stop_wait (mbps, &value);
 		value = ROUNDUP(value*1000, byteclk_ps);
 		TX_OUTf(PHY_IF_CFG, PHY_STOP_WAIT_TIME, value);
 	} else {
-		/* TO DO - Revisit formulas/ANLG_FCTR after simulation results */
+		/* TO DO: Revisit formulas/ANLG_FCTR after simulation results */
 
 		/* Calculate and write clock lane timing values */
 		/* CLK Post */
 		value = ROUNDUP(tclk_post_ns*1000, byteclk_ps);
 		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_SYSTIMERS_12,
 				       (1<<6) | value);
+		pr_info("\t tclk_post_ns %d - %d\n", tclk_post_ns, value);
 
 		/* CLK Exit*/
-		value = ROUNDUP(tclk_exit_ns*1000, byteclk_ps) - 2;
+		value = ROUNDUP(tclk_exit_ns*1000, byteclk_ps);
+		if (mbps >= 400)
+			value -= 2;
+		value = MAX(value, 1);
 		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_SYSTIMERS_13,
 				       (1<<6) | value);
+		pr_info("\t tclk_exit_ns %d - %d\n", tclk_exit_ns, value);
 
 		/* CLK Prepare */
 		value = ROUNDUP((tclk_prep_ns-ANLG_FCTR)*1000, byteclk_ps);
+		value = MAX(value, 1);
 		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_SYSTIMERS_14,
 				       (1<<7) | (1<<6) | value);
+		pr_info("\t tclk_prep_ns %d - %d\n", tclk_prep_ns, value);
 
-		/* CLK LP - Target time higher than spec due to power up requirements */
-		tclk_lp_ns = PAD_TIME(500);
-		value = ROUNDUP((tclk_lp_ns-byteclk_ps)*1000, byteclk_ps) - 1;
+		/*
+		 * CLK LP - Target time higher than spec due to power up
+		 * requirements. TBD: tclk_lp_ns = PAD(500);
+		 */
+		value = ROUNDUP((tclk_lp_ns-(byteclk_ps/1000))*1000,
+				byteclk_ps);
+		if (mbps >= 400)
+			value -= 1;
+		value = MAX(value, 1);
 		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_SYSTIMERS_15, value);
+		pr_info("\t tclk_lp_ns %d - %d\n", tclk_lp_ns, value);
 
 		/* CLK Trail */
-		value = ROUNDUP((tclk_trail_ns-ANLG_FCTR)*1000, byteclk_ps) - 1;
+		value = ROUNDUP((tclk_trail_ns-ANLG_FCTR)*1000, byteclk_ps);
+		if (mbps >= 400)
+			value -= 1;
+		value = MAX(value, 1);
 		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_SYSTIMERS_16,
-				       (1<<6) | value);
+			       (1<<6) | value);
+		pr_info("\t tclk_trail_ns %d - %d\n", tclk_trail_ns, value);
 
 		/* CLK Zero */
-		value = ROUNDUP((tclk_zero_ns-ANLG_FCTR)*1000, byteclk_ps) - 3;
+		value = ROUNDUP((tclk_zero_ns-ANLG_FCTR)*1000, byteclk_ps);
+		if (mbps >= 400)
+			value -= 3;
+		value = MAX(value, 1);
 		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_SYSTIMERS_17,
 				       (1<<7) | value);
+		pr_info("\t tclk_zero_ns %d - %d\n", tclk_zero_ns, value);
 
 		/* Calculate and write data lane timing values */
 		/* HS Exit */
-		value = ROUNDUP(ths_exit_ns*1000, byteclk_ps)-2;
+		value = ROUNDUP(ths_exit_ns*1000, byteclk_ps);
+		if (mbps >= 400)
+			value -= 2;
+		value = MAX(value, 1);
 		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_SYSTIMERS_19,
 				       (1<<6) | value);
+		pr_info("\t ths_exit_ns %d - %d\n", ths_exit_ns, value);
 
 		/* HS Prepare */
 		value = ROUNDUP((ths_prep_ns-ANLG_FCTR)*1000, byteclk_ps);
+		value = MAX(value, 1);
 		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_SYSTIMERS_20,
 				       (1<<7) | (1<<6) | value);
+		pr_info("\t ths_exit_ns %d - %d\n", ths_exit_ns, value);
 
-		/* HS LP - Target time higher than spec due to power up requirements */
-		ths_lp_ns = PAD_TIME(500);
-		value = ROUNDUP((ths_lp_ns-byteclk_ps)*1000, byteclk_ps) - 1;
-		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_SYSTIMERS_21, value);
+		/*
+		 * HS LP - Target time higher than spec due to power up
+		 * requirements. TBD ths_lp_ns = PAD(500)
+		 */
+		value = ROUNDUP((ths_lp_ns-(byteclk_ps/1000))*1000,
+				byteclk_ps);
+		if (mbps >= 400)
+			value -= 1;
+		value = MAX(value, 1);
+		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_SYSTIMERS_21,
+				       value);
+		pr_info("\t ths_lp_ns %d - %d\n", ths_lp_ns, value);
 
 		/* HS Trail */
-		value = ROUNDUP((ths_trail_ns-ANLG_FCTR)*1000, byteclk_ps) - 1;
+		value = ROUNDUP((ths_trail_ns-ANLG_FCTR)*1000, byteclk_ps);
+		if (mbps >= 400)
+			value -= 1;
+		value = MAX(value, 1);
 		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_SYSTIMERS_22,
 				       (1<<6) | value);
+		pr_info("\t ths_trail_ns %d - %d\n", ths_trail_ns, value);
 
 		/* HS Zero */
-		value = ROUNDUP((ths_zero_ns-ANLG_FCTR)*1000, byteclk_ps) -3 ;
+		value = ROUNDUP((ths_zero_ns-ANLG_FCTR)*1000, byteclk_ps);
+		if (mbps >= 400)
+			value -= 3;
+		value = MAX(value, 1);
 		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_SYSTIMERS_23,
 				       (1<<7) | value);
+		pr_info("\t ths_zero_ns %d - %d\n", ths_zero_ns, value);
 
 		/* Phy Stop Wait time */
-		mipicsi_pll_get_stop_wait (mbps, &value);
+		mipicsi_pll_get_stop_wait(mbps, &value);
 		value = ROUNDUP(value*1000, byteclk_ps);
+		pr_info("%s: Phy stop wait = %d", __func__, value);
 		TX_OUTf(PHY_IF_CFG, PHY_STOP_WAIT_TIME, value);
 	}
 }
@@ -398,7 +459,8 @@ int32_t mipicsi_device_set_pll(struct mipicsi_top_cfg *config)
 
 	dev = config->dev;
 
-	mipicsi_pll_calc(config->mbps, &pll);
+	if (mipicsi_pll_calc(config->mbps, &pll) != 0)
+		return -EINVAL;
 
 	if (mipicsi_util_is_emulation()) {
 		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_HS_RX_CTRL_L0,
@@ -455,9 +517,13 @@ int32_t mipicsi_device_set_pll(struct mipicsi_top_cfg *config)
 		/* Apply cfg_clk signal with 50Mhz frequency */
 		/* Hardware controlled */
 
-		/* Refer to table "Slew rate vs DDL oscilation target" on page 117 and
-		 * configure test control registers with appropriate values for the
-		 * specified rise/fall time. */
+		/*
+		 * Refer to table "Slew rate vs DDL oscilation target" on page
+		 * 117 and configure test control registers with appropriate
+		 * values for the
+		 * specified rise/fall time.
+		 */
+		pr_err("sr_osc_freq_tgt 0x%x", pll.sr_osc_freq_tgt);
 		if (pll.sr_osc_freq_tgt != 0){
 			mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_SLEW_5,
 					       pll.sr_osc_freq_tgt & 0xFF);
@@ -484,6 +550,12 @@ int32_t mipicsi_device_set_pll(struct mipicsi_top_cfg *config)
 		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_PLL_1, 0x10);
 		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_PLL_5, 0x04);
 		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_PLL_17, 0x0C);
+
+		/* PLL phase error threshold */
+		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_PLL_22, 0x02);
+		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_PLL_23, 0x00);
+		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_PLL_24, 0x60);
+		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_PLL_25, 0x03);
 	}
 	return 0;
 }
@@ -689,7 +761,6 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 			mipicsi_dev_dphy_write(dev, 0x65, 0x8D);
 			TX_OUTf(PHY_IF_CFG, PHY_STOP_WAIT_TIME, 12);
 		} else { //TEMP
-
 		mipicsi_device_set_pll(config);
 
 		/* Set basedir_0 = 1'b0 */
@@ -708,7 +779,6 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 
 		config_clk_data_timing (config->dev, config->mbps);
 		} // TEMP
-
 		/*
 		 * Enableclk=1'b1; Wait 5ns; Set shutdownz=1'b1;  Wait 5ns;
 		 * Set rstz=1'b1;

@@ -4,12 +4,14 @@
 
 #include "mipicsi_top.h"
 
-#define ROUNDUP(dividend,divisor) ((dividend + (divisor/2))/divisor)
+#define ROUNDUP(dividend, divisor) (((dividend) + ((divisor)/2))/(divisor))
 #define PAD_PCT 20
-#define PAD_TIME(time) (((time)*(100+PAD_PCT))/100)
+#define PAD(time) (((time)*(100+PAD_PCT))/100)
+#define TRIM(time) (((time)*(100-PAD_PCT))/100)
 #define MAX(a,b) (((a)>(b))?(a):(b))
 #define MIN(a,b) (((a)<(b))?(a):(b))
 
+/* Daughtercard constants */
 #define TLP_CONST_TIME 23
 #define PREP_CONST_TIME 20
 #define ZERO_CONST_TIME 80
@@ -17,8 +19,10 @@
 #define EXIT_CONST_TIME -80 /* TBD */
 #define POST_CONST_TIME 160
 #define SETL_CONST_TIME 35  /* TBD */
-#define ANLG_FCTR 0         /* TBD */
 #define MIPI_DDR_CLOCK 1000 /* TBD */
+
+/* Gen3 constants */
+#define ANLG_FCTR 0         /* TBD */
 
 void mipicsi_device_reset(enum mipicsi_top_dev dev);
 void mipicsi_device_dphy_reset(enum mipicsi_top_dev dev);

@@ -314,15 +314,17 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 
 		/*
 		 * RX THS Settle
-		 * NOTE: THS target settle time is a little higher than MIPI spec due
-		 * to Synopsys feedback
+		 * NOTE: THS target settle time is a little higher than MIPI
+		 * spec due to Synopsys feedback
 		 */
 		ui_ps = 1000*1000/config->mbps;
-		ths_setl_ns = MIN(PAD_TIME(115+6*ui_ps/1000), 145+10*ui_ps/1000);
+		ths_setl_ns = MIN(PAD(115+6*ui_ps/1000),
+				  TRIM(145+10*ui_ps/1000));
 		pr_info("THS : RX setl=%d\n",ths_setl_ns);
 		value = ROUNDUP((ths_setl_ns-SETL_CONST_TIME),
 				(MIPI_DDR_CLOCK/(config->mbps/2)))-1;
-		mipicsi_host_dphy_write(dev, R_CSI2_DCPHY_RX_THS_SETL, (1<<7) | value);
+		mipicsi_host_dphy_write(dev, R_CSI2_DCPHY_RX_THS_SETL,
+					(1<<7) | value);
 	} else {
 		struct mipicsi_pll pll;
 
@@ -369,19 +371,20 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 		mipicsi_host_dphy_write(dev, R_DPHY_RDWR_RX_SYS_1, pll.hsfreq);
 		mipicsi_host_dphy_write(dev, R_DPHY_RDWR_RX_SYS_0, 1<<5);
 
-		/* Refer to "Frequency Ranges and Default" on page 141 and configure
-		 * registers 0xe2, 0xe3 with the appropriate DDL target oscillation
-		 * frequency. Enable override to configure the DDL target oscillation
-		 * frequency on bit 0 of register 0xe4.
+		/* Refer to "Frequency Ranges and Default" in Table 5-7 and
+		 * configure registers 0xe2, 0xe3 with the appropriate DDL
+		 * target oscillation frequency. Enable override to configure
+		 * the DDL target oscillation frequency on bit 0 of register
+		 * 0xe4.
 		 */
-		if (pll.sr_osc_freq_tgt != 0){
-			mipicsi_host_dphy_write(dev, R_DPHY_RDWR_RX_RX_STARTUP_OVR_2,
-						pll.sr_osc_freq_tgt & 0xFF);
-			mipicsi_host_dphy_write(dev, R_DPHY_RDWR_RX_RX_STARTUP_OVR_3,
-						(pll.sr_osc_freq_tgt>>8) & 0xFF);
-			mipicsi_host_dphy_write(dev, R_DPHY_RDWR_RX_RX_STARTUP_OVR_4,
-						0x01);
-		}
+		pr_info("%s: rx_osc_freq_tgt = %d", __func__,
+			 pll.rx_osc_freq_tgt);
+		mipicsi_host_dphy_write(dev, R_DPHY_RDWR_RX_RX_STARTUP_OVR_2,
+					pll.rx_osc_freq_tgt & 0xFF);
+		mipicsi_host_dphy_write(dev, R_DPHY_RDWR_RX_RX_STARTUP_OVR_3,
+					(pll.rx_osc_freq_tgt>>8) & 0xF);
+		mipicsi_host_dphy_write(dev, R_DPHY_RDWR_RX_RX_STARTUP_OVR_4,
+					0x01);
 
 		/*  Configure register 0x8 to set deskew_polarity_rw signal
 		 * (bit 5) to 1'b1

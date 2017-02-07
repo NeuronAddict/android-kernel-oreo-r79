@@ -41,6 +41,8 @@
 #include "mipicsi_top.h"
 #include "mipicsi_util.h"
 #include "mipicsi_sysfs.h"
+#include "mipicsi_util.h"
+#include <soc/mnh/mnh-hwio-mipi-top.h>
 #include <soc/mnh/mnh-hwio-mipi-rx.h>
 #include <soc/mnh/mnh-hwio-mipi-tx.h>
 
@@ -117,8 +119,8 @@ static ssize_t start_dev_store(struct device *dev,
 		token = strsep((char **)&buf, delim);
 		if (!(token) || (kstrtou32(token, 0, &cfg.num_lanes)))
 			cfg.num_lanes = 4;
-		mipicsi_top_start(&cfg);
-		return count;
+		if (mipicsi_top_start(&cfg) == 0)
+			return count;
 	}
 	pr_err("Usage: echo\"<dev>;<bitrate>;<lanes>\">start_dev\n");
 	pr_err("dev=Rx0,Rx1,Rx2,Tx0,Tx1\n");
@@ -282,6 +284,166 @@ static ssize_t get_mux_status_store(struct device *dev,
 static DEVICE_ATTR(get_mux_status, S_IRUGO | S_IWUSR | S_IWGRP,
 		   get_mux_status_show, get_mux_status_store);
 
+SHOW_FMT_NA(get_device_status);
+
+static ssize_t get_device_status_store(struct device *dev,
+				       struct device_attribute *attr,
+				       const char *buf,
+				       const size_t count)
+{
+	enum mipicsi_top_dev device;
+	uint8_t *token;
+	const char *delim = ";";
+	struct mipicsi_top_reg reg;
+	uint32_t value;
+
+	token = strsep((char **)&buf, delim);
+	if ((token) && (find_device(token, &device) >= 0)) {
+		mipicsi_util_read_top(HWIO_MIPI_TOP_CSI_CLK_CTRL_REGOFF,
+				      &value);
+		switch (device) {
+		case MIPI_TX0:
+			if (value &
+			    HWIO_MIPI_TOP_CSI_CLK_CTRL_CSI2_TX0_CG_FLDMASK) {
+				pr_err("Clock is not enabled to the device\n");
+				break;
+			}
+			mipicsi_util_read_top(HWIO_MIPI_TOP_TX0_BYPINT_REGOFF,
+					      &value);
+			if (value & HWIO_MIPI_TOP_TX0_BYPINT_TX0_BYP_OF_FLDMASK)
+				pr_err("Bypass overflow ocurred\n");
+			break;
+
+		case MIPI_TX1:
+			if (value &
+			    HWIO_MIPI_TOP_CSI_CLK_CTRL_CSI2_TX1_CG_FLDMASK) {
+				pr_err("Clock is not enabled to the device\n");
+				break;
+			}
+			mipicsi_util_read_top(HWIO_MIPI_TOP_TX1_BYPINT_REGOFF,
+					      &value);
+			if (value & HWIO_MIPI_TOP_TX1_BYPINT_TX1_BYP_OF_FLDMASK)
+				pr_err("Bypass overflow ocurred\n");
+			break;
+
+		case MIPI_RX0:
+			if (value &
+			    HWIO_MIPI_TOP_CSI_CLK_CTRL_CSI2_RX0_CG_FLDMASK)
+				pr_err("Clock is not enabled to the device\n");
+			break;
+
+		case MIPI_RX1:
+			if (value &
+			    HWIO_MIPI_TOP_CSI_CLK_CTRL_CSI2_RX1_CG_FLDMASK)
+				pr_err("Clock is not enabled to the device\n");
+			break;
+
+		case MIPI_RX2:
+			if (value &
+			    HWIO_MIPI_TOP_CSI_CLK_CTRL_CSI2_RX2_CG_FLDMASK)
+				pr_err("Clock is not enabled to the device\v");
+			break;
+
+		default:
+			pr_err("Usage: echo\"<device>;\">get_device_status\n");
+			pr_err("source=Rx0,Rx1,Rx2,Tx0,Tx1");
+			return -EINVAL;
+		}
+
+		if ((device == MIPI_TX0) || (device == MIPI_TX1)) {
+			reg.dev = device;
+			reg.offset = HWIO_MIPI_TX_PHY_STATUS_REGOFF;
+			mipicsi_top_read(&reg);
+			if (reg.value == 0x155B)
+				pr_err("Phy is in stop state\n");
+			else if (reg.value & 0x000B)
+				pr_err("Data is going over Phy\n");
+
+			reg.offset = HWIO_MIPI_TX_INT_ST_VPG_REGOFF;
+			mipicsi_top_read(&reg);
+			if (reg.value)
+				pr_err("VPG errors %d\n", reg.value);
+
+			reg.offset = HWIO_MIPI_TX_INT_ST_IDI_REGOFF;
+			mipicsi_top_read(&reg);
+			if (reg.value)
+				pr_err("IDI errors %d\n", reg.value);
+
+			reg.offset = HWIO_MIPI_TX_INT_ST_PHY_REGOFF;
+			mipicsi_top_read(&reg);
+			if (reg.value)
+				pr_err("Phy errors %d\n", reg.value);
+		} else {
+			reg.dev = device;
+			reg.offset = HWIO_MIPI_RX_PHY_STOPSTATE_REGOFF;
+			mipicsi_top_read(&reg);
+			pr_err("Phy stopstate is 0x%x\n", reg.value);
+
+			reg.offset = HWIO_MIPI_RX_PHY_RX_REGOFF;
+			mipicsi_top_read(&reg);
+			pr_err("Phy state is 0x%x\n", reg.value);
+
+			reg.offset = HWIO_MIPI_RX_INT_ST_PHY_FATAL_REGOFF;
+			mipicsi_top_read(&reg);
+			if (reg.value & 0xF)
+				pr_err("SOT error on lanes[3:0] 0x%x\n",
+				       reg.value & 0xF);
+
+			reg.offset = HWIO_MIPI_RX_INT_ST_PKT_FATAL_REGOFF;
+			mipicsi_top_read(&reg);
+			if (reg.value & 0xF)
+				pr_err("Checksum error on VC[3:0] 0x%x\n",
+				       reg.value & 0xF);
+
+			reg.offset = HWIO_MIPI_RX_INT_ST_FRAME_FATAL_REGOFF;
+			mipicsi_top_read(&reg);
+			if (reg.value & 0xF0000)
+				pr_err("CRC error on VC[3:0] 0x%x\n",
+				       (reg.value & 0xF0000)>>16);
+			if (reg.value & 0xF00)
+				pr_err("Incorrect frame seq on VC[3:0] 0x%x\n",
+				       (reg.value & 0xF00)>>8);
+			if (reg.value & 0xF)
+				pr_err("Mistmatch frame start/end VC[3:0] 0x%x\n",
+				       reg.value & 0xF);
+
+			reg.offset = HWIO_MIPI_RX_INT_ST_PHY_REGOFF;
+			mipicsi_top_read(&reg);
+			if (reg.value & 0xF0000)
+				pr_err("SOT error no sync on Lane[3:0] 0x%x\n",
+				       (reg.value & 0xF0000)>>16);
+			if (reg.value & 0xF)
+				pr_err("SOT error on Lane[3:0] 0x%x\n",
+				       reg.value & 0xF);
+
+			reg.offset = HWIO_MIPI_RX_INT_ST_PKT_REGOFF;
+			mipicsi_top_read(&reg);
+			if (reg.value & 0xF0000)
+				pr_err("Header error corrected on VC[3:0] 0x%x\n",
+				       (reg.value & 0xF0000)>>16);
+			if (reg.value & 0xF)
+				pr_err("DT error on VC[3:0] 0x%x\n",
+				       reg.value & 0xF);
+
+			reg.offset = HWIO_MIPI_RX_INT_ST_LINE_REGOFF;
+			mipicsi_top_read(&reg);
+			if (reg.value & 0xF0000)
+				pr_err("Line sequence error VC[3:0] 0x%x\n",
+				       (reg.value & 0xF0000)>>16);
+			if (reg.value & 0xF)
+				pr_err("Line boundary error DT/VC[3:0] 0x%x\n",
+				       reg.value & 0xF);
+		}
+		return count;
+	}
+	pr_err("Usage: echo\"<device>;\">get_device_status\n");
+	pr_err("source=Rx0,Rx1,Rx2,Tx0,Tx1");
+	return -EINVAL;
+}
+
+static DEVICE_ATTR(get_device_status, S_IRUGO | S_IWUSR | S_IWGRP,
+		   get_device_status_show, get_device_status_store);
+
 SHOW_FMT_NA(vpg_preset);
 
 static ssize_t vpg_preset_store(struct device *dev,
@@ -416,8 +578,8 @@ static ssize_t reg_read_store(struct device *dev,
 			reg.offset = val;
 			mipicsi_top_read(&reg);
 			read_data = reg.value;
-			pr_err("Reg Read: Offset %d, Value %d\n", reg.offset,
-			       reg.value);
+			pr_err("Reg Read: Offset %0x%x, Value 0x%x\n",
+			       reg.offset, reg.value);
 			return count;
 		}
 	}
@@ -651,6 +813,14 @@ int mipicsi_sysfs_init(struct device *mipicsi_top_device)
 	}
 
 	ret = device_create_file(mipicsi_top_device,
+				 &dev_attr_get_device_status);
+	if (ret) {
+		dev_err(mipicsi_top_device,
+			"Failed to create sysfs: get_device_status\n");
+		return -EINVAL;
+	}
+
+	ret = device_create_file(mipicsi_top_device,
 				 &dev_attr_vpg_preset);
 	if (ret) {
 		dev_err(mipicsi_top_device,
@@ -736,6 +906,9 @@ void mipicsi_sysfs_clean(struct device *mipicsi_top_device)
 
 	device_remove_file(mipicsi_top_device,
 			   &dev_attr_get_mux_status);
+
+	device_remove_file(mipicsi_top_device,
+			   &dev_attr_get_device_status);
 
 	device_remove_file(mipicsi_top_device,
 			   &dev_attr_reg_read);
