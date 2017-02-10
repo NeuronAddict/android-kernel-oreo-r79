@@ -948,7 +948,7 @@ irqreturn_t paintbox_stp_interrupt(struct paintbox_data *pb, uint64_t stp_mask)
 {
 	unsigned int stp_index;
 
-	for (stp_index = 0; stp_index < pb->caps.num_stps && stp_mask;
+	for (stp_index = 0; stp_index < pb->stp.num_stps && stp_mask;
 			stp_index++, stp_mask >>= 1) {
 		struct paintbox_stp *stp;
 		uint32_t ctrl;
@@ -1011,16 +1011,7 @@ int paintbox_stp_init(struct paintbox_data *pb)
 {
 	unsigned int stp_index;
 
-	pb->stp.reg_base = pb->reg_base + IPU_STP_OFFSET;
-
 	spin_lock_init(&pb->stp.lock);
-
-	pb->stp.num_stps = readl(pb->reg_base + IPU_CAP) &
-			IPU_CAP_NUM_STP_MASK;
-
-	/* TODO(ahampson):  Move this to a common function to fill in the caps.
-	 */
-	pb->caps.num_stps = pb->stp.num_stps;
 
 	pb->stp.stps = kzalloc(sizeof(struct paintbox_stp) * pb->stp.num_stps,
 			GFP_KERNEL);
@@ -1045,7 +1036,7 @@ int paintbox_stp_deinit(struct paintbox_data *pb)
 {
 	unsigned int stp_index;
 
-	for (stp_index = 0; stp_index < pb->caps.num_stps; stp_index++)
+	for (stp_index = 0; stp_index < pb->stp.num_stps; stp_index++)
 		deinit_stp_entry(pb, stp_index);
 
 	kfree(pb->stp.stps);

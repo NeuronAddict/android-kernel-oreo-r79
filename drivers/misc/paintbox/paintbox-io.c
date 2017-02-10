@@ -669,8 +669,6 @@ void paintbox_disable_mmu_interrupt(struct paintbox_data *pb)
 
 int paintbox_io_axi_init(struct paintbox_data *pb)
 {
-	pb->io.axi_base = pb->reg_base + IPU_IO_AXI_OFFSET;
-
 	writel(BIF_IMR_TO_ERR_MMU_RD_MASK | BIF_IMR_TO_ERR_DMA_WR_MASK |
 		BIF_IMR_BUS_ERR_MMU_MASK | BIF_IMR_BUS_ERR_DMA_MASK |
 		BIF_IMR_TO_ERR_DMA_RD_MASK, pb->io.axi_base + BIF_IMR);
@@ -702,8 +700,6 @@ int paintbox_io_apb_init(struct paintbox_data *pb)
 
 	spin_lock_init(&pb->io.io_lock);
 
-	pb->io.apb_base = pb->reg_base + IPU_IO_APB_OFFSET;
-
 #ifdef CONFIG_DEBUG_FS
 	paintbox_debug_create_entry(pb, &pb->io.apb_debug, pb->debug_root,
 			"apb", -1, dump_io_apb_registers, dump_io_apb_stats,
@@ -721,8 +717,8 @@ int paintbox_io_apb_init(struct paintbox_data *pb)
 	pb->io.dma_mask = (1 << pb->dma.num_channels) - 1;
 
 	pb->io.stp_start = pb->dma.num_channels;
-	pb->io.stp_mask = ((1 << pb->caps.num_stps) - 1) << pb->io.stp_start;
-	pb->io.bif_start = pb->io.stp_start + pb->caps.num_stps;
+	pb->io.stp_mask = ((1 << pb->stp.num_stps) - 1) << pb->io.stp_start;
+	pb->io.bif_start = pb->io.stp_start + pb->stp.num_stps;
 	pb->io.bif_mask = ((1 << NUM_BIF_INTERRUPTS) - 1) << pb->io.bif_start;
 	pb->io.mmu_start = pb->io.bif_start + NUM_BIF_INTERRUPTS;
 	pb->io.mmu_mask = ((1 << NUM_MMU_INTERRUPTS) - 1) << pb->io.mmu_start;
@@ -735,7 +731,7 @@ int paintbox_io_apb_init(struct paintbox_data *pb)
 	 * number of IRQ waiters and the number of interrupts is arbitrary and
 	 * should be cleaned up.  b/31684858
 	 */
-	pb->caps.num_interrupts = pb->io.mmu_start + NUM_MMU_INTERRUPTS;
+	pb->io.num_interrupts = pb->io.mmu_start + NUM_MMU_INTERRUPTS;
 
 	if (pb->io_ipu.num_mipi_input_interfaces > 0) {
 		pb->io.mipi_input_start = pb->io.mmu_start + NUM_MMU_INTERRUPTS;
@@ -747,7 +743,7 @@ int paintbox_io_apb_init(struct paintbox_data *pb)
 		 * the user space we want to have an interrupt per MIPI stream
 		 * rather than per interface.
 		 */
-		pb->caps.num_interrupts += pb->io_ipu.num_mipi_input_streams;
+		pb->io.num_interrupts += pb->io_ipu.num_mipi_input_streams;
 	}
 
 	if (pb->io_ipu.num_mipi_output_interfaces > 0) {
@@ -761,7 +757,7 @@ int paintbox_io_apb_init(struct paintbox_data *pb)
 		 * the user space we want to have an interrupt per MIPI stream
 		 * rather than per interface.
 		 */
-		pb->caps.num_interrupts += pb->io_ipu.num_mipi_output_streams;
+		pb->io.num_interrupts += pb->io_ipu.num_mipi_output_streams;
 	}
 
 	ret = devm_request_irq(&pb->pdev->dev, pb->io.irq,

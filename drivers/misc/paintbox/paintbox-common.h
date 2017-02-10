@@ -19,15 +19,14 @@
 #include <linux/dma-buf.h>
 #include <linux/dma-mapping.h>
 #include <linux/iommu.h>
+#include <linux/ktime.h>
 #include <linux/miscdevice.h>
-#include <linux/paintbox.h>
-
 #ifdef CONFIG_PAINTBOX_IOMMU
 #include <linux/paintbox-iommu.h>
 #endif
-
 #include <linux/platform_device.h>
 #include <linux/scatterlist.h>
+#include <uapi/paintbox.h>
 
 #define IRQ_NO_DMA_CHANNEL   0xFF
 #define DMA_NO_INTERRUPT     0xFF
@@ -129,6 +128,7 @@ struct paintbox_io {
 	unsigned int ipu_interrupts;
 	unsigned int irq_activations;
 	int irq;
+	unsigned int num_interrupts;
 	unsigned int stp_start;
 	unsigned int bif_start;
 	unsigned int mmu_start;
@@ -324,6 +324,8 @@ struct paintbox_dma_transfer {
 	enum dma_data_direction dir;
 	bool notify_on_completion;
 	bool auto_load_transfer;
+	ktime_t start_time;
+	ktime_t finish_time;
 };
 
 /* Data structure for information specific to a DMA channel.
@@ -342,6 +344,7 @@ struct paintbox_dma_channel {
 
 	struct paintbox_debug debug;
 	struct paintbox_session *session;
+	struct dentry *time_stats_enable_dentry;
 
 	/* protected by pb->lock and pb->dma.dma_lock */
 	struct paintbox_mipi_stream *mipi_stream;
@@ -370,6 +373,8 @@ struct paintbox_dma_channel {
 		unsigned int va_interrupts;
 		unsigned int reported_completions;
 		unsigned int reported_discards;
+		bool time_stats_enabled;
+		int64_t last_transfer_time_us;
 	} stats;
 };
 
@@ -522,10 +527,9 @@ struct paintbox_data {
 	struct paintbox_io_ipu io_ipu;
 	struct paintbox_dma dma;
 	struct paintbox_irq *irqs;
-	struct ipu_capabilities caps;
 	size_t vdbg_log_len;
 	char *vdbg_log;
-
+	uint32_t hardware_id;
 	uint64_t perf_stp_sample_mask;
 	struct task_struct *perf_thread;
 };

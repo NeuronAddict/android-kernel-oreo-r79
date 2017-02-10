@@ -56,7 +56,7 @@ static int paintbox_perf_thread_main(void* data) {
 	size_t samples_size;
 	struct paintbox_data *pb = (struct paintbox_data *)data;
 
-	samples_size = pb->caps.num_stps * sizeof(struct perf_sample);
+	samples_size = pb->stp.num_stps * sizeof(struct perf_sample);
 	samples = kzalloc(samples_size, GFP_KERNEL);
 	if (WARN(!samples, "Paintbox perf_thread can't allocate memory"))
 		return -ENOMEM;
@@ -217,7 +217,7 @@ int stp_pc_histogram_enable_ioctl(struct paintbox_data *pb,
 	/* This session can only enable/disable sampling for stps it owns. Build
 	 * a mask of all stps owned by this session
 	 */
-	for (stp_index = 0; stp_index < pb->caps.num_stps; stp_index++) {
+	for (stp_index = 0; stp_index < pb->stp.num_stps; stp_index++) {
 		if (pb->stp.stps[stp_index].session == session) {
 			session_stp_mask |= 1 << stp_index;
 		}

@@ -14,9 +14,9 @@
  */
 
 #include <linux/kernel.h>
-#include <linux/paintbox.h>
 #include <linux/spinlock.h>
 #include <linux/types.h>
+#include <uapi/paintbox.h>
 
 #include "paintbox-dma.h"
 #include "paintbox-io.h"

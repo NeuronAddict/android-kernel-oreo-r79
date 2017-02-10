@@ -19,10 +19,10 @@
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/kernel.h>
-#include <linux/paintbox.h>
 #include <linux/slab.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
+#include <uapi/paintbox.h>
 
 #include "paintbox-debug.h"
 #include "paintbox-dma.h"

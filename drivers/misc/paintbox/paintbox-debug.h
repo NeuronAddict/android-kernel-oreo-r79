@@ -46,6 +46,7 @@ int dump_ipu_register_with_value64(struct paintbox_data *pb,
 		uint64_t reg_value, const char *reg_name, char *buf,
 		int *written, size_t len);
 
+#ifdef CONFIG_DEBUG_FS
 void paintbox_debug_create_entry(struct paintbox_data *pb,
 		struct paintbox_debug *debug, struct dentry *debug_root,
 		const char *name, unsigned int resource_id,
@@ -65,5 +66,42 @@ void paintbox_debug_create_reg_entries(struct paintbox_data *pb,
 		struct paintbox_debug *debug, const char **reg_names,
 		size_t reg_count, register_write_t reg_write,
 		register_read_t reg_read);
+
+void paintbox_debug_init(struct paintbox_data *pb);
+void paintbox_debug_remove(struct paintbox_data *pb);
+#else
+static inline void paintbox_debug_create_entry(struct paintbox_data *pb,
+		struct paintbox_debug *debug, struct dentry *debug_root,
+		const char *name, unsigned int resource_id,
+		register_dump_t register_dump, stats_dump_t stats_dump,
+		void *arg) { }
+static inline void paintbox_debug_free_entry(struct paintbox_debug *debug) { }
+
+static inline int paintbox_debug_alloc_reg_entries(struct paintbox_data *pb,
+		struct paintbox_debug *debug, size_t reg_count)
+{
+	return 0;
+}
+
+static inline void paintbox_debug_free_reg_entries(struct paintbox_debug *debug)
+{
+}
+
+static inline int paintbox_debug_create_reg_entry(struct paintbox_data *pb,
+		struct paintbox_debug *debug, unsigned int index,
+		const char *reg_name, uint32_t reg_offset,
+		register_write_t reg_write, register_read_t reg_read)
+{
+	return 0;
+}
+
+static inline void paintbox_debug_create_reg_entries(struct paintbox_data *pb,
+		struct paintbox_debug *debug, const char **reg_names,
+		size_t reg_count, register_write_t reg_write,
+		register_read_t reg_read) { }
+
+static inline void paintbox_debug_init(struct paintbox_data *pb) { }
+static inline void paintbox_debug_remove(struct paintbox_data *pb) { }
+#endif
 
 #endif /* __PAINTBOX_DEBUG_H__ */

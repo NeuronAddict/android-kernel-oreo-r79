@@ -157,7 +157,7 @@ static void ipu_core_power_enable(struct paintbox_data *pb,
 		return;
 
 	/* The maximum number of cores is equal to the number of STPs. */
-	max_core_mask = (1 << pb->caps.num_stps) - 1;
+	max_core_mask = (1 << pb->stp.num_stps) - 1;
 
 	active_core_mask = (1 << requested_cores) - 1;
 
@@ -241,7 +241,7 @@ static void ipu_core_power_disable(struct paintbox_data *pb,
 		return;
 
 	/* The maximum number of cores is equal to the number of STPs. */
-	max_core_mask = (1 << pb->caps.num_stps) - 1;
+	max_core_mask = (1 << pb->stp.num_stps) - 1;
 
 	/* Disable MMU, and BIF idle clock gating */
 	writel(CLK_GATE_CONTROL_DMA_IDLE_GATE_DIS_MASK |

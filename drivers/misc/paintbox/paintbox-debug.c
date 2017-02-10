@@ -22,8 +22,12 @@
 
 #include "paintbox-common.h"
 #include "paintbox-debug.h"
+#include "paintbox-dma-debug.h"
+#include "paintbox-io.h"
+#include "paintbox-lbp-debug.h"
+#include "paintbox-mipi-debug.h"
 #include "paintbox-regs.h"
-
+#include "paintbox-stp.h"
 
 #define REG_NAME_COLUMN_NUMBER 8
 #define REG_VALUE_COLUMN_NUMBER 44
@@ -414,5 +418,166 @@ void paintbox_debug_create_reg_entries(struct paintbox_data *pb,
 			return;
 		}
 	}
+}
+
+static int paintbox_reg_dump_show(struct seq_file *s, void *unused)
+{
+	struct paintbox_data *pb = s->private;
+	unsigned int i, j;
+	char *buf;
+	size_t len;
+	int ret, written = 0;
+
+	len = seq_get_buf(s, &buf);
+	if (!buf)
+		return -ENOMEM;
+
+	mutex_lock(&pb->lock);
+
+	ret = dump_io_apb_registers(&pb->io.apb_debug, buf + written,
+			len - written);
+	if (ret < 0)
+		goto err_exit;
+
+	written += ret;
+
+	ret = dump_io_axi_registers(&pb->io.axi_debug, buf + written,
+			len - written);
+	if (ret < 0)
+		goto err_exit;
+
+	written += ret;
+
+	ret = dump_io_ipu_registers(&pb->io_ipu.debug, buf + written,
+			len - written);
+	if (ret < 0)
+		goto err_exit;
+
+	written += ret;
+
+	for (i = 0; i < pb->io_ipu.num_mipi_input_streams; i++) {
+		ret = dump_mipi_input_stream_registers(
+				&pb->io_ipu.mipi_input_streams[i].debug,
+				buf + written, len - written);
+		if (ret < 0)
+			goto err_exit;
+
+		written += ret;
+	}
+
+	for (i = 0; i < pb->io_ipu.num_mipi_output_streams; i++) {
+		ret = dump_mipi_output_stream_registers(
+				&pb->io_ipu.mipi_output_streams[i].debug,
+				buf + written, len - written);
+		if (ret < 0)
+			goto err_exit;
+
+		written += ret;
+	}
+
+	ret = dump_dma_registers(&pb->dma.debug, buf + written, len - written);
+	if (ret < 0)
+		goto err_exit;
+
+	written += ret;
+
+	for (i = 0; i < pb->dma.num_channels; i++) {
+		ret = dump_dma_channel_registers(&pb->dma.channels[i].debug,
+				buf + written, len - written);
+		if (ret < 0)
+			goto err_exit;
+
+		written += ret;
+	}
+
+	for (i = 0; i < pb->stp.num_stps; i++) {
+		ret = dump_stp_registers(&pb->stp.stps[i].debug, buf + written,
+				len - written);
+		if (ret < 0)
+			goto err_exit;
+
+		written += ret;
+	}
+
+	for (i = 0; i < pb->lbp.num_lbps; i++) {
+		ret = paintbox_dump_lbp_registers(&pb->lbp.lbps[i].debug,
+				buf + written, len - written);
+		if (ret < 0)
+			goto err_exit;
+
+		written += ret;
+
+		for (j = 0; j < pb->lbp.max_lbs; j++) {
+			ret = paintbox_dump_lb_registers(
+					&pb->lbp.lbps[i].lbs[j].debug,
+					buf + written, len - written);
+			if (ret < 0)
+				goto err_exit;
+
+			written += ret;
+		}
+	}
+
+	mutex_unlock(&pb->lock);
+
+	seq_commit(s, written);
+
+	return 0;
+
+err_exit:
+	mutex_unlock(&pb->lock);
+	dev_err(&pb->pdev->dev, "%s: register dump error, err = %d", __func__,
+			ret);
+	return ret;
+}
+
+static int paintbox_reg_dump_open(struct inode *inode, struct file *file)
+{
+	struct paintbox_data *pb = inode->i_private;
+	size_t len;
+
+	len = IO_APB_DEBUG_BUFFER_SIZE;
+	len += IO_AXI_DEBUG_BUFFER_SIZE;
+	len += pb->io_ipu.num_mipi_input_streams * MIPI_DEBUG_BUFFER_SIZE;
+	len += pb->io_ipu.num_mipi_output_streams * MIPI_DEBUG_BUFFER_SIZE;
+	len += pb->dma.num_channels * DMA_DEBUG_BUFFER_SIZE;
+	len += pb->stp.num_stps * STP_DEBUG_BUFFER_SIZE;
+	len += pb->lbp.num_lbps * LBP_DEBUG_BUFFER_SIZE;
+	len += pb->lbp.num_lbps * pb->lbp.max_lbs * LB_DEBUG_BUFFER_SIZE;
+
+	return single_open_size(file, paintbox_reg_dump_show, inode->i_private,
+			len);
+}
+
+static const struct file_operations reg_dump_fops = {
+	.open = paintbox_reg_dump_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+void paintbox_debug_init(struct paintbox_data *pb)
+{
+	pb->debug_root = debugfs_create_dir("paintbox", NULL);
+	if (IS_ERR(pb->debug_root)) {
+		dev_err(&pb->pdev->dev, "%s: err = %ld", __func__,
+				PTR_ERR(pb->debug_root));
+		return;
+	}
+
+	pb->regs_dentry = debugfs_create_file("regs",
+			S_IRUSR | S_IRGRP | S_IWUSR, pb->debug_root,
+			pb, &reg_dump_fops);
+	if (IS_ERR(pb->regs_dentry)) {
+		dev_err(&pb->pdev->dev, "%s: err = %ld", __func__,
+				PTR_ERR(pb->regs_dentry));
+		return;
+	}
+}
+
+void paintbox_debug_remove(struct paintbox_data *pb)
+{
+	debugfs_remove(pb->regs_dentry);
+	debugfs_remove(pb->debug_root);
 }
 #endif

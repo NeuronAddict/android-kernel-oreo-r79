@@ -66,7 +66,7 @@ static int ipu_import_dma_buf(struct paintbox_data *pb,
 {
 	int ret;
 
-	transfer->dma_buf = dma_buf_get(config->dma_buf_fd);
+	transfer->dma_buf = dma_buf_get(config->dma_buf.fd);
 	if (IS_ERR(transfer->dma_buf))
 		return PTR_ERR(transfer->dma_buf);
 
@@ -89,9 +89,18 @@ static int ipu_import_dma_buf(struct paintbox_data *pb,
 		goto err_detach;
 	}
 
+	/* TODO(ahampson):  dma_buf_offset_bytes + config->len_bytes should be
+	 * less than or equal sg_dma_len(transfer->sg_table->sgl).  Currently
+	 * the config->len_bytes value supplied by the runtime is not the
+	 * actual transfer boundary.  b/35243756
+	 */
+
 #ifdef CONFIG_PAINTBOX_IOMMU
 	/* Map the scatter list into the IOVA space. */
 	if (pb->mmu.enabled) {
+		/* TODO(ahampson):  This needs to be modified so that it can
+		 * handle multiple entries in the sg_table.
+		 */
 		ret = dma_map_sg(&pb->pdev->dev, transfer->sg_table->sgl,
 				transfer->sg_table->nents, transfer->dir);
 		if (ret != transfer->sg_table->nents) {
@@ -104,10 +113,13 @@ static int ipu_import_dma_buf(struct paintbox_data *pb,
 	}
 #endif
 
-	transfer->dma_addr = sg_dma_address(transfer->sg_table->sgl);
+	/* TODO(ahampson):  The buffer offset should be factored in earlier so
+	 * we don't map pages we don't need into the IOVA.
+	 */
+	transfer->dma_addr = sg_dma_address(transfer->sg_table->sgl) +
+			config->dma_buf.offset_bytes;
 
 	return 0;
-
 #ifdef CONFIG_PAINTBOX_IOMMU
 err_unmap:
 	dma_buf_unmap_attachment(transfer->attach, transfer->sg_table,
@@ -125,9 +137,13 @@ static void ipu_release_dma_buf(struct paintbox_data *pb,
 		struct paintbox_dma_transfer *transfer)
 {
 #ifdef CONFIG_PAINTBOX_IOMMU
-	if (pb->mmu.enabled)
+	if (pb->mmu.enabled) {
+		/* TODO(ahampson):  This needs to be modified so that it can
+		 * handle multiple entries in the sg_table.
+		 */
 		dma_unmap_sg(&pb->pdev->dev, transfer->sg_table->sgl,
 				transfer->sg_table->nents, transfer->dir);
+	}
 #endif
 	dma_buf_unmap_attachment(transfer->attach, transfer->sg_table,
 			transfer->dir);

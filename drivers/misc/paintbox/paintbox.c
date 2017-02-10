@@ -27,23 +27,20 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/of.h>
-#include <linux/paintbox.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
 #include <linux/version.h>
+#include <uapi/paintbox.h>
 
 #include "paintbox-common.h"
 #include "paintbox-dma.h"
-#include "paintbox-dma-debug.h"
 #include "paintbox-io.h"
 #include "paintbox-irq.h"
 #include "paintbox-lbp.h"
-#include "paintbox-lbp-debug.h"
 #include "paintbox-mipi.h"
-#include "paintbox-mipi-debug.h"
 #include "paintbox-mmu.h"
 #include "paintbox-power.h"
 #include "paintbox-regs.h"
@@ -155,6 +152,39 @@ static int paintbox_release(struct inode *ip, struct file *fp)
 	return 0;
 }
 
+static long paintbox_get_caps_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg)
+{
+	struct ipu_capabilities caps;
+	uint32_t version;
+
+	memset(&caps, 0, sizeof(caps));
+
+	caps.num_lbps = pb->lbp.num_lbps;
+	caps.num_stps = pb->stp.num_stps;
+	caps.num_dma_channels = pb->dma.num_channels;
+	caps.num_interrupts = pb->io.num_interrupts;
+
+	version = readl(pb->reg_base + IPU_VERSION);
+	caps.version_major = (version & IPU_VERSION_MAJOR_MASK) >>
+			IPU_VERSION_MAJOR_SHIFT;
+	caps.version_minor = (version & IPU_VERSION_MINOR_MASK) >>
+			IPU_VERSION_MAJOR_SHIFT;
+	caps.version_build = version & IPU_VERSION_INCR_MASK;
+	caps.is_fpga = !!(version & IPU_VERSION_FPGA_BUILD_MASK);
+
+#if defined(CONFIG_PAINTBOX_SIMULATOR_SUPPORT)
+	caps.is_simulator = true;
+#endif
+
+	caps.hardware_id = pb->hardware_id;
+
+	if (copy_to_user((void __user *)arg, &caps, sizeof(caps)))
+		return -EFAULT;
+
+	return 0;
+}
+
 static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 		unsigned long arg)
 {
@@ -163,10 +193,7 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 
 	switch (cmd) {
 	case PB_GET_IPU_CAPABILITIES:
-		if (copy_to_user((void __user *)arg, &pb->caps,
-				sizeof(pb->caps)))
-			return -EFAULT;
-		return 0;
+		return paintbox_get_caps_ioctl(pb, session, arg);
 	case PB_ALLOCATE_INTERRUPT:
 		return allocate_interrupt_ioctl(pb, session, arg);
 	case PB_WAIT_FOR_INTERRUPT:
@@ -369,169 +396,37 @@ static void paintbox_deinit(struct paintbox_data *pb)
 	kfree(pb->vdbg_log);
 }
 
-#ifdef CONFIG_DEBUG_FS
-static int pb_debug_regs_show(struct seq_file *s, void *unused)
-{
-	struct paintbox_data *pb = s->private;
-	unsigned int i, j;
-	char *buf;
-	size_t len;
-	int ret, written = 0;
-
-	len = seq_get_buf(s, &buf);
-	if (!buf)
-		return -ENOMEM;
-
-	mutex_lock(&pb->lock);
-
-	ret = dump_io_apb_registers(&pb->io.apb_debug, buf + written,
-			len - written);
-	if (ret < 0)
-		goto err_exit;
-
-	written += ret;
-
-	ret = dump_io_axi_registers(&pb->io.axi_debug, buf + written,
-			len - written);
-	if (ret < 0)
-		goto err_exit;
-
-	written += ret;
-
-	ret = dump_io_ipu_registers(&pb->io_ipu.debug, buf + written,
-			len - written);
-	if (ret < 0)
-		goto err_exit;
-
-	written += ret;
-
-	for (i = 0; i < pb->io_ipu.num_mipi_input_streams; i++) {
-		ret = dump_mipi_input_stream_registers(
-				&pb->io_ipu.mipi_input_streams[i].debug,
-				buf + written, len - written);
-		if (ret < 0)
-			goto err_exit;
-
-		written += ret;
-	}
-
-	for (i = 0; i < pb->io_ipu.num_mipi_output_streams; i++) {
-		ret = dump_mipi_output_stream_registers(
-				&pb->io_ipu.mipi_output_streams[i].debug,
-				buf + written, len - written);
-		if (ret < 0)
-			goto err_exit;
-
-		written += ret;
-	}
-
-	ret = dump_dma_registers(&pb->dma.debug, buf + written, len - written);
-	if (ret < 0)
-		goto err_exit;
-
-	written += ret;
-
-	for (i = 0; i < pb->dma.num_channels; i++) {
-		ret = dump_dma_channel_registers(&pb->dma.channels[i].debug,
-				buf + written, len - written);
-		if (ret < 0)
-			goto err_exit;
-
-		written += ret;
-	}
-
-	for (i = 0; i < pb->caps.num_stps; i++) {
-		ret = dump_stp_registers(&pb->stp.stps[i].debug, buf + written,
-				len - written);
-		if (ret < 0)
-			goto err_exit;
-
-		written += ret;
-	}
-
-	for (i = 0; i < pb->lbp.num_lbps; i++) {
-		ret = paintbox_dump_lbp_registers(&pb->lbp.lbps[i].debug,
-				buf + written, len - written);
-		if (ret < 0)
-			goto err_exit;
-
-		written += ret;
-
-		for (j = 0; j < pb->caps.max_line_buffers; j++) {
-			ret = paintbox_dump_lb_registers(
-					&pb->lbp.lbps[i].lbs[j].debug,
-					buf + written, len - written);
-			if (ret < 0)
-				goto err_exit;
-
-			written += ret;
-		}
-	}
-
-	mutex_unlock(&pb->lock);
-
-	seq_commit(s, written);
-
-	return 0;
-
-err_exit:
-	mutex_unlock(&pb->lock);
-	dev_err(&pb->pdev->dev, "%s: register dump error, err = %d", __func__,
-			ret);
-	return ret;
-}
-
-static int pb_debug_regs_open(struct inode *inode, struct file *file)
-{
-	struct paintbox_data *pb = inode->i_private;
-	size_t len;
-
-	len = IO_APB_DEBUG_BUFFER_SIZE;
-	len += IO_AXI_DEBUG_BUFFER_SIZE;
-	len += pb->io_ipu.num_mipi_input_streams * MIPI_DEBUG_BUFFER_SIZE;
-	len += pb->io_ipu.num_mipi_output_streams * MIPI_DEBUG_BUFFER_SIZE;
-	len += pb->dma.num_channels * DMA_DEBUG_BUFFER_SIZE;
-	len += pb->caps.num_stps * STP_DEBUG_BUFFER_SIZE;
-	len += pb->caps.num_lbps * LBP_DEBUG_BUFFER_SIZE;
-	len += pb->caps.num_lbps * pb->caps.max_line_buffers *
-			LB_DEBUG_BUFFER_SIZE;
-
-	return single_open_size(file, pb_debug_regs_show, inode->i_private,
-			len);
-}
-
-static const struct file_operations pb_debug_regs_fops = {
-	.open = pb_debug_regs_open,
-	.read = seq_read,
-	.llseek = seq_lseek,
-	.release = single_release,
-};
-
-static void paintbox_debug_init(struct paintbox_data *pb)
-{
-	pb->debug_root = debugfs_create_dir("paintbox", NULL);
-
-	pb->regs_dentry = debugfs_create_file("regs", 0644, pb->debug_root,
-			pb, &pb_debug_regs_fops);
-}
-#endif
-
-static int paintbox_get_version(struct paintbox_data *pb)
+static int paintbox_get_capabilities(struct paintbox_data *pb)
 {
 	uint64_t hardware_id;
-	uint32_t version = readl(pb->reg_base + IPU_VERSION);
+	uint32_t val;
+	uint8_t major, minor, build;
+	bool is_fpga;
 	int ret;
 
-	pb->caps.version_major = (version & IPU_VERSION_MAJOR_MASK) >>
-			IPU_VERSION_MAJOR_SHIFT;
-	pb->caps.version_minor = (version & IPU_VERSION_MINOR_MASK) >>
-			IPU_VERSION_MAJOR_SHIFT;
-	pb->caps.version_build = version & IPU_VERSION_INCR_MASK;
-	pb->caps.is_fpga = !!(version & IPU_VERSION_FPGA_BUILD_MASK);
+	val = readl(pb->reg_base + IPU_VERSION);
+	major = (val & IPU_VERSION_MAJOR_MASK) >> IPU_VERSION_MAJOR_SHIFT;
+	minor = (val & IPU_VERSION_MINOR_MASK) >> IPU_VERSION_MAJOR_SHIFT;
+	build = val & IPU_VERSION_INCR_MASK;
+	is_fpga = !!(val & IPU_VERSION_FPGA_BUILD_MASK);
 
-#if defined(CONFIG_PAINTBOX_SIMULATOR_SUPPORT)
-	pb->caps.is_simulator = true;
-#endif
+	val = readl(pb->reg_base + IPU_CAP);
+	pb->stp.num_stps = val & IPU_CAP_NUM_STP_MASK;
+	pb->lbp.num_lbps = (val & IPU_CAP_NUM_LBP_MASK) >>
+		IPU_CAP_NUM_LBP_SHIFT;
+
+	pb->dma.num_channels = readl(pb->dma.dma_base + DMA_CAP0) &
+			MAX_DMA_CHAN_MASK;
+
+	val = readl(pb->io_ipu.ipu_base + MPI_CAP);
+	pb->io_ipu.num_mipi_input_streams = (val & MPI_MAX_STRM_MASK) >>
+			MPI_MAX_STRM_SHIFT;
+	pb->io_ipu.num_mipi_input_interfaces = val & MPI_MAX_IFC_MASK;
+
+	val = readl(pb->io_ipu.ipu_base + MPO_CAP);
+	pb->io_ipu.num_mipi_output_streams = (val & MPO_MAX_STRM_MASK) >>
+			MPO_MAX_STRM_SHIFT;
+	pb->io_ipu.num_mipi_output_interfaces = val & MPO_MAX_IFC_MASK;
 
 	ret = of_property_read_u64(pb->pdev->dev.of_node, "hardware-id",
 			&hardware_id);
@@ -542,15 +437,24 @@ static int paintbox_get_version(struct paintbox_data *pb)
 		return ret;
 	}
 
-	pb->caps.hardware_id = (uint32_t)hardware_id;
+	pb->hardware_id = (uint32_t)hardware_id;
 
+#if defined(CONFIG_PAINTBOX_SIMULATOR_SUPPORT)
+	dev_info(&pb->pdev->dev,
+			"Paintbox IPU Version %u.%u.%u Simulator Hardware ID %u"
+			"\n", major, minor, build, pb->hardware_id);
+#else
 	dev_info(&pb->pdev->dev,
 			"Paintbox IPU Version %u.%u.%u %s Hardware ID %u\n",
-			pb->caps.version_major, pb->caps.version_minor,
-			pb->caps.version_build, pb->caps.is_simulator ?
-			"Simulator" : pb->caps.is_fpga ? "FPGA" : "",
-			pb->caps.hardware_id);
-
+			major, minor, build, is_fpga ? "FPGA" : "",
+			pb->hardware_id);
+#endif
+	dev_info(&pb->pdev->dev,
+			"STPs %u LBPs %u DMA Channels %u MIPI Input Streams %u "
+			"MIPI Output Streams %u\n", pb->stp.num_stps,
+			pb->lbp.num_lbps, pb->dma.num_channels,
+			pb->io_ipu.num_mipi_input_streams,
+			pb->io_ipu.num_mipi_output_streams);
 	return 0;
 }
 
@@ -569,6 +473,8 @@ static int paintbox_probe(struct platform_device *pdev)
 	mutex_init(&pb->lock);
 
 	spin_lock_init(&pb->irq_lock);
+
+	paintbox_debug_init(pb);
 
 	r = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (r == NULL) {
@@ -596,15 +502,18 @@ static int paintbox_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, pb);
 
-#ifdef CONFIG_DEBUG_FS
-	paintbox_debug_init(pb);
-#endif
+	pb->io_ipu.ipu_base = pb->reg_base + IPU_IO_IPU_OFFSET;
+	pb->io.apb_base = pb->reg_base + IPU_IO_APB_OFFSET;
+	pb->io.axi_base = pb->reg_base + IPU_IO_AXI_OFFSET;
+	pb->dma.dma_base = pb->reg_base + IPU_DMA_OFFSET;
+	pb->lbp.reg_base = pb->reg_base + IPU_LBP_OFFSET;
+	pb->stp.reg_base = pb->reg_base + IPU_STP_OFFSET;
 
 #if defined(CONFIG_PAINTBOX_SIMULATOR_SUPPORT)
 	paintbox_sim_init(pb);
 #endif
 
-	ret = paintbox_get_version(pb);
+	ret = paintbox_get_capabilities(pb);
 	if (ret < 0)
 		return ret;
 
@@ -650,14 +559,6 @@ static int paintbox_probe(struct platform_device *pdev)
 	if (ret < 0)
 		return ret;
 
-	/* TODO(ahampson):  This works on the assumption that all lbps have the
-	 * same number of lbs.
-	 */
-	pb->caps.max_line_buffers = pb->lbp.max_lbs;
-	pb->caps.max_read_ptrs = pb->lbp.max_rptrs;
-	pb->caps.max_channels = pb->lbp.max_channels;
-	pb->caps.max_fb_rows = pb->lbp.max_fb_rows;
-
 	/* register the misc device */
 	pb->misc_device.minor = MISC_DYNAMIC_MINOR,
 	pb->misc_device.name  = "paintbox",
@@ -687,7 +588,7 @@ static int paintbox_remove(struct platform_device *pdev)
 	devm_free_irq(&pdev->dev, pb->io.irq, pb);
 
 	devm_iounmap(&pdev->dev, pb->reg_base);
-
+	paintbox_debug_remove(pb);
 	mutex_destroy(&pb->lock);
 
 	kfree(pb);
@@ -711,6 +612,6 @@ static struct platform_driver paintbox_driver = {
 };
 module_platform_driver(paintbox_driver);
 
-MODULE_AUTHOR("Adam Hampson <ahampson@google.com>");
+MODULE_AUTHOR("Google, Inc.");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Paintbox Driver");

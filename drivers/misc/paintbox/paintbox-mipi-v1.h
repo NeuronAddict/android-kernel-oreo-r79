@@ -19,12 +19,12 @@
 #include <linux/delay.h>
 #include <linux/interrupt.h>
 #include <linux/kernel.h>
-#include <linux/paintbox.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
 #include <linux/workqueue.h>
+#include <uapi/paintbox.h>
 
 #include "paintbox-dma.h"
 #include "paintbox-debug.h"

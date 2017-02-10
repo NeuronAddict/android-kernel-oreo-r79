@@ -16,9 +16,9 @@
 #include <linux/dma-mapping.h>
 #include <linux/err.h>
 #include <linux/kernel.h>
-#include <linux/paintbox.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
+#include <uapi/paintbox.h>
 
 #include "paintbox-common.h"
 #include "paintbox-dma.h"

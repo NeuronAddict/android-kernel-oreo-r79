@@ -16,10 +16,10 @@
 #include <linux/debugfs.h>
 #include <linux/err.h>
 #include <linux/kernel.h>
-#include <linux/paintbox.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/types.h>
+#include <uapi/paintbox.h>
 
 #include "paintbox-debug.h"
 #include "paintbox-dma.h"
@@ -141,9 +141,10 @@ void paintbox_log_dma_dram_to_lbp_transfer(struct paintbox_data *pb,
 				config->dst.lbp.read_ptr_id);
 	} else {
 		dev_info(&pb->pdev->dev,
-				"\tdma buf fd %d dma_addr %pad %llu bytes -> "
-				"lbp%u lb%u rptr id %u\n",
-				config->src.dram.dma_buf_fd,
+				"\tdma buf fd %d offset %zu bytes dma_addr %pad"
+				" %llu bytes -> lbp%u lb%u rptr id %u\n",
+				config->src.dram.dma_buf.fd,
+				config->src.dram.dma_buf.offset_bytes,
 				&transfer->dma_addr, config->src.dram.len_bytes,
 				config->dst.lbp.lbp_id, config->dst.lbp.lb_id,
 				config->dst.lbp.read_ptr_id);
@@ -178,10 +179,11 @@ void paintbox_log_dma_lbp_to_dram_transfer(struct paintbox_data *pb,
 	} else {
 		dev_info(&pb->pdev->dev,
 				"\tlbp%u lb%u rptr id %u -> dma buf fd %d "
-				"dma_addr %pad %llu bytes\n",
+				"offset %zu bytes dma_addr %pad %llu bytes\n",
 				config->src.lbp.lbp_id, config->src.lbp.lb_id,
 				config->src.lbp.read_ptr_id,
-				config->dst.dram.dma_buf_fd,
+				config->dst.dram.dma_buf.fd,
+				config->dst.dram.dma_buf.offset_bytes,
 				&transfer->dma_addr,
 				config->dst.dram.len_bytes);
 	}
@@ -213,9 +215,10 @@ void paintbox_log_dma_dram_to_stp_transfer(struct paintbox_data *pb,
 				config->dst.stp.sram_addr);
 	} else {
 		dev_info(&pb->pdev->dev,
-				"\tdma buf fd %d dma_addr %pad %llu bytes -> "
-				"stp%u sram addr 0x%08x\n",
-				config->src.dram.dma_buf_fd,
+				"\tdma buf fd %d offset %zu bytes dma_addr %pad"
+				" %llu bytes -> stp%u sram addr 0x%08x\n",
+				config->src.dram.dma_buf.fd,
+				config->src.dram.dma_buf.offset_bytes,
 				&transfer->dma_addr, config->src.dram.len_bytes,
 				config->dst.stp.stp_id,
 				config->dst.stp.sram_addr);
@@ -283,10 +286,11 @@ void paintbox_log_dma_mipi_to_dram_transfer(struct paintbox_data *pb,
 				config->dst.dram.len_bytes);
 	} else {
 		dev_info(&pb->pdev->dev,
-				"\tmipi input stream%u -> dma buf fd %d "
-				"dma_addr %pad %llu bytes\n",
+				"\tmipi input stream%u -> dma buf fd %d offset "
+				"%zu bytes dma_addr %pad %llu bytes\n",
 				channel->mipi_stream->stream_id,
-				config->dst.dram.dma_buf_fd,
+				config->dst.dram.dma_buf.fd,
+				config->dst.dram.dma_buf.offset_bytes,
 				&transfer->dma_addr,
 				config->dst.dram.len_bytes);
 	}
@@ -1087,9 +1091,58 @@ int dump_dma_channel_stats(struct paintbox_debug *debug, char *buf,
 			channel->completed_count, pb->dma.discard_count);
 	written += snprintf(buf + written, len - written,
 			"\tstop request pending: %u\n", channel->stop_request);
+	if (channel->stats.time_stats_enabled) {
+		written += snprintf(buf + written, len - written,
+				"\tlast transfer time: %lldus\n",
+				channel->stats.last_transfer_time_us);
+	}
 
 	return written;
 }
+
+static int paintbox_dma_channel_time_stats_enable_show(struct seq_file *s,
+		void *p)
+{
+	struct paintbox_dma_channel *channel = s->private;
+	seq_printf(s, "%u\n", channel->stats.time_stats_enabled);
+	return 0;
+}
+
+static int paintbox_dma_channel_time_stats_enable_open(struct inode *inode,
+		struct file *file)
+{
+	return single_open(file, paintbox_dma_channel_time_stats_enable_show,
+			inode->i_private);
+}
+
+static ssize_t paintbox_dma_channel_time_stats_enable_write(struct file *file,
+		const char __user *user_buf, size_t count, loff_t *ppos)
+{
+	struct seq_file *s = (struct seq_file *)file->private_data;
+	struct paintbox_dma_channel *channel = s->private;
+	struct paintbox_data *pb = channel->debug.pb;
+	unsigned int val;
+	int ret;
+
+	ret = kstrtouint_from_user(user_buf, count, 0, &val);
+	if (ret == 0) {
+		channel->stats.time_stats_enabled = !!val;
+		return count;
+	}
+
+	dev_err(&pb->pdev->dev, "%s: invalid value, err = %d", __func__, ret);
+
+	return ret;
+}
+
+static const struct file_operations dma_channel_time_stats_enable_fops = {
+	.open = paintbox_dma_channel_time_stats_enable_open,
+	.write = paintbox_dma_channel_time_stats_enable_write,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+	.owner = THIS_MODULE,
+};
 
 static int paintbox_dma_bif_oustanding_show(struct seq_file *s, void *p)
 {
@@ -1155,6 +1208,16 @@ void paintbox_dma_channel_debug_init(struct paintbox_data *pb,
 			&dma_reg_names[REG_INDEX(DMA_CHAN_BLOCK_START)],
 			DMA_CHAN_NUM_REGS, dma_channel_reg_entry_write,
 			dma_channel_reg_entry_read);
+
+	channel->time_stats_enable_dentry = debugfs_create_file(
+			"time_stats_enable", S_IRUSR | S_IRGRP | S_IWUSR,
+			channel->debug.debug_dir, channel,
+			&dma_channel_time_stats_enable_fops);
+	if (IS_ERR(channel->time_stats_enable_dentry)) {
+		dev_err(&pb->pdev->dev, "%s: err = %ld", __func__,
+				PTR_ERR(channel->time_stats_enable_dentry));
+		return;
+	}
 }
 
 void paintbox_dma_debug_init(struct paintbox_data *pb)

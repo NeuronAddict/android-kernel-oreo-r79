@@ -248,7 +248,7 @@ int allocate_lbp_ioctl(struct paintbox_data *pb,
 	unsigned int pool_id = (unsigned int)arg;
 	struct paintbox_lbp *lbp;
 
-	if (pool_id >= pb->caps.num_lbps) {
+	if (pool_id >= pb->lbp.num_lbps) {
 		dev_err(&pb->pdev->dev, "%s: invalid lbp id %d\n", __func__,
 				pool_id);
 		return -EINVAL;
@@ -775,14 +775,6 @@ int paintbox_lbp_init(struct paintbox_data *pb)
 	unsigned int i;
 	uint64_t caps;
 	int ret;
-
-	pb->lbp.reg_base = pb->reg_base + IPU_LBP_OFFSET;
-
-	pb->lbp.num_lbps = (readl(pb->reg_base + IPU_CAP) &
-			IPU_CAP_NUM_LBP_MASK) >> IPU_CAP_NUM_LBP_SHIFT;
-
-	/* TODO(ahampson):  Move this to a common caps ioct handler. */
-	pb->caps.num_lbps = pb->lbp.num_lbps;
 
 	pb->lbp.lbps = kzalloc(sizeof(struct paintbox_lbp) * pb->lbp.num_lbps,
 			GFP_KERNEL);

@@ -16,12 +16,12 @@
 #include <linux/delay.h>
 #include <linux/interrupt.h>
 #include <linux/kernel.h>
-#include <linux/paintbox.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
 #include <linux/workqueue.h>
+#include <uapi/paintbox.h>
 
 #include "paintbox-dma.h"
 #include "paintbox-debug.h"
@@ -1746,30 +1746,17 @@ err_exit:
 
 int paintbox_mipi_init(struct paintbox_data *pb)
 {
-	uint32_t val;
 	int ret;
-
-	pb->io_ipu.ipu_base = pb->reg_base + IPU_IO_IPU_OFFSET;
 
 	spin_lock_init(&pb->io_ipu.mipi_lock);
 
 	paintbox_mipi_debug_init(pb);
-
-	val = readl(pb->io_ipu.ipu_base + MPI_CAP);
-	pb->io_ipu.num_mipi_input_streams = (val & MPI_MAX_STRM_MASK) >>
-			MPI_MAX_STRM_SHIFT;
-	pb->io_ipu.num_mipi_input_interfaces = val & MPI_MAX_IFC_MASK;
 
 	if (pb->io_ipu.num_mipi_input_streams > 0) {
 		ret = paintbox_mipi_input_init(pb);
 		if (ret < 0)
 			return ret;
 	}
-
-	val = readl(pb->io_ipu.ipu_base + MPO_CAP);
-	pb->io_ipu.num_mipi_output_streams = (val & MPO_MAX_STRM_MASK) >>
-			MPO_MAX_STRM_SHIFT;
-		pb->io_ipu.num_mipi_output_interfaces = val & MPO_MAX_IFC_MASK;
 
 	if (pb->io_ipu.num_mipi_output_streams > 0) {
 		ret = paintbox_mipi_output_init(pb);

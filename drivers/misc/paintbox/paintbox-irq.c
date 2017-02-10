@@ -17,11 +17,11 @@
 #include <linux/err.h>
 #include <linux/kernel.h>
 #include <linux/mutex.h>
-#include <linux/paintbox.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
+#include <uapi/paintbox.h>
 
 #include "paintbox-common.h"
 #include "paintbox-irq.h"
@@ -83,7 +83,7 @@ int validate_interrupt(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned int interrupt_id)
 {
 
-	if (interrupt_id >= pb->caps.num_interrupts) {
+	if (interrupt_id >= pb->io.num_interrupts) {
 		dev_err(&pb->pdev->dev, "%s: invalid interrupt_id %d\n",
 				__func__, interrupt_id);
 		return -EINVAL;
@@ -118,11 +118,11 @@ int allocate_interrupt_ioctl(struct paintbox_data *pb,
 	unsigned int interrupt_id = (unsigned int)arg;
 	struct paintbox_irq *irq;
 
-	if (interrupt_id >= pb->caps.num_interrupts) {
+	if (interrupt_id >= pb->io.num_interrupts) {
 		dev_err(&pb->pdev->dev,
 				"%s: invalid interrupt_id %d, %d >= %d\n",
 				__func__, interrupt_id, interrupt_id,
-				pb->caps.num_interrupts);
+				pb->io.num_interrupts);
 		return -EINVAL;
 	}
 
@@ -366,7 +366,7 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 	uint64_t interrupt_mask;
 	int interrupt_id;
 	int ret;
-	size_t wait_size = interrupt_wait_size(pb->caps.num_stps);
+	size_t wait_size = interrupt_wait_size(pb->stp.num_stps);
 	unsigned long start = jiffies;
 
 	wait = kzalloc(wait_size, GFP_KERNEL);
@@ -381,7 +381,7 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 
 	/* initialize interrupt_wait output members */
 	wait->interrupt_mask_fired = 0;
-	memset(wait->interrupt_code, 0, sizeof(uint16_t) * pb->caps.num_stps);
+	memset(wait->interrupt_code, 0, sizeof(uint16_t) * pb->stp.num_stps);
 	wait->error = 0;
 	wait->interrupt_id_error = -1;  /* invalid interrupt id */
 
@@ -721,11 +721,11 @@ int paintbox_irq_init(struct paintbox_data *pb)
 	unsigned int interrupt_id;
 
 	pb->irqs = kzalloc(sizeof(struct paintbox_irq) *
-			pb->caps.num_interrupts, GFP_KERNEL);
+			pb->io.num_interrupts, GFP_KERNEL);
 	if (!pb->irqs)
 		return -ENOMEM;
 
-	for (interrupt_id = 0; interrupt_id < pb->caps.num_interrupts;
+	for (interrupt_id = 0; interrupt_id < pb->io.num_interrupts;
 			interrupt_id++) {
 		/* Store interrupt id with object as a convenience to avoid
 		 * doing a lookup later on.

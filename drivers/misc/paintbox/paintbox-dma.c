@@ -17,11 +17,13 @@
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
 #include <linux/kernel.h>
-#include <linux/paintbox.h>
+#include <linux/ktime.h>
 #include <linux/slab.h>
+#include <linux/timekeeping.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
 #include <linux/version.h>
+#include <uapi/paintbox.h>
 
 #include "paintbox-dma.h"
 #include "paintbox-dma-debug.h"
@@ -737,6 +739,10 @@ int read_dma_transfer_ioctl(struct paintbox_data *pb,
 	ret = ipu_dma_release_and_copy_buffer(pb, transfer, req.host_vaddr,
 			req.len_bytes);
 
+	if (channel->stats.time_stats_enabled)
+		channel->stats.last_transfer_time_us = ktime_to_us(ktime_sub(
+				transfer->finish_time, transfer->start_time));
+
 	kfree(transfer);
 
 	/* Take this opportunity to drain the discard queue */
@@ -792,13 +798,16 @@ static void commit_transfer_to_hardware(struct paintbox_data *pb,
 	writel(DMA_CHAN_INT_EOF | DMA_CHAN_INT_VA_ERR, dma->dma_base +
 			DMA_CHAN_IMR);
 
+	/* Enable the DMA channel interrupt in the top-level IPU_IMR */
+	io_enable_dma_channel_interrupt(pb, channel->channel_id);
+
 	/* Write the channel mode register last as this will enqueue the
 	 * transfer into the hardware.
 	 */
 	writel(transfer->chan_mode, dma->dma_base + DMA_CHAN_MODE);
 
-	/* Enable the DMA channel interrupt in the top-level IPU_IMR */
-	io_enable_dma_channel_interrupt(pb, channel->channel_id);
+	if (channel->stats.time_stats_enabled)
+		transfer->start_time = ktime_get_boottime();
 
 	LOG_DMA_REGISTERS(pb, channel);
 }
@@ -1165,6 +1174,9 @@ static inline struct paintbox_dma_transfer *pop_active_transfer(
 	list_del(&transfer->entry);
 	channel->active_count--;
 
+	if (channel->stats.time_stats_enabled)
+		transfer->finish_time = ktime_get_boottime();
+
 	return transfer;
 }
 
@@ -1270,11 +1282,6 @@ int paintbox_dma_init(struct paintbox_data *pb)
 	uint32_t bif_xfer;
 	unsigned int i;
 
-	pb->dma.dma_base = pb->reg_base + IPU_DMA_OFFSET;
-
-	pb->dma.num_channels = readl(pb->dma.dma_base + DMA_CAP0) &
-			MAX_DMA_CHAN_MASK;
-
 	bif_xfer = readl(pb->dma.dma_base + DMA_CHAN_BIF_XFER);
 	pb->dma.bif_outstanding = ((bif_xfer & DMA_CHAN_OUTSTANDING_MASK) >>
 			DMA_CHAN_OUTSTANDING_SHIFT) + 1;
@@ -1285,9 +1292,6 @@ int paintbox_dma_init(struct paintbox_data *pb)
 #ifdef CONFIG_DEBUG_FS
 	paintbox_dma_debug_init(pb);
 #endif
-
-	/* TODO(ahampson):  refactor out the storage of the caps structure  */
-	pb->caps.num_dma_channels = pb->dma.num_channels;
 
 	pb->dma.channels = kzalloc(sizeof(struct paintbox_dma_channel) *
 			pb->dma.num_channels, GFP_KERNEL);
