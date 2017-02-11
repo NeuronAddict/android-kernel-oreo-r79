@@ -48,7 +48,7 @@
 #define REF_FREQ_SEL 0x8
 #define MAX_STR_COPY 9
 #define LP4_LPC_FREQ_SWITCH 0x8A
-
+#define REF_CLK_KHZ 19200
 /* If IPU clock is driven by CPU_IPU PLL
  * calculate IPU divider based on CPU clk and divider
  * CPU CLK < 850: IPU_CLK_DIV = ((CPU_CLK_DIV+1)*2-1)
@@ -98,7 +98,7 @@ enum mnh_ipu_clk_src {
 };
 
 struct freq_reg_table {
-	int fidiv;
+	int fbdiv;
 	int postdiv1;
 	int postdiv2;
 	int clk_div;
@@ -122,20 +122,19 @@ static struct freq_reg_table cpu_reg_tables[] = {
 
 /* IPU clock frequency calculation tables
  * Refclk  FBDIV  VCO	POSTDIV1 POSTDIV2 FOUTPOSTDIV CLKDIV CLKFreq
- * SYS200                                                        100.000
+ * 19.2	 125	 2400	  6	    2	  400.000	1	 100.000
  * 19.2	 125	 2400	  6	    1	  400.000	1	 200.000
  * 19.2	 125	 2400	  4	    1	  600.000	1	 300.000
  * 19.2	 125	 2400	  6	    1	  400.000	0	 400.000
  * 19.2	 133	 2553.6   6	    1	  425.600	0	 425.600
  */
 static struct freq_reg_table ipu_reg_tables[] = {
-	{0, 0, 0, 0},	/* 100 MHz in SYS200 */
+	{125, 6, 2, 1},	/* 100 MHz */
 	{125, 6, 1, 1},	/* 200 MHz */
 	{125, 4, 1, 1},	/* 300 MHz */
 	{125, 6, 1, 0},	/* 400 MHz */
 	{133, 6, 1, 0}	/* 425 MHz */
 };
-
 
 struct mnh_freq_cooling_device {
 	struct device *dev;
@@ -148,14 +147,18 @@ struct mnh_freq_cooling_device {
 
 static struct mnh_freq_cooling_device *mnh_dev;
 
-/* CPU clock 200-1000MHZ (IPU clock 100-500MHz)
+/**
+ * CPU clock controller
+ * @index: int with frquency table index info.
+ * Return: 0 on success, an error code otherwise.
+ *
  * 1PLL(CPU_IPU PLL) for CPU/IPU clocks. Since CPU and IPU clocks are derived
  * from same PLL in this mode, there would be restriction on achedivable clock
  * frequencies for CPU and IPU clocks. IPU clock would be half of CPU clock. Any
  * frequency changes is achieved by changing FBDIV(integer feedback division) of
  * the PLL(PLL output = FBDIV * REFCLK frequency).
  * Default CPU_CLK_DIV : 1, IPU_CLK_DIV: 2
- * CLK = (REFCLK FREQ * FBDIV) / [ (POSTDIV1 * POSTDIV2) * [?_CLK_DIV[3:0] + 1])
+ * CLK = (REFCLK FREQ * FBDIV) / ((POSTDIV1 * POSTDIV2) * (CLK_DIV + 1))
  */
 int mnh_cpu_freq_change(int index)
 {
@@ -178,6 +181,22 @@ int mnh_cpu_freq_change(int index)
 		HW_INf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLK_SRC);
 
 	if (index == CPU_FREQ_200) {
+		if (mnh_dev->ipu_clk_src == IPU_PLL) {
+			/* Set IPU divider to the highest value */
+			ipu_div = IPU_DIV_BY_CPU(950,
+				cpu_reg_tables[CPU_FREQ_MAX].clk_div);
+			HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_DIV,
+				IPU_CLK_DIV, ipu_div);
+
+			HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL,
+				IPU_CLK_SRC, CPU_IPU_PLL);
+
+			/* Power down IPU_PLL */
+			HW_OUTf(mnh_dev->regs, SCU, IPU_PLL_CTRL, PD, 1);
+			HW_OUTf(mnh_dev->regs, SCU, IPU_PLL_CTRL,
+				FOUTPOSTDIVPD, 1);
+		}
+
 		/* Power down CPU_IPU PLL */
 		HW_OUTf(mnh_dev->regs, SCU, CPU_IPU_PLL_CTRL, PD, 1);
 		HW_OUTf(mnh_dev->regs, SCU, CPU_IPU_PLL_CTRL, FOUTPOSTDIVPD, 1);
@@ -193,7 +212,7 @@ int mnh_cpu_freq_change(int index)
 	* Check FBDIV * REFCLK is witin VCO range (950-3800MHz)
 	*/
 	HW_OUTf(mnh_dev->regs, SCU, CPU_IPU_PLL_INTGR_DIV, FBDIV,
-		cpu_reg_tables[index].fidiv);
+		cpu_reg_tables[index].fbdiv);
 	HW_OUTf(mnh_dev->regs, SCU, CPU_IPU_PLL_INTGR_DIV, POSTDIV1,
 			cpu_reg_tables[index].postdiv1);
 	HW_OUTf(mnh_dev->regs, SCU, CPU_IPU_PLL_INTGR_DIV, POSTDIV2,
@@ -257,10 +276,15 @@ pll_acc_lock:
 }
 EXPORT_SYMBOL(mnh_cpu_freq_change);
 
-/* IPU clock 100-452 MHZ
- * 1PLL(IPU PLL) to be used only if IPU clock and CPU clocks are to be frequency
- * decoupled with no restriction of one over the other. By default IPU clock
- * is derived from CPU_IPU PLL
+/**
+ * IPU clock controller
+ * @index: int with frquency table index info.
+ * Return: 0 on success, an error code otherwise.
+ *
+ * Until IPU clock is configured, IPU clock is driven from PCIe or CPU_IPU PLL,
+ * and once it is configured by driver, IPU PLL is used to control IPU clock.
+ * To turn off IPU PLL, CPU frequency needs to be set to 200MHz to put
+ * both CPU and IPU into SYS200 mode.
  */
 int mnh_ipu_freq_change(int index)
 {
@@ -277,16 +301,6 @@ int mnh_ipu_freq_change(int index)
 	/* Unlock PLL access */
 	HW_OUTf(mnh_dev->regs, SCU, PLL_PASSCODE, PASSCODE, PLL_UNLOCK);
 
-	if (index == IPU_FREQ_100) {
-		HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL,
-			IPU_CLK_SRC, CPU_IPU_PLL);
-
-		/* Power down PLL */
-		HW_OUTf(mnh_dev->regs, SCU, IPU_PLL_CTRL, PD, 1);
-		HW_OUTf(mnh_dev->regs, SCU, IPU_PLL_CTRL, FOUTPOSTDIVPD, 1);
-		goto pll_acc_lock;
-	}
-
 	/* Switch to stable clock before freq switch to avoid glitches */
 	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLK_SRC, CPU_IPU_PLL);
 
@@ -295,7 +309,7 @@ int mnh_ipu_freq_change(int index)
 
 	/* Configure FBDIV first and set POSTDIV1, POSTDIV2 */
 	HW_OUTf(mnh_dev->regs, SCU, IPU_PLL_INTGR_DIV, FBDIV,
-		ipu_reg_tables[index].fidiv);
+		ipu_reg_tables[index].fbdiv);
 	HW_OUTf(mnh_dev->regs, SCU, IPU_PLL_INTGR_DIV, POSTDIV1,
 		ipu_reg_tables[index].postdiv1);
 	HW_OUTf(mnh_dev->regs, SCU, IPU_PLL_INTGR_DIV, POSTDIV2,
@@ -330,7 +344,6 @@ int mnh_ipu_freq_change(int index)
 	/* Go back to IPU PLL output */
 	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLK_SRC, IPU_PLL);
 
-pll_acc_lock:
 	mnh_dev->ipu_freq = index;
 	mnh_dev->ipu_clk_src =
 		HW_INf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLK_SRC);
@@ -345,8 +358,12 @@ pll_acc_lock:
 }
 EXPORT_SYMBOL(mnh_ipu_freq_change);
 
-/* LPDDR clock 200/300/400/500/600MHz
- * 1PLL(LPDDR4 RefClk PLL) for LPDDR4 600MHz or lower clock
+/**
+ * LPDDR clock control driver
+ * @index: int with frquency table index info.
+ * Return: 0 on success, an error code otherwise.
+ *
+ * LPDDR clock is controlled by LPC instead of using direct PLL configuration.
  * Precondition:
  * LPDDR refclk pll should be enabled at cold boot and resume
  * LPDDR FSPx registers should be configured at cold boot and resume
@@ -418,19 +435,46 @@ int mnh_lpddr_freq_change(int index)
 }
 EXPORT_SYMBOL(mnh_lpddr_freq_change);
 
+/* Frequency calculation by PLL configuration
+ * @cfg: struct freq_reg_table with pll config information.
+ * Return: freq MHz.
+ *
+ * This returns current frequency in MHz unit
+ * freq = (refclk*fbdiv)/((postdiv1*postdiv2)*(clk_div+1))
+ */
+static int mnh_freq_get_by_pll(struct freq_reg_table cfg)
+{
+	uint32_t freq_khz;
+
+	freq_khz = (REF_CLK_KHZ*cfg.fbdiv)/
+		((cfg.postdiv1*cfg.postdiv2)*(cfg.clk_div+1));
+
+	return (freq_khz/1000);
+}
 
 static const char * const cpu_freq_str[] = {"200", "400", "600", "800", "950"};
 static ssize_t cpu_freq_get(struct device *dev,
 				struct device_attribute *attr,
 				char *buf)
 {
-	if (mnh_dev->cpu_freq > CPU_FREQ_MAX ||
-	    mnh_dev->cpu_freq < CPU_FREQ_MIN)
-		return -EINVAL;
+	struct freq_reg_table pll_cfg;
+	int pll_pd;
 
-	dev_dbg(mnh_dev->dev, "%s: %d\n", __func__, mnh_dev->cpu_freq);
-	return scnprintf(buf, MAX_STR_COPY, "%sMHz\n",
-		cpu_freq_str[mnh_dev->cpu_freq]);
+	/* Check CPU is in SYS200 mode */
+	pll_pd = HW_INf(mnh_dev->regs, SCU, CPU_IPU_PLL_CTRL, PD);
+	if (pll_pd)
+		return scnprintf(buf, MAX_STR_COPY, "%sMHz\n",
+			cpu_freq_str[CPU_FREQ_MIN]);
+
+	/* Calculate frequency by PLL configuration */
+	pll_cfg.fbdiv =
+		HW_INf(mnh_dev->regs, SCU, CPU_IPU_PLL_INTGR_DIV, FBDIV);
+	pll_cfg.postdiv1 =
+		HW_INf(mnh_dev->regs, SCU, CPU_IPU_PLL_INTGR_DIV, POSTDIV1);
+	pll_cfg.postdiv2 =
+		HW_INf(mnh_dev->regs, SCU, CPU_IPU_PLL_INTGR_DIV, POSTDIV2);
+	pll_cfg.clk_div = HW_INf(mnh_dev->regs, SCU, CCU_CLK_DIV, CPU_CLK_DIV);
+	return sprintf(buf, "%dMHz\n", mnh_freq_get_by_pll(pll_cfg));
 }
 
 static ssize_t cpu_freq_set(struct device *dev,
@@ -461,13 +505,35 @@ static ssize_t ipu_freq_get(struct device *dev,
 				struct device_attribute *attr,
 				char *buf)
 {
-	if (mnh_dev->ipu_freq > IPU_FREQ_MAX ||
-	    mnh_dev->ipu_freq < IPU_FREQ_MIN)
-		return -EINVAL;
+	struct freq_reg_table pll_cfg;
+	int cpu_pll_pd, ipu_pll_pd, clk_src;
 
-	dev_dbg(mnh_dev->dev, "%s: %d\n", __func__, mnh_dev->ipu_freq);
-	return scnprintf(buf, MAX_STR_COPY, "%sMHz\n",
-		ipu_freq_str[mnh_dev->ipu_freq]);
+	/* Check IPU is in SYS200 mode */
+	clk_src = HW_INf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLK_SRC);
+	ipu_pll_pd = HW_INf(mnh_dev->regs, SCU, IPU_PLL_CTRL, PD);
+	cpu_pll_pd = HW_INf(mnh_dev->regs, SCU, CPU_IPU_PLL_CTRL, PD);
+	if (cpu_pll_pd && ipu_pll_pd && (clk_src == CPU_IPU_PLL))
+		return scnprintf(buf, MAX_STR_COPY, "%sMHz\n",
+			ipu_freq_str[IPU_FREQ_MIN]);
+
+	/* Calculate frequency by PLL configuration */
+	if (clk_src == CPU_IPU_PLL) {
+		pll_cfg.fbdiv = HW_INf(mnh_dev->regs, SCU,
+				CPU_IPU_PLL_INTGR_DIV, FBDIV);
+		pll_cfg.postdiv1 = HW_INf(mnh_dev->regs, SCU,
+				CPU_IPU_PLL_INTGR_DIV, POSTDIV1);
+		pll_cfg.postdiv2 = HW_INf(mnh_dev->regs, SCU,
+				CPU_IPU_PLL_INTGR_DIV, POSTDIV2);
+	} else {
+		pll_cfg.fbdiv = HW_INf(mnh_dev->regs, SCU,
+				IPU_PLL_INTGR_DIV, FBDIV);
+		pll_cfg.postdiv1 = HW_INf(mnh_dev->regs, SCU,
+				IPU_PLL_INTGR_DIV, POSTDIV1);
+		pll_cfg.postdiv2 = HW_INf(mnh_dev->regs, SCU,
+				IPU_PLL_INTGR_DIV, POSTDIV2);
+	}
+	pll_cfg.clk_div = HW_INf(mnh_dev->regs, SCU, CCU_CLK_DIV, IPU_CLK_DIV);
+	return sprintf(buf, "%dMHz\n", mnh_freq_get_by_pll(pll_cfg));
 }
 
 static ssize_t ipu_freq_set(struct device *dev,
@@ -508,7 +574,7 @@ static ssize_t lpddr_freq_set(struct device *dev,
 				  const char *buf,
 				  size_t count)
 {
-	unsigned long var = 0;
+	int var = 0;
 	int ret;
 
 	ret = kstrtoint(buf, 10, &var);
