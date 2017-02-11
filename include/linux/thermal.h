@@ -114,6 +114,7 @@ struct thermal_zone_device_ops {
 			  enum thermal_trend *);
 	int (*notify) (struct thermal_zone_device *, int,
 		       enum thermal_trip_type);
+	int (*get_data_out)(struct thermal_zone_device *, int *);
 };
 
 struct thermal_cooling_device_ops {
@@ -318,6 +319,11 @@ struct thermal_zone_params {
 	 * 		Used by thermal zone drivers (default 0).
 	 */
 	int offset;
+	/*
+	 * @op_mode: pvt sensor operation mode.
+	 *		Used by thermal zone drivers (default 0).
+	 */
+	int op_mode;
 };
 
 struct thermal_genl_event {
@@ -337,12 +343,14 @@ struct thermal_genl_event {
  *		   temperature.
  * @set_trip_temp: a pointer to a function that sets the trip temperature on
  *		   hardware.
+ * @get_data_out: a pointer to a function that reads raw data from the sensor.
  */
 struct thermal_zone_of_device_ops {
 	int (*get_temp)(void *, int *);
 	int (*get_trend)(void *, long *);
 	int (*set_emul_temp)(void *, int);
 	int (*set_trip_temp)(void *, int, int);
+	int (*get_data_out)(void *, int *);
 };
 
 /**

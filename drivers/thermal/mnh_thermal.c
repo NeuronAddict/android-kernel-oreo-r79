@@ -45,17 +45,17 @@
 #include <linux/intel-hwio.h>
 #include <soc/mnh/mnh-hwio-scu.h>
 
-#define MNH_BAD_ADDR  ((void *)0xFFFFFFFF)
+#define MNH_BAD_ADDR ((void *)0xFFFFFFFF)
 #define MNH_NUM_PVT_SENSORS 4
 
 /* Thermal characterization data */
-#define API_TRIM_CODE          0xF
-#define API_PRECISION_CODE     0x0
+#define API_TRIM_CODE		0xF
+#define API_PRECISION_CODE	0x0
 
 /* Thermal efuse data */
-#define NUM_BITS_EFUSE          10
-#define API_BITS_SLOPE         5
-#define API_BITS_OFFSET        (NUM_BITS_EFUSE-API_BITS_SLOPE)
+#define NUM_BITS_EFUSE	10
+#define API_BITS_SLOPE	5
+#define API_BITS_OFFSET	(NUM_BITS_EFUSE-API_BITS_SLOPE)
 
 /* Temperature calculation algorithm parameters */
 #define API_POLY_N4 (-16743)  /* -1.6743e-11 : 15bits excluding sign */
@@ -78,8 +78,8 @@
 #define API_BITS_SLOPE_MASK    0x1F
 #define API_BITS_OFFSET_MASK   0x1F
 
-#define N15_DIVIDER  1000000000000000 /* 1e15 */
-#define N15_ROUNDING_NUM 500000000000000 /* 5e14 */
+#define N12_DIVIDER  1000000000000 /* 1e12 */
+#define N12_ROUNDING_NUM 500000000000 /* 5e11 */
 
 /* PVT Data conversion wait time calculation
  * PVT_FREQ: 1.15MHZ
@@ -110,8 +110,6 @@ struct mnh_thermal_sensor {
 	struct thermal_zone_device *tzd;
 	uint32_t id;
 	uint32_t alarm_temp;
-	int slope;
-	int offset;
 };
 
 struct mnh_thermal_device {
@@ -119,7 +117,30 @@ struct mnh_thermal_device {
 	void __iomem *regs;
 	uint32_t emulation;
 	uint32_t wait_time_ms;
+	uint32_t init_done;
 	struct mnh_thermal_sensor *sensors[MNH_NUM_PVT_SENSORS];
+};
+
+/* PVT Sensor operation mode */
+enum mnh_thermal_op_mode {
+	THERMAL_OPMODE_TEMP, /* Temperature evaluation */
+	THERMAL_OPMODE_VOL,  /* Voltage evaluation */
+	THERMAL_OPMODE_LVT,  /* Process LVT evaluation */
+	THERMAL_OPMODE_HVT,  /* Process HVT evaluation */
+	THERMAL_OPMODE_SVT,  /* Process SVT evaluation */
+};
+
+struct mnh_thermal_op_param {
+	int vsample;
+	int psample;
+};
+
+static struct mnh_thermal_op_param mnh_op_mode_table[] = {
+	{0, 0}, /* temperature: vsample b0, psample b00 */
+	{1, 0}, /* voltage: vsample b1, psample b00 */
+	{0, 1}, /* LVT: vsample b0, psample b01 */
+	{0, 2}, /* HVT: vsample b0, psample b10 */
+	{0, 3}  /* SVT: vsample b0, psample b11 */
 };
 
 static uint32_t read_emulation_setting(void)
@@ -168,8 +189,8 @@ static void read_efuse_trim(struct mnh_thermal_device *dev)
 			mnh_debug("pvt%d efuse:0x%x, s:%d, o:%d\n",
 				i, val, slope, offset);
 
-			dev->sensors[i]->slope = slope;
-			dev->sensors[i]->offset = offset;
+			dev->sensors[i]->tzd->tzp->slope = slope;
+			dev->sensors[i]->tzd->tzp->offset = offset;
 		}
 		i++;
 	}
@@ -195,7 +216,7 @@ static void read_efuse_trim(struct mnh_thermal_device *dev)
 static int calculate_temp(int code, int slope, int offset)
 {
 	long n1_, n2_, n3_, n4_, n0_, n01234_, final_temp_, error_;
-	int T, Final_Temp;
+	int temp_ms;
 
 
 	mnh_debug("temp code:%d, slope:%d, offset:%d",
@@ -218,19 +239,17 @@ static int calculate_temp(int code, int slope, int offset)
 	n0_ = API_POLY_N0 * N0_E15_MULTIPLIER;
 	n01234_ = n4_ + n3_ + n2_ + n1_ + n0_;
 
-	T = (n01234_ + N15_ROUNDING_NUM) / N15_DIVIDER;
-
 	/* n01234_ is 59bit, max slope is 5bit, which may overflow
 	 * when multiplied without first down-scaling.
 	 */
 	error_ = n01234_/ RES_SLOPE_DIVIDER * slope * API_RES_SLOPE
 		+ (long)offset * RES_OFFSET_E15_MULTIPLIER * API_RES_OFFSET;
-	mnh_debug("temp err:%ld, n01234_:%ld\n", error_, n01234_);
 
 	final_temp_ = n01234_ - error_;
-	Final_Temp = (final_temp_ + N15_ROUNDING_NUM) / N15_DIVIDER;
+	temp_ms = (final_temp_ + N12_ROUNDING_NUM) / N12_DIVIDER;
+	mnh_debug("temp n01234:%ld, err:%ld\n", n01234_, error_);
 
-	return Final_Temp;
+	return temp_ms;
 }
 
 /* Read raw temperature data from sensors
@@ -245,12 +264,13 @@ static int calculate_temp(int code, int slope, int offset)
  * Reset PVT_DATA.DATAVALID
  * Disable 1.2MHz clock to PVT sensor
 */
-static void get_raw_temp_code(void *data, int *out_temp)
+static int mnh_thermal_get_data(void *data, int *data_out)
 {
 
 	struct mnh_thermal_sensor *sensor = (struct mnh_thermal_sensor*)data;
 	u32 val = 0;
 	unsigned long timeout = jiffies + msecs_to_jiffies(500);
+	u32 op_mode, psample, vsample;
 
 	if(sensor->dev->emulation != 0){ /* Not silicon */
 
@@ -275,12 +295,21 @@ static void get_raw_temp_code(void *data, int *out_temp)
 				break;
 		}
 	} else { /* silicon */
+		op_mode = sensor->tzd->tzp->op_mode;
+		psample = mnh_op_mode_table[op_mode].psample;
+		vsample = mnh_op_mode_table[op_mode].vsample;
+		mnh_debug("pvt opmode:%d, vsample:%d, psample:%d\n",
+			op_mode, vsample, psample);
+
 		/* Program VSAMPLE/PSAMPLE for temperature evaulation */
-		HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id, PSAMPLE, 0);
-		HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id, VSAMPLE, 0);
+		HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id,
+			PSAMPLE, psample);
+		HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id,
+			VSAMPLE, vsample);
 
 		/* Enable PVT sensor access */
-		HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id, ENA, 1);
+		HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id,
+			ENA, 1);
 
 		/* Wait until PVT data conversion is finished in
 		 * temperature and voltage mode.
@@ -295,28 +324,33 @@ static void get_raw_temp_code(void *data, int *out_temp)
 		} while (time_before(jiffies, timeout));
 
 		/* Read DATA_OUT from sensor */
-		val = HW_INxf(sensor->dev->regs, SCU, PVT_DATA, sensor->id, DATA);
+		val = HW_INxf(sensor->dev->regs, SCU, PVT_DATA,
+			sensor->id, DATA);
 
 		/* Disable PVT sensor access */
-		HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id, ENA, 0);
+		HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id,
+			ENA, 0);
 
 		/* Reset DATAVALID bit */
 		HW_OUTxf(sensor->dev->regs, SCU, PVT_DATA, sensor->id,
 			DATAVALID, 1);
 	}
 
-	*out_temp = val;
+	*data_out = val;
 
-	return;
+	return 0;
 }
 
 /*
  * This will read raw_temp_code and convert to DecC temperature.
  */
-static int mnh_thermal_get_temp(void *data, int *out_temp)
+static int mnh_thermal_get_temp(void *data, int *temp_out)
 {
 	struct mnh_thermal_sensor *sensor = (struct mnh_thermal_sensor*)data;
-	int raw_temp = 0;
+	int temp_raw = 0;
+
+	if (!sensor->dev->init_done)
+		return 0;
 
 	/* Apply 5 bit trim and 2 bit precision to PVT sensor register */
 	HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id,
@@ -325,18 +359,19 @@ static int mnh_thermal_get_temp(void *data, int *out_temp)
 	       PRECISION, API_PRECISION_CODE);
 
 	/* Get raw temp code */
-	get_raw_temp_code(data, &raw_temp);
+	sensor->tzd->tzp->op_mode = THERMAL_OPMODE_TEMP;
+	mnh_thermal_get_data(data, &temp_raw);
 
-	/* Convert raw code to DecC */
-	*out_temp = calculate_temp(raw_temp, sensor->slope, sensor->offset);
+	/* Convert raw code to milli DecC */
+	*temp_out = calculate_temp(temp_raw, sensor->tzd->tzp->slope,
+			sensor->tzd->tzp->offset);
 
 	return 0;
-
 }
-
 
 static const struct thermal_zone_of_device_ops mnh_of_thermal_ops = {
 	.get_temp = mnh_thermal_get_temp,
+	.get_data_out = mnh_thermal_get_data,
 };
 
 
@@ -364,6 +399,8 @@ static int mnh_thermal_probe(struct platform_device *pdev)
 		pr_err("unable to remap resources\n");
 		return -ENOMEM;
 	}
+
+	mnh_dev->init_done = 0;
 
 	/* Enable 1.2MHz clock to PVT sensor and wait for 2usecs
 	 * until the clock is ticking
@@ -398,7 +435,9 @@ static int mnh_thermal_probe(struct platform_device *pdev)
 		mnh_dev->sensors[i] = sensor;
 	}
 
-	dev_info(&pdev->dev, "sensors init\n");
+	mnh_dev->init_done = 1;
+
+	dev_info(&pdev->dev, "init done\n");
 
 	/* TODO: configure sensors with characterized TRIM data
 	 * and dts trimmed config data from efuse.

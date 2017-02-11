@@ -212,6 +212,28 @@ static int of_thermal_get_trend(struct thermal_zone_device *tz, int trip,
 	return 0;
 }
 
+/**
+ * of_thermal_get_data_out - function to get raw data from sensor
+ *
+ * @tz:	pointer to a thermal zone
+ * @data_out:	data from sensor
+ *
+ * This function gives the ability to read raw code from sensor,
+ * which is handy for debugging
+ *
+ * Return: zero on success, error code otherwise
+ */
+static int of_thermal_get_data_out(struct thermal_zone_device *tz,
+				    int *data_out)
+{
+	struct __thermal_zone *data = tz->devdata;
+
+	if (!data->ops || !data->ops->get_data_out)
+		return -EINVAL;
+
+	return data->ops->get_data_out(data->sensor_data, data_out);
+}
+
 static int of_thermal_bind(struct thermal_zone_device *thermal,
 			   struct thermal_cooling_device *cdev)
 {
@@ -428,6 +450,7 @@ thermal_zone_of_add_sensor(struct device_node *zone,
 	tzd->ops->get_temp = of_thermal_get_temp;
 	tzd->ops->get_trend = of_thermal_get_trend;
 	tzd->ops->set_emul_temp = of_thermal_set_emul_temp;
+	tzd->ops->get_data_out = of_thermal_get_data_out;
 	mutex_unlock(&tzd->lock);
 
 	return tzd;

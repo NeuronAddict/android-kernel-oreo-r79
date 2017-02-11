@@ -513,7 +513,7 @@ int thermal_zone_get_temp(struct thermal_zone_device *tz, int *temp)
 		if (!ret && *temp < crit_temp)
 			*temp = tz->emul_temperature;
 	}
- 
+
 	mutex_unlock(&tz->lock);
 exit:
 	return ret;
@@ -894,6 +894,28 @@ available_policies_show(struct device *dev, struct device_attribute *devattr,
 }
 
 static ssize_t
+data_out_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct thermal_zone_device *tz = to_thermal_zone(dev);
+	int data;
+	int ret = -EPERM;
+
+	if (!tz || IS_ERR(tz) || !tz->ops->get_data_out)
+		goto exit;
+
+	mutex_lock(&tz->lock);
+
+	ret = tz->ops->get_data_out(tz, &data);
+
+	mutex_unlock(&tz->lock);
+
+	return sprintf(buf, "%d\n", data);
+
+exit:
+	return ret;
+}
+
+static ssize_t
 emul_temp_store(struct device *dev, struct device_attribute *attr,
 		     const char *buf, size_t count)
 {
@@ -990,6 +1012,7 @@ create_s32_tzp_attr(k_d);
 create_s32_tzp_attr(integral_cutoff);
 create_s32_tzp_attr(slope);
 create_s32_tzp_attr(offset);
+create_s32_tzp_attr(op_mode);
 #undef create_s32_tzp_attr
 
 static struct device_attribute *dev_tzp_attrs[] = {
@@ -1001,6 +1024,7 @@ static struct device_attribute *dev_tzp_attrs[] = {
 	&dev_attr_integral_cutoff,
 	&dev_attr_slope,
 	&dev_attr_offset,
+	&dev_attr_op_mode,
 };
 
 static int create_tzp_attrs(struct device *dev)
@@ -1105,6 +1129,7 @@ static DEVICE_ATTR(mode, 0644, mode_show, mode_store);
 static DEVICE_ATTR(passive, S_IRUGO | S_IWUSR, passive_show, passive_store);
 static DEVICE_ATTR(policy, S_IRUGO | S_IWUSR, policy_show, policy_store);
 static DEVICE_ATTR(available_policies, S_IRUGO, available_policies_show, NULL);
+static DEVICE_ATTR(data_out, S_IRUGO, data_out_show, NULL);
 
 /* sys I/F for cooling device */
 #define to_cooling_device(_dev)	\
@@ -1914,6 +1939,11 @@ struct thermal_zone_device *thermal_zone_device_register(const char *type,
 	if (result)
 		goto unregister;
 
+	/* Create data_out attribute */
+	result = device_create_file(&tz->device, &dev_attr_data_out);
+	if (result)
+		goto unregister;
+
 	/* Update 'this' zone's governor information */
 	mutex_lock(&thermal_governor_lock);
 
@@ -2015,6 +2045,7 @@ void thermal_zone_device_unregister(struct thermal_zone_device *tz)
 		device_remove_file(&tz->device, &dev_attr_mode);
 	device_remove_file(&tz->device, &dev_attr_policy);
 	device_remove_file(&tz->device, &dev_attr_available_policies);
+	device_remove_file(&tz->device, &dev_attr_data_out);
 	remove_trip_attrs(tz);
 	thermal_set_governor(tz, NULL);
 
