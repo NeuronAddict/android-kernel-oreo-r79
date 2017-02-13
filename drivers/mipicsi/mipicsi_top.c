@@ -535,9 +535,9 @@ int mipicsi_top_set_mux(struct mipicsi_top_mux *mux)
 	tx_mode_reg = TOP_OUTf_LOCAL(TX0_MODE, TX0_FORCE_OFF,
 				     force_off, tx_mode_reg);
 
-	pr_err("%s bypass: %d, sink: %d source %d",
+	pr_info("%s bypass: %d, sink: %d source %d",
 	       __func__, bypass, mux->sink, mux->source);
-	pr_err("%s rx_mode 0x%x,tx_mode 0x%x\n",
+	pr_info("%s rx_mode 0x%x,tx_mode 0x%x\n",
 	       __func__, rx_mode_reg, tx_mode_reg);
 
 	switch (mux->source) {

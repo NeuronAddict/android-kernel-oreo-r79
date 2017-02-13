@@ -181,10 +181,16 @@ void config_clk_data_timing(enum mipicsi_top_dev dev, uint32_t mbps)
 
 		/* Phy Stop Wait time */
 		mipicsi_pll_get_stop_wait (mbps, &value);
-		value = ROUNDUP(value*1000, byteclk_ps);
 		TX_OUTf(PHY_IF_CFG, PHY_STOP_WAIT_TIME, value);
 	} else {
-		/* TO DO: Revisit formulas/ANLG_FCTR after simulation results */
+		int8_t tclk_trail_atf_ns = 0, tclk_zero_atf_ns = 0;
+		int8_t ths_trail_atf_ns = 0, ths_zero_atf_ns = 0;
+
+		/* Calculate analog timing factors that are variable */
+		tclk_trail_atf_ns = -6 - (1*mbps/100);
+		tclk_zero_atf_ns = 40 - (2*mbps/100);
+		ths_trail_atf_ns = -24 + (mbps/100);
+		ths_zero_atf_ns = 38 - (2*mbps/100);
 
 		/* Calculate and write clock lane timing values */
 		/* CLK Post */
@@ -203,7 +209,8 @@ void config_clk_data_timing(enum mipicsi_top_dev dev, uint32_t mbps)
 		pr_info("\t tclk_exit_ns %d - %d\n", tclk_exit_ns, value);
 
 		/* CLK Prepare */
-		value = ROUNDUP((tclk_prep_ns-ANLG_FCTR)*1000, byteclk_ps);
+		value = ROUNDUP((tclk_prep_ns-TCLK_PREP_ATF_NS)*1000,
+				byteclk_ps);
 		value = MAX(value, 1);
 		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_SYSTIMERS_14,
 				       (1<<7) | (1<<6) | value);
@@ -222,7 +229,8 @@ void config_clk_data_timing(enum mipicsi_top_dev dev, uint32_t mbps)
 		pr_info("\t tclk_lp_ns %d - %d\n", tclk_lp_ns, value);
 
 		/* CLK Trail */
-		value = ROUNDUP((tclk_trail_ns-ANLG_FCTR)*1000, byteclk_ps);
+		value = ROUNDUP((tclk_trail_ns-tclk_trail_atf_ns)*1000,
+				byteclk_ps);
 		if (mbps >= 400)
 			value -= 1;
 		value = MAX(value, 1);
@@ -231,7 +239,8 @@ void config_clk_data_timing(enum mipicsi_top_dev dev, uint32_t mbps)
 		pr_info("\t tclk_trail_ns %d - %d\n", tclk_trail_ns, value);
 
 		/* CLK Zero */
-		value = ROUNDUP((tclk_zero_ns-ANLG_FCTR)*1000, byteclk_ps);
+		value = ROUNDUP((tclk_zero_ns-tclk_zero_atf_ns)*1000,
+				byteclk_ps);
 		if (mbps >= 400)
 			value -= 3;
 		value = MAX(value, 1);
@@ -250,11 +259,12 @@ void config_clk_data_timing(enum mipicsi_top_dev dev, uint32_t mbps)
 		pr_info("\t ths_exit_ns %d - %d\n", ths_exit_ns, value);
 
 		/* HS Prepare */
-		value = ROUNDUP((ths_prep_ns-ANLG_FCTR)*1000, byteclk_ps);
+		value = ROUNDUP((ths_prep_ns-THS_PREP_ATF_NS)*1000,
+				byteclk_ps);
 		value = MAX(value, 1);
 		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_SYSTIMERS_20,
 				       (1<<7) | (1<<6) | value);
-		pr_info("\t ths_exit_ns %d - %d\n", ths_exit_ns, value);
+		pr_info("\t ths_prep_ns %d - %d\n", ths_prep_ns, value);
 
 		/*
 		 * HS LP - Target time higher than spec due to power up
@@ -270,7 +280,8 @@ void config_clk_data_timing(enum mipicsi_top_dev dev, uint32_t mbps)
 		pr_info("\t ths_lp_ns %d - %d\n", ths_lp_ns, value);
 
 		/* HS Trail */
-		value = ROUNDUP((ths_trail_ns-ANLG_FCTR)*1000, byteclk_ps);
+		value = ROUNDUP((ths_trail_ns-ths_trail_atf_ns)*1000,
+				byteclk_ps);
 		if (mbps >= 400)
 			value -= 1;
 		value = MAX(value, 1);
@@ -279,7 +290,7 @@ void config_clk_data_timing(enum mipicsi_top_dev dev, uint32_t mbps)
 		pr_info("\t ths_trail_ns %d - %d\n", ths_trail_ns, value);
 
 		/* HS Zero */
-		value = ROUNDUP((ths_zero_ns-ANLG_FCTR)*1000, byteclk_ps);
+		value = ROUNDUP((ths_zero_ns-ths_zero_atf_ns)*1000, byteclk_ps);
 		if (mbps >= 400)
 			value -= 3;
 		value = MAX(value, 1);
@@ -289,7 +300,6 @@ void config_clk_data_timing(enum mipicsi_top_dev dev, uint32_t mbps)
 
 		/* Phy Stop Wait time */
 		mipicsi_pll_get_stop_wait(mbps, &value);
-		value = ROUNDUP(value*1000, byteclk_ps);
 		pr_info("%s: Phy stop wait = %d", __func__, value);
 		TX_OUTf(PHY_IF_CFG, PHY_STOP_WAIT_TIME, value);
 	}
@@ -510,9 +520,8 @@ int32_t mipicsi_device_set_pll(struct mipicsi_top_cfg *config)
 		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_SYS_1, pll.hsfreq);
 		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_SYS_0, 1<<5);
 
-		/* Set cfgclkfreqrange[7:0] = round[ (Fcfg_clk(MHz)-17)*4] = 8'b10000100
-		   assuming cfg_clk = 50MHz; */
-		/* Hardware controlled*/
+		/* Set cfgclkfreqrange[7:0] */
+		/* Done in TOP */
 
 		/* Apply cfg_clk signal with 50Mhz frequency */
 		/* Hardware controlled */
@@ -693,9 +702,10 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 		/* Set basedir_0 = 1'b0 */
 		/* Hardware controlled */
 
-		/* Set all requests inputs to zero; The purpose is to ensure that the
-		 * following signals are set to low logic level: txrequesthsclk,
-		 * txrequestdatahs_0/1/2/3, txrequestesc_0/1/2/3 and turnrequest_0;
+		/* Set all requests inputs to zero; The purpose is to ensure
+		 * that the following signals are set to low logic level:
+		 * txrequesthsclk, txrequestdatahs_0/1/2/3,
+		 * txrequestesc_0/1/2/3 and turnrequest_0;
 		 */
 		/* Hardware controlled */
 

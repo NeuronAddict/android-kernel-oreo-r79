@@ -22,7 +22,9 @@
 #define MIPI_DDR_CLOCK 1000 /* TBD */
 
 /* Gen3 constants */
-#define ANLG_FCTR 0         /* TBD */
+/* Analog Timing Factors  - TBD */
+#define TCLK_PREP_ATF_NS    (-11)
+#define THS_PREP_ATF_NS     (-11)
 
 void mipicsi_device_reset(enum mipicsi_top_dev dev);
 void mipicsi_device_dphy_reset(enum mipicsi_top_dev dev);
