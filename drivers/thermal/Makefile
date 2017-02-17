@@ -52,4 +52,6 @@ obj-$(CONFIG_HISI_THERMAL)     += hisi_thermal.o
 obj-$(CONFIG_MTK_THERMAL)	+= mtk_thermal.o
 obj-$(CONFIG_GENERIC_ADC_THERMAL)	+= thermal-generic-adc.o
 obj-$(CONFIG_MNH_THERMAL)      += mnh_thermal.o
-obj-$(CONFIG_MNH_FREQ_COOLING) += mnh_freq_cooling.o
+
+mnh_cooling-objs	+= mnh-clk.o mnh_freq_cooling.o
+obj-$(CONFIG_MNH_FREQ_COOLING) += mnh_cooling.o
