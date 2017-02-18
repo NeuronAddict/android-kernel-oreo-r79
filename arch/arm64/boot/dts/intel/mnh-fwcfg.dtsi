@@ -84,6 +84,19 @@ firmware_config {
 		cfg = <0x0>;
 	};
 	*/
+
+	/* scu configuration for power optimization */
+
+	/* scu_config {
+		compatible = "intel,mnh_cfg_scu";
+		rstc = <0x0FBF1C04>;
+		ccu_clk_ctl = <0xA1FF5C43>;
+		peripheral_clk_ctl = <0x0000E048>;
+		mem_pwr_mgmnt = <0x0200c500>;
+		global_wake_en_set0 = <0x0FFE2000>;
+		global_wake_en_set1 = <0x00020000>;
+	};
+	*/
 	/* dtnode and dtprop are where to put the value
 	extracted from the efuse data */
 	pll_valid {
