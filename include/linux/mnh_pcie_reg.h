@@ -236,6 +236,15 @@
 
 #define MSICAP_MASK(reg, fld)		HWIO_PCIE_EP_##reg##_##fld##_FLDMASK
 
+#define PCIEAD (pcie_ep_dev->conf_mem + HWIO_PCIE_EP_PCIE_CAP_BASE_ADDR)
+
+#define PCIECAP_IN(reg)		HW_IN(PCIEAD, PCIE_EP, reg)
+#define PCIECAP_INf(reg, fld)		HW_INf(PCIEAD, PCIE_EP, reg, fld)
+#define PCIECAP_OUT(reg, val)		HW_OUT(PCIEAD, PCIE_EP, reg, val)
+#define PCIECAP_OUTf(reg, fld, val)	HW_OUTf(PCIEAD, PCIE_EP, reg, fld, val)
+
+#define PCIECAP_MASK(reg, fld)		HWIO_PCIE_EP_##reg##_##fld##_FLDMASK
+
 #define PORT_AD (pcie_ep_dev->conf_mem + HWIO_PCIE_EP_PORT_LOGIC_BASE_ADDR)
 
 #define PORT_IN(reg)			HW_IN(PORT_AD, PCIE_EP, reg)

@@ -175,6 +175,11 @@ static int pcie_link_init(void)
 
 	};
 
+	/*enable L1 entry */
+
+	PCIECAP_OUTf(PCIE_CAP_LINK_CONTROL_LINK_STATUS,
+			PCIE_CAP_ACTIVE_STATE_LINK_PM_CONTROL, 0x2);
+
 	/* Enable interupts */
 	CSR_OUT(PCIE_SS_INTR_EN, PCIE_SS_IRQ_MASK);
 	/* Clear all interrupts */
@@ -671,9 +676,9 @@ static int pcie_set_l_one(uint32_t enable, uint32_t clkpm)
 		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_CLK_PM_EN, 0);
 	}
 	if (enable == 1) {
-		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_REQ_EXIT_L1, 1);
+		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_REQ_ENTRY_L1, 1);
 	} else {
-		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_REQ_EXIT_L1, 0);
+		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_REQ_EXIT_L1, 1);
 	}
 
 	return 0;
@@ -1763,6 +1768,7 @@ static int mnh_pcie_ep_probe(struct platform_device *pdev)
 #endif
 	pcie_link_init();
 	err = 0;
+
 	if (dma_set_mask(pcie_ep_dev->dev, DMA_BIT_MASK(64)) ||
 		dma_set_coherent_mask(pcie_ep_dev->dev, DMA_BIT_MASK(64))) {
 
