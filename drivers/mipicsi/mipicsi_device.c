@@ -685,82 +685,6 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 		/* Set testclr to low; */
 		TX_OUT(PHY0_TST_CTRL0, 0);
 
-		/* TEMP - Hardcode 640 Settings */
-		if (config->mbps == 640) {
-			mipicsi_dev_dphy_write(dev, 0x02, 0x18);
-			mipicsi_dev_dphy_write(dev, 0x01, 0x20);
-
-			mipicsi_dev_dphy_write(dev, 0x270, 0xE2);
-			mipicsi_dev_dphy_write(dev, 0x271, 0x04);
-			mipicsi_dev_dphy_write(dev, 0x272, 0x11);
-			mipicsi_dev_dphy_write(dev, 0x179, 0x7E);
-			mipicsi_dev_dphy_write(dev, 0x17A, 0x00);
-			mipicsi_dev_dphy_write(dev, 0x17B, 0x9F);
-			mipicsi_dev_dphy_write(dev, 0x178, 0xC8);
-
-			mipicsi_dev_dphy_write(dev, 0x15E, 0x10);
-			mipicsi_dev_dphy_write(dev, 0x162, 0x04);
-			mipicsi_dev_dphy_write(dev, 0x16E, 0x0C);
-
-			mipicsi_dev_dphy_write(dev, 0x173, 0x02);
-			mipicsi_dev_dphy_write(dev, 0x174, 0x00);
-			mipicsi_dev_dphy_write(dev, 0x175, 0x60);
-			mipicsi_dev_dphy_write(dev, 0x176, 0x03);
-
-			udelay(1);
-			TX_OUTf(PHY_IF_CFG, LANE_EN_NUM, (config->num_lanes-1));
-
-			mipicsi_dev_dphy_write(dev, 0x5A, 0x4C);
-			mipicsi_dev_dphy_write(dev, 0x5B, 0x48);
-			mipicsi_dev_dphy_write(dev, 0x5C, 0xC5);
-			mipicsi_dev_dphy_write(dev, 0x5D, 0x03);
-			mipicsi_dev_dphy_write(dev, 0x5E, 0x44);
-			mipicsi_dev_dphy_write(dev, 0x5F, 0x91);
-			mipicsi_dev_dphy_write(dev, 0x61, 0x47);
-			mipicsi_dev_dphy_write(dev, 0x62, 0xC6);
-			mipicsi_dev_dphy_write(dev, 0x63, 0x03);
-			mipicsi_dev_dphy_write(dev, 0x64, 0x43);
-			mipicsi_dev_dphy_write(dev, 0x65, 0x85);
-			TX_OUTf(PHY_IF_CFG, PHY_STOP_WAIT_TIME, 5);
-
-		} else if (config->mbps == 1296) {
-			mipicsi_dev_dphy_write(dev, 0x02, 0x2B);
-			mipicsi_dev_dphy_write(dev, 0x01, 0x20);
-
-			mipicsi_dev_dphy_write(dev, 0x270, 0xD0);
-			mipicsi_dev_dphy_write(dev, 0x271, 0x07);
-			mipicsi_dev_dphy_write(dev, 0x272, 0x10);
-
-			mipicsi_dev_dphy_write(dev, 0x179, 0x01);
-			mipicsi_dev_dphy_write(dev, 0x17A, 0x01);
-			mipicsi_dev_dphy_write(dev, 0x17B, 0x87);
-			mipicsi_dev_dphy_write(dev, 0x178, 0xC8);
-
-			mipicsi_dev_dphy_write(dev, 0x15E, 0x10);
-			mipicsi_dev_dphy_write(dev, 0x162, 0x04);
-			mipicsi_dev_dphy_write(dev, 0x16E, 0x0C);
-
-			mipicsi_dev_dphy_write(dev, 0x173, 0x02);
-			mipicsi_dev_dphy_write(dev, 0x174, 0x00);
-			mipicsi_dev_dphy_write(dev, 0x175, 0x60);
-			mipicsi_dev_dphy_write(dev, 0x176, 0x03);
-
-			udelay(1);
-			TX_OUTf(PHY_IF_CFG, LANE_EN_NUM, (config->num_lanes-1));
-
-			mipicsi_dev_dphy_write(dev, 0x5A, 0x53);
-			mipicsi_dev_dphy_write(dev, 0x5B, 0x51);
-			mipicsi_dev_dphy_write(dev, 0x5C, 0xCA);
-			mipicsi_dev_dphy_write(dev, 0x5D, 0x09);
-			mipicsi_dev_dphy_write(dev, 0x5E, 0x4A);
-			mipicsi_dev_dphy_write(dev, 0x5F, 0xA7);
-			mipicsi_dev_dphy_write(dev, 0x61, 0x50);
-			mipicsi_dev_dphy_write(dev, 0x62, 0xCC);
-			mipicsi_dev_dphy_write(dev, 0x63, 0x07);
-			mipicsi_dev_dphy_write(dev, 0x64, 0x46);
-			mipicsi_dev_dphy_write(dev, 0x65, 0x8D);
-			TX_OUTf(PHY_IF_CFG, PHY_STOP_WAIT_TIME, 12);
-		} else { //TEMP
 		mipicsi_device_set_pll(config);
 
 		/* Set basedir_0 = 1'b0 */
@@ -778,7 +702,7 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 		TX_OUTf(PHY_IF_CFG, LANE_EN_NUM, (config->num_lanes-1));
 
 		config_clk_data_timing (config->dev, config->mbps);
-		} // TEMP
+
 		/*
 		 * Enableclk=1'b1; Wait 5ns; Set shutdownz=1'b1;  Wait 5ns;
 		 * Set rstz=1'b1;

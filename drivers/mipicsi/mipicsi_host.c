@@ -335,35 +335,6 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 		udelay(1);
 		RX_OUT(PHY_TEST_CTRL0, 0x0);
 
-		/* TEMP - Hardcode 640 Settings */
-		if (config->mbps == 640) {
-			mipicsi_host_dphy_write(dev, 0x02, 0x18);
-			mipicsi_host_dphy_write(dev, 0x01, 0x20);
-
-			mipicsi_host_dphy_write(dev, 0xE2, 0xb6);
-			mipicsi_host_dphy_write(dev, 0xE3, 0x1);
-			mipicsi_host_dphy_write(dev, 0xE4, 0x1);
-
-			mipicsi_host_dphy_write(dev, 0x08, 0x20);
-			udelay (1);
-
-			RX_OUTf(N_LANES, N_LANES, (config->num_lanes-1));
-			udelay(1);
-		} else if (config->mbps == 1296) {
-			mipicsi_host_dphy_write(dev, 0x02, 0x2B);
-			mipicsi_host_dphy_write(dev, 0x01, 0x20);
-
-			mipicsi_host_dphy_write(dev, 0xE2, 0xB6);
-			mipicsi_host_dphy_write(dev, 0xE3, 0x1);
-			mipicsi_host_dphy_write(dev, 0xE4, 0x1);
-
-			mipicsi_host_dphy_write(dev, 0x08, 0x20);
-			udelay (1);
-
-			RX_OUTf(N_LANES, N_LANES, (config->num_lanes-1));
-			udelay(1);
-		} else { //TEMP
-
 		/* Set hsfreqrange[6:0] */
 		if (mipicsi_pll_calc(config->mbps, &pll) != 0)
 			return -EINVAL;
@@ -399,7 +370,7 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 		/* Hardware controlled */
 
 		/* Set basedir_0 = 1'b1; 12. Set all requests inputs to zero; The
-		 * purpose is to ensure that the following signals are set to low 
+		 * purpose is to ensure that the following signals are set to low
 		 * logic level: txrequestesc_0 and turnrequest_0; */
 		/* Hardware controlled */
 
@@ -409,8 +380,6 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 		/* Set enable_0/1/2/3, and enableclk=1'b1; 15. Wait 5ns */
 		RX_OUTf(N_LANES, N_LANES, (config->num_lanes-1));
 		udelay(1);
-	} //TEMP
-
         }
 
 	/* Set SHUTDOWNZ=1'b1 */
