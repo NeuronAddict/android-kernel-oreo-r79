@@ -546,6 +546,9 @@ int32_t mipicsi_device_set_pll(struct mipicsi_top_cfg *config)
 		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_PLL_27,
 				       (1<<7) | ((pll.input_div-1)<<3));
 
+		if (config->mbps <= 450)
+			mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_CB_2, 1<<4);
+
 		/* TO DO - these can come from fuse bits */
 		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_PLL_1, 0x10);
 		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_PLL_5, 0x04);
