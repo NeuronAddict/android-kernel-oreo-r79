@@ -26,6 +26,8 @@
 #endif
 #include <linux/platform_device.h>
 #include <linux/scatterlist.h>
+#include <linux/spinlock.h>
+
 #include <uapi/paintbox.h>
 
 #define IRQ_NO_DMA_CHANNEL   0xFF
@@ -107,6 +109,12 @@ struct paintbox_debug {
 struct paintbox_power {
 	struct paintbox_debug debug;
 	unsigned int active_core_count;
+
+	/* power_lock is used to protect the idle clock disable registers and
+	 * bif_mmu_clock_idle_disable_ref_count.
+	 */
+	spinlock_t power_lock;
+	int bif_mmu_clock_idle_disable_ref_count;
 };
 
 struct paintbox_mmu {
@@ -269,8 +277,6 @@ struct paintbox_irq {
 	 * ioctls.
 	 */
 	struct list_head session_entry;
-
-	struct completion completion;
 	struct paintbox_session *session;
 	enum paintbox_irq_src source;
 	unsigned int interrupt_id;
@@ -281,8 +287,9 @@ struct paintbox_irq {
 	};
 
 	/* The fields below are protected by pb->irq_lock */
-	unsigned int data_count;
-	int data[IRQ_MAX_PER_WAIT_PERIOD];
+	struct paintbox_irq_event events[IRQ_MAX_PER_WAIT_PERIOD];
+	unsigned int event_write_index;
+	unsigned int event_read_index;
 };
 
 /* Per transfer information is stored in this structure. Transfers are stored in
@@ -325,7 +332,6 @@ struct paintbox_dma_transfer {
 	bool notify_on_completion;
 	bool auto_load_transfer;
 	ktime_t start_time;
-	ktime_t finish_time;
 };
 
 /* Data structure for information specific to a DMA channel.
@@ -360,12 +366,14 @@ struct paintbox_dma_channel {
 	struct list_head active_list;
 	struct list_head completed_list;
 
-	/* Access to the count and stop fields is controlled by pb->dma.dma_lock
+	/* Access to the count, stop, pm_enabled fields is controlled by
+	 * pb->dma.dma_lock.
 	 */
 	int pending_count;
 	int active_count;
 	int completed_count;
 	bool stop_request;
+	bool pm_enabled;
 
 	struct {
 		unsigned int irq_activations;
@@ -374,6 +382,8 @@ struct paintbox_dma_channel {
 		unsigned int reported_completions;
 		unsigned int reported_discards;
 		bool time_stats_enabled;
+		ktime_t config_start_time;
+		ktime_t config_finish_time;
 		int64_t last_transfer_time_us;
 	} stats;
 };
@@ -492,12 +502,6 @@ struct paintbox_lbp_common {
 	uint32_t max_lbs;
 	uint32_t max_rptrs;
 	uint32_t max_channels;
-};
-
-struct paintbox_waiter {
-	struct list_head session_entry;
-	struct interrupt_wait *wait;
-	struct completion completion;
 };
 
 struct paintbox_data {

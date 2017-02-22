@@ -20,9 +20,18 @@
 
 #include "paintbox-common.h"
 
+#ifdef CONFIG_PAINTBOX_FPGA_SUPPORT
 void paintbox_fpga_soft_reset(struct paintbox_data *pb);
 
 int paintbox_fpga_init(struct paintbox_data *pb);
-void paintbox_fpga_deinit(struct paintbox_data *pb);
+void paintbox_fpga_remove(struct paintbox_data *pb);
+#else
+static inline void paintbox_fpga_soft_reset(struct paintbox_data *pb) { }
+static inline int paintbox_fpga_init(struct paintbox_data *pb)
+{
+	return 0;
+}
+static inline void paintbox_fpga_remove(struct paintbox_data *pb) { }
+#endif
 
 #endif  /* __PAINTBOX_FPGA_H__ */

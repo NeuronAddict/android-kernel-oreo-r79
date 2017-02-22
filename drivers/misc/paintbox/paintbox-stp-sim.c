@@ -29,23 +29,6 @@
 #include "paintbox-stp.h"
 #include "paintbox-stp-sim.h"
 
-/* This function will cause the simulator to begin executing the IPU program.
- * Execution will continue until either the specified interrupt triggers or the
- * specified timeout expires.
- *
- * The caller to this function must hold pb->lock
- */
-int sim_execute(struct paintbox_data *pb, const struct interrupt_wait *wait)
-{
-	writeq(wait->timeout_ns, pb->sim_base + SIM_TIMEOUT);
-	writeq(wait->interrupt_mask_all, pb->sim_base + SIM_INTERRUPT_MASK_ALL);
-	writeq(wait->interrupt_mask_any, pb->sim_base + SIM_INTERRUPT_MASK_ANY);
-
-	writel(SIM_RUN, pb->sim_base + SIM_CTRL);
-
-	return 0;
-}
-
 int sim_get_stp_idle_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg)
 {

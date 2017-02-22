@@ -84,11 +84,11 @@ void mipi_input_handle_dma_completed(struct paintbox_data *pb,
 
 /* This function must be called from an interrupt context. */
 irqreturn_t paintbox_mipi_input_interrupt(struct paintbox_data *pb,
-		uint32_t stream_mask);
+		uint32_t stream_mask, ktime_t timestamp);
 
 /* This function must be called from an interrupt context. */
 irqreturn_t paintbox_mipi_output_interrupt(struct paintbox_data *pb,
-		uint32_t stream_mask);
+		uint32_t stream_mask, ktime_t timestamp);
 
 int paintbox_mipi_init(struct paintbox_data *pb);
 

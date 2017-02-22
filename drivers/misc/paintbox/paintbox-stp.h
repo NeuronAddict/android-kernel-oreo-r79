@@ -18,6 +18,7 @@
 
 #include <linux/interrupt.h>
 #include <linux/io.h>
+#include <linux/ktime.h>
 #include <linux/types.h>
 
 #include "paintbox-common.h"
@@ -79,7 +80,8 @@ void disable_stp_access_to_lbp(struct paintbox_data *pb,
 int dump_stp_registers(struct paintbox_debug *debug, char *buf, size_t len);
 #endif
 
-irqreturn_t paintbox_stp_interrupt(struct paintbox_data *pb, uint64_t stp_mask);
+irqreturn_t paintbox_stp_interrupt(struct paintbox_data *pb, uint64_t stp_mask,
+		ktime_t timestamp);
 
 static inline unsigned int stp_id_to_index(unsigned int stp_id)
 {

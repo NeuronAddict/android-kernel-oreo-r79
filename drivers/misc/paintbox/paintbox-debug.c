@@ -20,6 +20,7 @@
 #include <linux/slab.h>
 #include <linux/types.h>
 
+#include "paintbox-bif.h"
 #include "paintbox-common.h"
 #include "paintbox-debug.h"
 #include "paintbox-dma-debug.h"
@@ -248,6 +249,13 @@ static const struct file_operations debug_regs_fops = {
 	.release = single_release,
 };
 
+void paintbox_debug_free_entry(struct paintbox_debug *debug)
+{
+	debugfs_remove(debug->stats_dump_dentry);
+	debugfs_remove(debug->reg_dump_dentry);
+	debugfs_remove(debug->debug_dir);
+}
+
 void paintbox_debug_create_entry(struct paintbox_data *pb,
 		struct paintbox_debug *debug, struct dentry *debug_root,
 		const char *name, unsigned int resource_id,
@@ -441,7 +449,7 @@ static int paintbox_reg_dump_show(struct seq_file *s, void *unused)
 
 	written += ret;
 
-	ret = dump_io_axi_registers(&pb->io.axi_debug, buf + written,
+	ret = paintbox_dump_bif_registers(&pb->io.axi_debug, buf + written,
 			len - written);
 	if (ret < 0)
 		goto err_exit;
@@ -537,7 +545,7 @@ static int paintbox_reg_dump_open(struct inode *inode, struct file *file)
 	size_t len;
 
 	len = IO_APB_DEBUG_BUFFER_SIZE;
-	len += IO_AXI_DEBUG_BUFFER_SIZE;
+	len += BIF_DEBUG_BUFFER_SIZE;
 	len += pb->io_ipu.num_mipi_input_streams * MIPI_DEBUG_BUFFER_SIZE;
 	len += pb->io_ipu.num_mipi_output_streams * MIPI_DEBUG_BUFFER_SIZE;
 	len += pb->dma.num_channels * DMA_DEBUG_BUFFER_SIZE;

@@ -30,6 +30,7 @@
 #include "paintbox-debug.h"
 #include "paintbox-dma.h"
 #include "paintbox-io.h"
+#include "paintbox-power.h"
 #include "paintbox-regs.h"
 #include "paintbox-regs-supplemental.h"
 
@@ -318,9 +319,7 @@ static void paintbox_mmu_tlb_sync(void *priv)
 
 	dev_dbg(&pb->pdev->dev, "%s\n", __func__);
 
-	/* TODO(ahampson): Disable BIF/MMU clock gate here for real hardware.
-	 * b/34706889
-	 */
+	paintbox_disable_mmu_bif_idle_clock_gating(pb);
 
 	/* TODO(ahampson):  There is no field bit defined for MMU_SYNC so we
 	 * just write a 1 into the register in the interim.
@@ -331,14 +330,16 @@ static void paintbox_mmu_tlb_sync(void *priv)
 			dev_err(&pb->pdev->dev,
 					"%s: timeout waiting for MMU sync\n",
 					__func__);
-			return;
+			/* TODO(ahampson):  A proper recovery path for a sync
+			 * timeout should be developed for this case.
+			 * b/35470877
+			 */
+			break;
 		}
 		udelay(MMU_SYNC_DELAY);
 	}
 
-	/* TODO(ahampson): Re-enable BIF/MMU clock gate here for real hardware.
-	 * b/34706889
-	 */
+	paintbox_enable_mmu_bif_idle_clock_gating(pb);
 }
 
 /* Called with page table spinlock held. */
@@ -350,9 +351,7 @@ static void paintbox_mmu_tlb_flush_all(void *priv)
 
 	dev_dbg(&pb->pdev->dev, "%s\n", __func__);
 
-	/* TODO(ahampson): Disable BIF/MMU clock gate here for real hardware.
-	 * b/34706889
-	 */
+	paintbox_disable_mmu_bif_idle_clock_gating(pb);
 
 	for (channel_id = 0; channel_id < pb->dma.num_channels; channel_id++) {
 		while (readl(pb->io.axi_base + MMU_FLUSH_FIFO_FULL)) {
@@ -360,7 +359,11 @@ static void paintbox_mmu_tlb_flush_all(void *priv)
 				dev_err(&pb->pdev->dev,
 						"%s: timeout waiting for flush "
 						"FIFO to clear\n", __func__);
-				return;
+				/* TODO(ahampson):  A proper recovery path for a
+				 * flush FIFO timeout should be developed for
+				 * this case.  b/35470877
+				 */
+				goto err_exit;
 			}
 			udelay(MMU_FLUSH_DELAY);
 		}
@@ -368,9 +371,8 @@ static void paintbox_mmu_tlb_flush_all(void *priv)
 		writel(channel_id, pb->io.axi_base + MMU_FLUSH_CHANNEL);
 	}
 
-	/* TODO(ahampson): Re-enable BIF/MMU clock gate here for real hardware.
-	 * b/34706889
-	 */
+err_exit:
+	paintbox_enable_mmu_bif_idle_clock_gating(pb);
 }
 
 /* Called with page table spinlock held. */
@@ -384,9 +386,7 @@ static void paintbox_mmu_tlb_invalidate_range_nosync(void *priv,
 	dev_dbg(&pb->pdev->dev, "%s:iova 0x%016lx sz %zu leaf %d\n", __func__,
 			iova, size, leaf);
 
-	/* TODO(ahampson): Disable BIF/MMU clock gate here for real hardware.
-	 * b/34706889
-	 */
+	paintbox_disable_mmu_bif_idle_clock_gating(pb);
 
 	for (offset = 0; offset < size; offset += PAGE_SIZE) {
 		while (readl(pb->io.axi_base + MMU_FLUSH_FIFO_FULL)) {
@@ -394,7 +394,11 @@ static void paintbox_mmu_tlb_invalidate_range_nosync(void *priv,
 				dev_err(&pb->pdev->dev,
 						"%s: timeout waiting for flush "
 						"FIFO to clear\n", __func__);
-				return;
+				/* TODO(ahampson):  A proper recovery path for a
+				 * flush FIFO timeout should be developed for
+				 * this case.  b/35470877
+				 */
+				goto err_exit;
 			}
 
 			udelay(MMU_FLUSH_DELAY);
@@ -404,14 +408,15 @@ static void paintbox_mmu_tlb_invalidate_range_nosync(void *priv,
 				pb->io.axi_base + MMU_FLUSH_ADDRESS);
 	}
 
-	/* TODO(ahampson): Re-enable BIF/MMU clock gate here for real hardware.
-	 * b/34706889
-	 */
+err_exit:
+	paintbox_enable_mmu_bif_idle_clock_gating(pb);
 }
 
 static void paintbox_mmu_enable(void *priv, uint64_t table_base_paddr)
 {
 	struct paintbox_data *pb = (struct paintbox_data *)priv;
+
+	paintbox_disable_mmu_bif_idle_clock_gating(pb);
 
 	writel((uint32_t)(PAINTBOX_ERROR_BASE >> MMU_ERROR_BASE_RSHIFT),
 			pb->io.axi_base + MMU_ERR_BASE);
@@ -422,14 +427,13 @@ static void paintbox_mmu_enable(void *priv, uint64_t table_base_paddr)
 	writel(MMU_CTRL_MMU_ENABLE_MASK | MMU_CTRL_PREFETCH_ENABLE_MASK,
 			pb->io.axi_base + MMU_CTRL);
 
-	/* TODO(ahampson): Enable BIF/MMU clock gate here for real hardware.
-	 * b/34706889
-	 */
+	paintbox_enable_mmu_bif_idle_clock_gating(pb);
 }
 
 static void paintbox_mmu_disable(void *priv)
 {
 	struct paintbox_data *pb = (struct paintbox_data *)priv;
+
 	writel(0, pb->io.axi_base + MMU_CTRL);
 }
 
@@ -501,11 +505,20 @@ int paintbox_mmu_iommu_init(struct paintbox_data *pb)
 
 int paintbox_mmu_iommu_attach(struct paintbox_data *pb)
 {
+	struct bus_type *bus = &paintbox_bus_type;
+	const struct iommu_ops *iommu_ops = bus->iommu_ops;
 	int ret;
 
-	pb->mmu.group = iommu_group_alloc();
-	if (IS_ERR(pb->mmu.group)) {
-		dev_err(&pb->pdev->dev, "failed to allocate IOMMU group\n");
+	if (!iommu_ops || !iommu_ops->device_group) {
+		dev_err(&pb->pdev->dev, "%s: no iommu_ops\n", __func__);
+		return -EINVAL;
+	}
+
+	pb->mmu.group = iommu_ops->device_group(&pb->pdev->dev);
+	if (IS_ERR_OR_NULL(pb->mmu.group)) {
+		dev_err(&pb->pdev->dev,
+				"%s: failed to get group, ret = %ld\n",
+				__func__, PTR_ERR(pb->mmu.group));
 		return PTR_ERR(pb->mmu.group);
 	}
 

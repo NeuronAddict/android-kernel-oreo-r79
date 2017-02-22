@@ -1093,8 +1093,11 @@ int dump_dma_channel_stats(struct paintbox_debug *debug, char *buf,
 			"\tstop request pending: %u\n", channel->stop_request);
 	if (channel->stats.time_stats_enabled) {
 		written += snprintf(buf + written, len - written,
-				"\tlast transfer time: %lldus\n",
-				channel->stats.last_transfer_time_us);
+				"\tlast transfer time: %lldus config time: %lldus\n",
+				channel->stats.last_transfer_time_us,
+				ktime_to_us(ktime_sub(
+				channel->stats.config_finish_time,
+				channel->stats.config_start_time)));
 	}
 
 	return written;

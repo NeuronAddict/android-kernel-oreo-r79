@@ -20,22 +20,35 @@
 
 #include "paintbox-common.h"
 
+void paintbox_enable_mmu_bif_idle_clock_gating(struct paintbox_data *pb);
+void paintbox_disable_mmu_bif_idle_clock_gating(struct paintbox_data *pb);
+
 /* The caller to these functions must hold pb->dma.dma_lock */
-void ipu_pm_enable_dma_channel(struct paintbox_data *pb,
-		unsigned int channel_id);
-void ipu_pm_disable_dma_channel(struct paintbox_data *pb,
-		unsigned int channel_id);
+void paintbox_pm_enable_dma_channel(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel);
+void paintbox_pm_disable_dma_channel(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel);
 
 /* The caller to these functions must hold pb->lock */
-void ipu_pm_stp_enable(struct paintbox_data *pb, struct paintbox_stp *stp);
-void ipu_pm_lbp_enable(struct paintbox_data *pb, struct paintbox_lbp *lbp);
-void ipu_pm_stp_disable(struct paintbox_data *pb, struct paintbox_stp *stp);
-void ipu_pm_lbp_disable(struct paintbox_data *pb, struct paintbox_lbp *lbp);
+void paintbox_pm_stp_enable(struct paintbox_data *pb, struct paintbox_stp *stp);
+void paintbox_pm_lbp_enable(struct paintbox_data *pb, struct paintbox_lbp *lbp);
+void paintbox_pm_stp_disable(struct paintbox_data *pb,
+		struct paintbox_stp *stp);
+void paintbox_pm_lbp_disable(struct paintbox_data *pb,
+		struct paintbox_lbp *lbp);
 
-int ipu_pm_init(struct paintbox_data *pb);
+int paintbox_pm_init(struct paintbox_data *pb);
+void paintbox_pm_remove(struct paintbox_data *pb);
 
-#if defined(CONFIG_DEBUG_FS) || defined(VERBOSE_DEBUG)
-int ipu_pm_dump_registers(struct paintbox_debug *debug, char *buf, size_t len);
+#ifdef CONFIG_DEBUG_FS
+int paintbox_pm_dump_registers(struct paintbox_debug *debug, char *buf,
+		size_t len);
+#else
+static inline int paintbox_pm_dump_registers(struct paintbox_debug *debug,
+		char *buf, size_t len)
+{
+	return 0;
+}
 #endif
 
 #endif /* __PAINTBOX_POWER_H__ */

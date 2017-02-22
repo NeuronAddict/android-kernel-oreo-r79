@@ -98,15 +98,17 @@ static int ipu_import_dma_buf(struct paintbox_data *pb,
 #ifdef CONFIG_PAINTBOX_IOMMU
 	/* Map the scatter list into the IOVA space. */
 	if (pb->mmu.enabled) {
-		/* TODO(ahampson):  This needs to be modified so that it can
-		 * handle multiple entries in the sg_table.
-		 */
-		ret = dma_map_sg(&pb->pdev->dev, transfer->sg_table->sgl,
-				transfer->sg_table->nents, transfer->dir);
-		if (ret != transfer->sg_table->nents) {
+		DEFINE_DMA_ATTRS(attrs);
+
+		dma_set_attr(DMA_ATTR_SKIP_CPU_SYNC, &attrs);
+
+		ret = dma_map_sg_attrs(&pb->pdev->dev, transfer->sg_table->sgl,
+				transfer->sg_table->nents, transfer->dir,
+				&attrs);
+		if (ret == 0) {
 			dev_err(&pb->pdev->dev,
-					"%s: failed to map all scatterlist "
-					"entries into IOVA space", __func__);
+					"%s: DMA map error, nents %d requested",
+					__func__, transfer->sg_table->nents);
 			ret = -EINVAL;
 			goto err_unmap;
 		}
@@ -138,11 +140,13 @@ static void ipu_release_dma_buf(struct paintbox_data *pb,
 {
 #ifdef CONFIG_PAINTBOX_IOMMU
 	if (pb->mmu.enabled) {
-		/* TODO(ahampson):  This needs to be modified so that it can
-		 * handle multiple entries in the sg_table.
-		 */
-		dma_unmap_sg(&pb->pdev->dev, transfer->sg_table->sgl,
-				transfer->sg_table->nents, transfer->dir);
+		DEFINE_DMA_ATTRS(attrs);
+
+		dma_set_attr(DMA_ATTR_SKIP_CPU_SYNC, &attrs);
+
+		dma_unmap_sg_attrs(&pb->pdev->dev, transfer->sg_table->sgl,
+				transfer->sg_table->nents, transfer->dir,
+				&attrs);
 	}
 #endif
 	dma_buf_unmap_attachment(transfer->attach, transfer->sg_table,

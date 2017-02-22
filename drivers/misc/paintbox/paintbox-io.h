@@ -49,16 +49,16 @@ void io_disable_mipi_output_interface_interrupt(struct paintbox_data *pb,
 		unsigned int interface_id);
 void paintbox_enable_mmu_interrupt(struct paintbox_data *pb);
 void paintbox_disable_mmu_interrupt(struct paintbox_data *pb);
+void paintbox_enable_bif_interrupt(struct paintbox_data *pb);
+void paintbox_disable_bif_interrupt(struct paintbox_data *pb);
 
 /* The caller to these functions must hold pb->lock */
 void io_enable_dma_channel(struct paintbox_data *pb, unsigned int channel_id);
 void io_disable_dma_channel(struct paintbox_data *pb, unsigned int channel_id);
 
-int paintbox_io_axi_init(struct paintbox_data *pb);
 int paintbox_io_apb_init(struct paintbox_data *pb);
 
 #if defined(CONFIG_DEBUG_FS) || defined(VERBOSE_DEBUG)
-int dump_io_axi_registers(struct paintbox_debug *debug, char *buf, size_t len);
 int dump_io_apb_registers(struct paintbox_debug *debug, char *buf, size_t len);
 #endif
 

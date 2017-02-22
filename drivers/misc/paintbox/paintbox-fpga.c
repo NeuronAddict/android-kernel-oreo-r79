@@ -21,7 +21,6 @@
 #include "paintbox-common.h"
 #include "paintbox-fpga.h"
 
-
 #define FPGA_SOFT_RESET             0x00
 #define FPGA_SOFT_RESET_EN          (1 << 0)
 #define FPGA_SOFT_RESET_HOLD_PERIOD 1 /* ms */
@@ -57,7 +56,7 @@ int paintbox_fpga_init(struct paintbox_data *pb)
 	return 0;
 }
 
-void paintbox_fpga_deinit(struct paintbox_data *pb)
+void paintbox_fpga_remove(struct paintbox_data *pb)
 {
 	devm_iounmap(&pb->pdev->dev, pb->fpga_reg_base);
 }

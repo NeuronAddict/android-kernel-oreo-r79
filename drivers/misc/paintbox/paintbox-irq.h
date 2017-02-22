@@ -27,6 +27,10 @@ int release_interrupt_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
+int paintbox_flush_interrupt_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg);
+int paintbox_flush_all_interrupts_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg);
 
 int paintbox_irq_init(struct paintbox_data *pb);
 
@@ -58,15 +62,10 @@ int bind_mipi_interrupt(struct paintbox_data *pb,
 int unbind_mipi_interrupt(struct paintbox_data *pb,
 		struct paintbox_session *session,
 		struct paintbox_mipi_stream *stream);
-void init_waiters(struct paintbox_data *pb, struct paintbox_irq *irq);
 
-/*
- * The following functions must be called with interrupts disabled.
- *
- * |data| - stp interrupts - this is an interrupt code
- *          other interrupts - this is 0 or -errno
- */
-void signal_waiters(struct paintbox_data *pb, struct paintbox_irq *irq,
-		int data);
+/* The following function must be called with interrupts disabled. */
+void paintbox_irq_waiter_signal(struct paintbox_data *pb,
+		struct paintbox_irq *irq, ktime_t timestamp, uint16_t data,
+		int error);
 
 #endif /* __PAINTBOX_IRQ_H__ */

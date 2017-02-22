@@ -17,6 +17,7 @@
 #define __PAINTBOX_DMA_H__
 
 #include <linux/interrupt.h>
+#include <linux/ktime.h>
 #include <linux/types.h>
 
 #include "paintbox-common.h"
@@ -63,7 +64,7 @@ int paintbox_dma_init(struct paintbox_data *pb);
 
 /* This function must be called in an interrupt context */
 irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
-		uint32_t channel_mask);
+		uint32_t channel_mask, ktime_t timestamp);
 
 /* This function must be called in an interrupt context */
 void dma_report_channel_error(struct paintbox_data *pb,

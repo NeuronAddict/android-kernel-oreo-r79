@@ -36,24 +36,24 @@
 #define CORE_SYSTEM_STABLIZE_TIME 100 /* us */
 
 #ifdef CONFIG_DEBUG_FS
-static uint64_t ipu_pm_reg_entry_read(
+static uint64_t paintbox_pm_reg_entry_read(
 		struct paintbox_debug_reg_entry *reg_entry)
 {
 	struct paintbox_debug *debug = reg_entry->debug;
 	struct paintbox_data *pb = debug->pb;
+
 	return readq(pb->io.apb_base + reg_entry->reg_offset);
 }
 
-static void ipu_pm_reg_entry_write(struct paintbox_debug_reg_entry *reg_entry,
-		uint64_t val)
+static void paintbox_pm_reg_entry_write
+		(struct paintbox_debug_reg_entry *reg_entry, uint64_t val)
 {
 	struct paintbox_debug *debug = reg_entry->debug;
 	struct paintbox_data *pb = debug->pb;
+
 	writeq(val, pb->io.apb_base + reg_entry->reg_offset);
 }
-#endif
 
-#if defined(CONFIG_DEBUG_FS) || defined(VERBOSE_DEBUG)
 static const char *io_pm_reg_names[IO_APB_NUM_REGS] = {
 	REG_NAME_ENTRY(CLK_GATE_CONTROL_STP_IDLE_GATE_DIS),
 	REG_NAME_ENTRY(CLK_GATE_CONTROL_LBP_IDLE_GATE_DIS),
@@ -65,50 +65,52 @@ static const char *io_pm_reg_names[IO_APB_NUM_REGS] = {
 	REG_NAME_ENTRY(IPU_DMA_CHAN_EN)
 };
 
-static inline int ipu_pm_dump_reg(struct paintbox_data *pb, uint32_t reg_offset,
-		char *buf, int *written, size_t len)
+static inline int paintbox_pm_dump_reg(struct paintbox_data *pb,
+		uint32_t reg_offset, char *buf, int *written, size_t len)
 {
 	const char *reg_name = io_pm_reg_names[REG_INDEX(reg_offset)];
+
 	return dump_ipu_register64(pb, pb->io.apb_base, reg_offset, reg_name,
 			buf, written, len);
 }
 
-int ipu_pm_dump_registers(struct paintbox_debug *debug, char *buf, size_t len)
+int paintbox_pm_dump_registers(struct paintbox_debug *debug, char *buf,
+		size_t len)
 {
 	struct paintbox_data *pb = debug->pb;
 	int ret, written = 0;
 
-	ret = ipu_pm_dump_reg(pb, CLK_GATE_CONTROL_STP_IDLE_GATE_DIS, buf,
+	ret = paintbox_pm_dump_reg(pb, CLK_GATE_CONTROL_STP_IDLE_GATE_DIS, buf,
 			&written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	ret = ipu_pm_dump_reg(pb, CLK_GATE_CONTROL_LBP_IDLE_GATE_DIS, buf,
+	ret = paintbox_pm_dump_reg(pb, CLK_GATE_CONTROL_LBP_IDLE_GATE_DIS, buf,
 			&written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	ret = ipu_pm_dump_reg(pb, CLK_GATE_CONTROL, buf, &written, len);
+	ret = paintbox_pm_dump_reg(pb, CLK_GATE_CONTROL, buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	ret = ipu_pm_dump_reg(pb, IPU_CORE_PAIRS_EN, buf, &written, len);
+	ret = paintbox_pm_dump_reg(pb, IPU_CORE_PAIRS_EN, buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	ret = ipu_pm_dump_reg(pb, CORE_POWER_ON_N, buf, &written, len);
+	ret = paintbox_pm_dump_reg(pb, CORE_POWER_ON_N, buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	ret = ipu_pm_dump_reg(pb, CORE_ISO_ON, buf, &written, len);
+	ret = paintbox_pm_dump_reg(pb, CORE_ISO_ON, buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	ret = ipu_pm_dump_reg(pb, CORE_RAM_ON_N, buf, &written, len);
+	ret = paintbox_pm_dump_reg(pb, CORE_RAM_ON_N, buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	ret = ipu_pm_dump_reg(pb, IPU_DMA_CHAN_EN, buf, &written, len);
+	ret = paintbox_pm_dump_reg(pb, IPU_DMA_CHAN_EN, buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
 
@@ -122,29 +124,76 @@ err_exit:
 #endif
 
 /* The caller to this function must hold pb->dma.dma_lock */
-void ipu_pm_enable_dma_channel(struct paintbox_data *pb,
-		unsigned int channel_id)
+void paintbox_pm_enable_dma_channel(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel)
 {
 	uint32_t val;
 
 	val = readl(pb->io.apb_base + IPU_DMA_CHAN_EN);
-	val |= 1 << channel_id;
+	val |= 1 << channel->channel_id;
 	writel(val, pb->io.apb_base + IPU_DMA_CHAN_EN);
+
+	channel->pm_enabled = true;
 }
 
 /* The caller to this function must hold pb->dma.dma_lock */
-void ipu_pm_disable_dma_channel(struct paintbox_data *pb,
-		unsigned int channel_id)
+void paintbox_pm_disable_dma_channel(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel)
 {
 	uint32_t val;
 
 	val = readl(pb->io.apb_base + IPU_DMA_CHAN_EN);
-	val &= ~(1 << channel_id);
+	val &= ~(1 << channel->channel_id);
 	writel(val, pb->io.apb_base + IPU_DMA_CHAN_EN);
+
+	channel->pm_enabled = false;
+}
+
+void paintbox_enable_mmu_bif_idle_clock_gating(struct paintbox_data *pb)
+{
+#ifndef CONFIG_PAINTBOX_FPGA_SUPPORT
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&pb->power.power_lock, irq_flags);
+
+	if (WARN_ON(--pb->power.bif_mmu_clock_idle_disable_ref_count < 0))
+		pb->power.bif_mmu_clock_idle_disable_ref_count = 0;
+
+	if (pb->power.bif_mmu_clock_idle_disable_ref_count == 0) {
+		uint32_t val;
+
+		val = readl(pb->io.apb_base + CLK_GATE_CONTROL);
+		val &= ~CLK_GATE_CONTROL_MMU_BIF_IDLE_GATE_DIS_MASK;
+		writel(val, pb->io.apb_base + CLK_GATE_CONTROL);
+	}
+
+	spin_unlock_irqrestore(&pb->power.power_lock, irq_flags);
+#endif
+}
+
+void paintbox_disable_mmu_bif_idle_clock_gating(struct paintbox_data *pb)
+{
+#ifndef CONFIG_PAINTBOX_FPGA_SUPPORT
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&pb->power.power_lock, irq_flags);
+
+	if (pb->power.bif_mmu_clock_idle_disable_ref_count == 0) {
+		uint32_t val;
+
+		val = readl(pb->io.apb_base + CLK_GATE_CONTROL);
+		val |= CLK_GATE_CONTROL_MMU_BIF_IDLE_GATE_DIS_MASK;
+		writel(val, pb->io.apb_base + CLK_GATE_CONTROL);
+	}
+
+	pb->power.bif_mmu_clock_idle_disable_ref_count++;
+
+	spin_unlock_irqrestore(&pb->power.power_lock, irq_flags);
+#endif
 }
 
 /* The caller to this function must hold pb->lock */
-static void ipu_core_power_enable(struct paintbox_data *pb,
+static void paintbox_core_power_enable(struct paintbox_data *pb,
 		unsigned int requested_cores)
 {
 	uint32_t max_core_mask, active_core_mask;
@@ -169,11 +218,7 @@ static void ipu_core_power_enable(struct paintbox_data *pb,
 	writel((active_core_mask << 1) | 0x1, pb->io.apb_base +
 			CLK_GATE_CONTROL_LBP_IDLE_GATE_DIS);
 
-	/* Disable DMA, SSP, MMU, and BIF idle clock gating */
-	writel(CLK_GATE_CONTROL_DMA_IDLE_GATE_DIS_MASK |
-			CLK_GATE_CONTROL_SSP_IDLE_GATE_DIS_MASK |
-			CLK_GATE_CONTROL_MMU_BIF_IDLE_GATE_DIS_MASK,
-			pb->io.apb_base + CLK_GATE_CONTROL);
+	paintbox_disable_mmu_bif_idle_clock_gating(pb);
 
 	/* IPU cores need to be enabled in sequence in pairs */
 	for (active_cores = pb->power.active_core_count;
@@ -219,16 +264,13 @@ static void ipu_core_power_enable(struct paintbox_data *pb,
 
 	udelay(CORE_SYSTEM_STABLIZE_TIME);
 
-	/* Enable idle clock gating for MMU and BIF */
-	writel(CLK_GATE_CONTROL_DMA_IDLE_GATE_DIS_MASK |
-			CLK_GATE_CONTROL_SSP_IDLE_GATE_DIS_MASK,
-			pb->io.apb_base + CLK_GATE_CONTROL);
+	paintbox_enable_mmu_bif_idle_clock_gating(pb);
 
 	pb->power.active_core_count = requested_cores;
 }
 
 /* The caller to this function must hold pb->lock */
-static void ipu_core_power_disable(struct paintbox_data *pb,
+static void paintbox_core_power_disable(struct paintbox_data *pb,
 		unsigned int requested_cores)
 {
 	uint32_t max_core_mask;
@@ -243,11 +285,7 @@ static void ipu_core_power_disable(struct paintbox_data *pb,
 	/* The maximum number of cores is equal to the number of STPs. */
 	max_core_mask = (1 << pb->stp.num_stps) - 1;
 
-	/* Disable MMU, and BIF idle clock gating */
-	writel(CLK_GATE_CONTROL_DMA_IDLE_GATE_DIS_MASK |
-			CLK_GATE_CONTROL_SSP_IDLE_GATE_DIS_MASK |
-			CLK_GATE_CONTROL_MMU_BIF_IDLE_GATE_DIS_MASK,
-			pb->io.apb_base + CLK_GATE_CONTROL);
+	paintbox_disable_mmu_bif_idle_clock_gating(pb);
 
 	for (active_cores = pb->power.active_core_count;
 			active_cores > requested_cores; active_cores -= 2) {
@@ -281,27 +319,24 @@ static void ipu_core_power_disable(struct paintbox_data *pb,
 
 	udelay(CORE_SYSTEM_STABLIZE_TIME);
 
-	/* Enable idle clock gating for MMU and BIF */
-	writel(CLK_GATE_CONTROL_DMA_IDLE_GATE_DIS_MASK |
-			CLK_GATE_CONTROL_SSP_IDLE_GATE_DIS_MASK,
-			pb->io.apb_base + CLK_GATE_CONTROL);
+	paintbox_enable_mmu_bif_idle_clock_gating(pb);
 
 	pb->power.active_core_count = requested_cores;
 }
 
 /* The caller to this function must hold pb->lock */
-void ipu_pm_stp_enable(struct paintbox_data *pb, struct paintbox_stp *stp)
+void paintbox_pm_stp_enable(struct paintbox_data *pb, struct paintbox_stp *stp)
 {
 	stp->pm_enabled = true;
 
 	/* IPU cores are power controlled in pairs so round up the requested
 	 * cores if it is an odd numbered core.
 	 */
-	ipu_core_power_enable(pb, (stp->stp_id + 1) & ~1);
+	paintbox_core_power_enable(pb, (stp->stp_id + 1) & ~1);
 }
 
 /* The caller to this function must hold pb->lock */
-void ipu_pm_lbp_enable(struct paintbox_data *pb, struct paintbox_lbp *lbp)
+void paintbox_pm_lbp_enable(struct paintbox_data *pb, struct paintbox_lbp *lbp)
 {
 	lbp->pm_enabled = true;
 
@@ -312,11 +347,11 @@ void ipu_pm_lbp_enable(struct paintbox_data *pb, struct paintbox_lbp *lbp)
 	/* IPU cores are power controlled in pairs so round up the requested
 	 * cores if it is an odd numbered core.
 	 */
-	ipu_core_power_enable(pb, (lbp->pool_id + 1) & ~1);
+	paintbox_core_power_enable(pb, (lbp->pool_id + 1) & ~1);
 }
 
 /* The caller to this function must hold pb->lock */
-static void ipu_core_power_down_walk(struct paintbox_data *pb)
+static void paintbox_core_power_down_walk(struct paintbox_data *pb)
 {
 	unsigned int requested_cores;
 
@@ -335,18 +370,18 @@ static void ipu_core_power_down_walk(struct paintbox_data *pb)
 	/* IPU cores are power controlled in pairs so round up the requested
 	 * cores if it is an odd numbered core.
 	 */
-	ipu_core_power_disable(pb, (requested_cores + 1) & ~1);
+	paintbox_core_power_disable(pb, (requested_cores + 1) & ~1);
 }
 
 /* The caller to this function must hold pb->lock */
-void ipu_pm_stp_disable(struct paintbox_data *pb, struct paintbox_stp *stp)
+void paintbox_pm_stp_disable(struct paintbox_data *pb, struct paintbox_stp *stp)
 {
 	stp->pm_enabled = false;
-	ipu_core_power_down_walk(pb);
+	paintbox_core_power_down_walk(pb);
 }
 
 /* The caller to this function must hold pb->lock */
-void ipu_pm_lbp_disable(struct paintbox_data *pb, struct paintbox_lbp *lbp)
+void paintbox_pm_lbp_disable(struct paintbox_data *pb, struct paintbox_lbp *lbp)
 {
 	lbp->pm_enabled = false;
 
@@ -354,19 +389,20 @@ void ipu_pm_lbp_disable(struct paintbox_data *pb, struct paintbox_lbp *lbp)
 	 * case.
 	 */
 
-	ipu_core_power_down_walk(pb);
+	paintbox_core_power_down_walk(pb);
 }
 
-int ipu_pm_init(struct paintbox_data *pb)
+int paintbox_pm_init(struct paintbox_data *pb)
 {
-#ifdef CONFIG_DEBUG_FS
 	paintbox_debug_create_entry(pb, &pb->power.debug, pb->debug_root,
-			"power", -1, ipu_pm_dump_registers, NULL, &pb->power);
+			"power", -1, paintbox_pm_dump_registers, NULL,
+			&pb->power);
 
 	paintbox_debug_create_reg_entries(pb, &pb->power.debug, io_pm_reg_names,
-			IO_APB_NUM_REGS, ipu_pm_reg_entry_write,
-			ipu_pm_reg_entry_read);
-#endif
+			IO_APB_NUM_REGS, paintbox_pm_reg_entry_write,
+			paintbox_pm_reg_entry_read);
+
+	spin_lock_init(&pb->power.power_lock);
 
 	/* TODO(ahampson):  Add support for debugfs entry that allows a user to
 	 * force a certain number of active cores.
@@ -374,4 +410,10 @@ int ipu_pm_init(struct paintbox_data *pb)
 	/* TODO(ahampson):  Add support for force leave enable */
 
 	return 0;
+}
+
+void paintbox_pm_remove(struct paintbox_data *pb)
+{
+	paintbox_debug_free_reg_entries(&pb->power.debug);
+	paintbox_debug_free_entry(&pb->power.debug);
 }

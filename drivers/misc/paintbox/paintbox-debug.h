@@ -52,6 +52,7 @@ void paintbox_debug_create_entry(struct paintbox_data *pb,
 		const char *name, unsigned int resource_id,
 		register_dump_t register_dump, stats_dump_t stats_dump,
 		void *arg);
+void paintbox_debug_free_entry(struct paintbox_debug *debug);
 
 int paintbox_debug_alloc_reg_entries(struct paintbox_data *pb,
 		struct paintbox_debug *debug, size_t reg_count);

@@ -52,6 +52,7 @@ struct ipu_capabilities {
 	uint32_t num_dma_channels;
 	bool is_simulator;
 	bool is_fpga;
+	bool iommu_enabled;
 };
 
 enum sram_target_type {
@@ -213,21 +214,73 @@ struct dma_interrupt_config {
 	uint32_t interrupt_id;
 };
 
-struct interrupt_wait {
-	/* inputs */
-	uint64_t interrupt_mask_all;
-	uint64_t interrupt_mask_any;
+struct paintbox_irq_event {
+	/* Event time stamp using the boot time (including idle) */
+	int64_t timestamp_ns;
+	int error;
+
+	/* Event data
+	 * For STP interrupts, this will be the interrupt code.
+	 * For MIPI input streams this will be the frame number.
+	 */
+	uint16_t data;
+};
+
+/* When the PB_IRQ_PRIORITY flag is set the irq group will return immediately
+ * when the interrupt is triggered.
+ */
+#define PB_IRQ_PRIORITY (1 << 0)
+
+/* The PB_IRQ_REQUIRED flag is used to indicate that this interrupt is required
+ * and the irq group will not return until all required interrupts are
+ * triggered.  Note that this flag is superceded by PB_IRQ_PRIORITY.
+ */
+#define PB_IRQ_REQUIRED (1 << 1)
+
+struct paintbox_irq_wait_entry {
+	struct paintbox_irq_event event;
+	uint32_t interrupt_id;
+	uint8_t flags;  /* PB_IRQ_* flags, see above. */
+	bool triggered; /* output */
+};
+
+struct paintbox_irq_group_wait_base {
+	/* Input only: Total number of IRQs in the in the IRQ group. */
+	uint32_t irq_count;
+
+	/* Input only: Number of required IRQs in the IRQ group. */
+	uint32_t required_irq_count;
+
+	/* Input: maximum wait period in nanoseconds for the IRQ group.  On
+	 * ouput this will be the time remaining in the wait period.
+	 */
 	int64_t timeout_ns;
 
-	/* outputs */
+	/* Output: When the PB_WAIT_FOR_INTERRUPT ioctl returns this value will
+	 * be the number of required IRQs that have triggered.
+	 */
+	unsigned int required_irqs_triggered;
+
+	/* TODO(ahampson, ahalambi):  This field is used to populate an output
+	 * parameter in the HAL interface.  Since the HAL code will have to
+	 * traverse the irqs array to get the IRQ data it may be able to be
+	 * generated at the HAL level.
+	 */
 	uint64_t interrupt_mask_fired;
+
+	/* TODO(ahampson, ahalambi):  When an error occurs this is set to the
+	 * interrupt id for the interrupt that generated the error.  This field
+	 * is also used to populate an output parameter in the HAL interface.
+	 * Since the IRQ errors are now included in the paintbox_irq_event
+	 * structure it would be possible to determine which IRQs generated
+	 * errors by traversing the irqs array.
+	 */
 	int32_t interrupt_id_error;
-	int32_t error;
+};
 
-	/* actual size of array depends on number of stps */
-	uint16_t interrupt_code[1];
-
-	/* interrupt_code MUST BE LAST MEMBER */
+struct paintbox_irq_group_wait {
+	struct paintbox_irq_group_wait_base base;
+	struct paintbox_irq_wait_entry irqs[0];
 };
 
 struct stp_config {
@@ -406,7 +459,8 @@ struct mipi_interrupt_config {
 #define PB_UNBIND_DMA_INTERRUPT      _IOW('p', 6, unsigned int)
 #define PB_RELEASE_DMA_CHANNEL       _IOW('p', 7, unsigned int)
 #define PB_ALLOCATE_INTERRUPT        _IOW('p', 8, unsigned int)
-#define PB_WAIT_FOR_INTERRUPT        _IOWR('p', 11, struct interrupt_wait)
+#define PB_WAIT_FOR_INTERRUPT        _IOWR('p', 11, \
+		struct paintbox_irq_group_wait)
 #define PB_RELEASE_INTERRUPT         _IOW('p', 12, unsigned int)
 #define PB_ALLOCATE_LINE_BUFFER_POOL _IOW('p', 13, unsigned int)
 #define PB_SETUP_LINE_BUFFER         _IOW('p', 14, struct line_buffer_config)
@@ -478,6 +532,12 @@ struct mipi_interrupt_config {
 #define PB_STP_PC_HISTOGRAM_ENABLE    _IOW('p', 66, unsigned long)
 #define PB_STP_PC_HISTOGRAM_READ      _IOWR('p', 67, struct stp_pc_histogram)
 #define PB_STP_PC_HISTOGRAM_CLEAR     _IOW('p', 68, unsigned long)
+
+/* Flush pending interrupts for an irq by interrupt id. */
+#define PB_FLUSH_INTERRUPTS           _IOW('p', 69, unsigned int)
+
+/* Flush pending interrupts for all irqs in the session. */
+#define PB_FLUSH_ALL_INTERRUPTS        _IO('p', 70)
 
 /* Test ioctls
  * The following ioctls are for testing and are not to be used for normal

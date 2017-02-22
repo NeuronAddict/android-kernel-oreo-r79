@@ -234,7 +234,7 @@ void release_lbp(struct paintbox_data *pb, struct paintbox_session *session,
 	writeq(0, pb->lbp.reg_base + LBP_CTRL);
 
 #ifndef CONFIG_PAINTBOX_FPGA_SUPPORT
-	ipu_pm_lbp_disable(pb, lbp);
+	paintbox_pm_lbp_disable(pb, lbp);
 #endif
 
 	/* Remove the line buffer pool from the session. */
@@ -268,7 +268,7 @@ int allocate_lbp_ioctl(struct paintbox_data *pb,
 	list_add_tail(&lbp->session_entry, &session->lbp_list);
 
 #ifndef CONFIG_PAINTBOX_FPGA_SUPPORT
-	ipu_pm_lbp_enable(pb, lbp);
+	paintbox_pm_lbp_enable(pb, lbp);
 #endif
 
 	writel(pool_id, pb->lbp.reg_base + LBP_SEL);

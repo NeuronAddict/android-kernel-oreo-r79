@@ -35,8 +35,10 @@
 #include <linux/version.h>
 #include <uapi/paintbox.h>
 
+#include "paintbox-bif.h"
 #include "paintbox-common.h"
 #include "paintbox-dma.h"
+#include "paintbox-fpga.h"
 #include "paintbox-io.h"
 #include "paintbox-irq.h"
 #include "paintbox-lbp.h"
@@ -51,10 +53,6 @@
 
 #include "paintbox-regs.h"
 #include "paintbox-sim-regs.h"
-
-#ifdef CONFIG_PAINTBOX_FPGA_SUPPORT
-#include "paintbox-fpga.h"
-#endif
 
 static int paintbox_open(struct inode *ip, struct file *fp)
 {
@@ -173,8 +171,12 @@ static long paintbox_get_caps_ioctl(struct paintbox_data *pb,
 	caps.version_build = version & IPU_VERSION_INCR_MASK;
 	caps.is_fpga = !!(version & IPU_VERSION_FPGA_BUILD_MASK);
 
-#if defined(CONFIG_PAINTBOX_SIMULATOR_SUPPORT)
+#ifdef CONFIG_PAINTBOX_SIMULATOR_SUPPORT
 	caps.is_simulator = true;
+#endif
+
+#ifdef CONFIG_PAINTBOX_IOMMU
+	caps.iommu_enabled = pb->mmu.enabled;
 #endif
 
 	caps.hardware_id = pb->hardware_id;
@@ -200,6 +202,10 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 		return wait_for_interrupt_ioctl(pb, session, arg);
 	case PB_RELEASE_INTERRUPT:
 		return release_interrupt_ioctl(pb, session, arg);
+	case PB_FLUSH_INTERRUPTS:
+		return paintbox_flush_interrupt_ioctl(pb, session, arg);
+	case PB_FLUSH_ALL_INTERRUPTS:
+		return paintbox_flush_all_interrupts_ioctl(pb, session, arg);
 	case PB_ALLOCATE_DMA_CHANNEL:
 		return allocate_dma_channel_ioctl(pb, session, arg);
 	case PB_BIND_DMA_INTERRUPT:
@@ -370,23 +376,12 @@ static const struct file_operations paintbox_fops = {
 	.unlocked_ioctl = paintbox_ioctl,
 };
 
-#ifdef CONFIG_PAINTBOX_SIMULATOR_SUPPORT
-
-#define SIM_GROUP_OFFSET IPU_RESERVED_OFFSET
-
-static void paintbox_sim_init(struct paintbox_data *pb)
-{
-	pb->sim_base = pb->reg_base + SIM_GROUP_OFFSET;
-
-	dev_dbg(&pb->pdev->dev, "sim: base %p len %u\n", pb->sim_base,
-			SIM_BLOCK_LEN);
-}
-#endif
-
 static void paintbox_deinit(struct paintbox_data *pb)
 {
 	/* TODO(ahampson): Figure out proper IPU shutdown sequence. */
+	paintbox_bif_shutdown(pb);
 
+	paintbox_bif_remove(pb);
 	paintbox_lbp_deinit(pb);
 
 	paintbox_stp_deinit(pb);
@@ -488,11 +483,9 @@ static int paintbox_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 
-#ifdef CONFIG_PAINTBOX_FPGA_SUPPORT
 	ret = paintbox_fpga_init(pb);
 	if (ret < 0)
 		return ret;
-#endif
 
 	pb->io.irq = platform_get_irq(pdev, 0);
 	if (pb->io.irq < 0) {
@@ -508,12 +501,15 @@ static int paintbox_probe(struct platform_device *pdev)
 	pb->dma.dma_base = pb->reg_base + IPU_DMA_OFFSET;
 	pb->lbp.reg_base = pb->reg_base + IPU_LBP_OFFSET;
 	pb->stp.reg_base = pb->reg_base + IPU_STP_OFFSET;
-
-#if defined(CONFIG_PAINTBOX_SIMULATOR_SUPPORT)
-	paintbox_sim_init(pb);
+#ifdef CONFIG_PAINTBOX_SIMULATOR_SUPPORT
+	pb->sim_base = pb->reg_base + SIM_GROUP_OFFSET;
 #endif
 
 	ret = paintbox_get_capabilities(pb);
+	if (ret < 0)
+		return ret;
+
+	ret = paintbox_bif_init(pb);
 	if (ret < 0)
 		return ret;
 
@@ -540,13 +536,11 @@ static int paintbox_probe(struct platform_device *pdev)
 	if (ret < 0)
 		return ret;
 
-	ret = paintbox_io_axi_init(pb);
+	ret = paintbox_pm_init(pb);
 	if (ret < 0)
 		return ret;
 
-	ret = ipu_pm_init(pb);
-	if (ret < 0)
-		return ret;
+	paintbox_bif_start(pb);
 
 	ret = paintbox_mmu_init(pb);
 	if (ret < 0)
@@ -580,11 +574,8 @@ static int paintbox_remove(struct platform_device *pdev)
 	misc_deregister(&pb->misc_device);
 
 	paintbox_deinit(pb);
-
-#ifdef CONFIG_PAINTBOX_FPGA_SUPPORT
-	paintbox_fpga_deinit(pb);
-#endif
-
+	paintbox_pm_remove(pb);
+	paintbox_fpga_remove(pb);
 	devm_free_irq(&pdev->dev, pb->io.irq, pb);
 
 	devm_iounmap(&pdev->dev, pb->reg_base);

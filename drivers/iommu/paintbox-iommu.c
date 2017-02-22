@@ -101,6 +101,11 @@ static struct iommu_domain *paintbox_iommu_domain_alloc(unsigned type)
 	if (!pb_domain)
 		return NULL;
 
+	pb_domain->domain.type = type;
+	pb_domain->domain.ops = paintbox_bus_type.iommu_ops;
+	pb_domain->domain.pgsize_bitmap =
+			paintbox_bus_type.iommu_ops->pgsize_bitmap;
+
 	ret = iommu_get_dma_cookie(&pb_domain->domain);
 	if (ret < 0) {
 		kfree(pb_domain);
@@ -289,13 +294,28 @@ static void paintbox_iommu_remove_device(struct device *dev)
 static struct iommu_group *paintbox_iommu_device_group(struct device *dev)
 {
 	struct paintbox_iommu_data *iommu_data = to_iommu_data(dev);
+	struct iommu_domain *domain;
 	struct iommu_group *group;
+	int ret;
 
 	group = generic_device_group(dev);
-	if (IS_ERR(group))
+	if (IS_ERR_OR_NULL(group))
 		return group;
 
 	iommu_group_set_iommudata(group, iommu_data, NULL);
+
+	domain = paintbox_iommu_domain_alloc(IOMMU_DOMAIN_DMA);
+	if (IS_ERR_OR_NULL(domain)) {
+		iommu_group_put(group);
+		return ERR_CAST(domain);
+	}
+
+	ret = iommu_attach_group(domain, group);
+	if (ret < 0) {
+		iommu_group_put(group);
+		paintbox_iommu_domain_free(domain);
+		return ERR_PTR(ret);
+	}
 
 	return group;
 }

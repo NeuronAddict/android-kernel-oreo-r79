@@ -19,6 +19,7 @@
 #include <linux/err.h>
 #include <linux/interrupt.h>
 #include <linux/kernel.h>
+#include <linux/ktime.h>
 #include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/seq_file.h>
@@ -402,7 +403,7 @@ int allocate_stp_ioctl(struct paintbox_data *pb,
 	list_add_tail(&stp->session_entry, &session->stp_list);
 
 #ifndef CONFIG_PAINTBOX_FPGA_SUPPORT
-	ipu_pm_stp_enable(pb, stp);
+	paintbox_pm_stp_enable(pb, stp);
 #endif
 
 #ifndef CONFIG_PAINTBOX_V1
@@ -486,7 +487,7 @@ void release_stp(struct paintbox_data *pb, struct paintbox_session *session,
 	 */
 
 #ifndef CONFIG_PAINTBOX_FPGA_SUPPORT
-	ipu_pm_stp_disable(pb, stp);
+	paintbox_pm_stp_disable(pb, stp);
 #endif
 
 	/* Remove the processor from the session. */
@@ -907,8 +908,6 @@ int bind_stp_interrupt_ioctl(struct paintbox_data *pb,
 
 	ret = bind_stp_interrupt(pb, session, stp, req.interrupt_id);
 
-	init_waiters(pb, stp->irq);
-
 	mutex_unlock(&pb->lock);
 
 	return ret;
@@ -944,7 +943,8 @@ int unbind_stp_interrupt_ioctl(struct paintbox_data *pb,
 	return 0;
 }
 
-irqreturn_t paintbox_stp_interrupt(struct paintbox_data *pb, uint64_t stp_mask)
+irqreturn_t paintbox_stp_interrupt(struct paintbox_data *pb, uint64_t stp_mask,
+		ktime_t timestamp)
 {
 	unsigned int stp_index;
 
@@ -952,7 +952,7 @@ irqreturn_t paintbox_stp_interrupt(struct paintbox_data *pb, uint64_t stp_mask)
 			stp_index++, stp_mask >>= 1) {
 		struct paintbox_stp *stp;
 		uint32_t ctrl;
-		int int_code;
+		uint16_t int_code;
 
 		if (!(stp_mask & 0x01))
 			continue;
@@ -969,7 +969,7 @@ irqreturn_t paintbox_stp_interrupt(struct paintbox_data *pb, uint64_t stp_mask)
 			continue;
 		}
 
-		int_code = (int)((readq(pb->stp.reg_base + STP_STAT) &
+		int_code = (uint16_t)((readq(pb->stp.reg_base + STP_STAT) &
 				STP_STAT_INT_CODE_MASK) >>
 				STP_STAT_INT_CODE_SHIFT);
 
@@ -977,7 +977,8 @@ irqreturn_t paintbox_stp_interrupt(struct paintbox_data *pb, uint64_t stp_mask)
 
 		stp->interrupt_count++;
 
-		signal_waiters(pb, stp->irq, int_code);
+		paintbox_irq_waiter_signal(pb, stp->irq, timestamp, int_code,
+				0 /* error */);
 
 		spin_unlock(&pb->stp.lock);
 	}

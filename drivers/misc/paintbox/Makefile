@@ -3,6 +3,7 @@
 #
 
 obj-$(CONFIG_PAINTBOX)				+= paintbox.o
+obj-$(CONFIG_PAINTBOX)				+= paintbox-bif.o
 obj-$(CONFIG_PAINTBOX)				+= paintbox-debug.o
 obj-$(CONFIG_PAINTBOX)				+= paintbox-dma.o
 obj-$(CONFIG_PAINTBOX)				+= paintbox-dma-common.o

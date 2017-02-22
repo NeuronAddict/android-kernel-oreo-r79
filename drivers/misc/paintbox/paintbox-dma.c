@@ -115,7 +115,8 @@ static void drain_queue(struct paintbox_data *pb,
 /* The caller to this function must hold pb->dma.dma_lock. */
 static void dma_report_completion(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel,
-		struct paintbox_dma_transfer *transfer, int err)
+		struct paintbox_dma_transfer *transfer, ktime_t timestamp,
+		int err)
 {
 	dev_dbg(&pb->pdev->dev, "dma channel%u: transfer %p completed err %d\n",
 			channel->channel_id, transfer, err);
@@ -126,7 +127,8 @@ static void dma_report_completion(struct paintbox_data *pb,
 		channel->completed_count++;
 		channel->stats.reported_completions++;
 
-		signal_waiters(pb, channel->irq, err);
+		paintbox_irq_waiter_signal(pb, channel->irq, timestamp,
+				0 /* data */, err);
 	} else {
 		list_add_tail(&transfer->entry, &pb->dma.discard_list);
 		channel->stats.reported_discards++;
@@ -156,8 +158,6 @@ int bind_dma_interrupt_ioctl(struct paintbox_data *pb,
 			req.interrupt_id);
 
 	ret = bind_dma_interrupt(pb, session, channel, req.interrupt_id);
-
-	init_waiters(pb, channel->irq);
 
 	mutex_unlock(&pb->lock);
 
@@ -211,7 +211,7 @@ static void dma_reset_channel_locked(struct paintbox_data *pb,
 		 */
 		writel(0, dma->dma_base + DMA_CHAN_IMR);
 		io_disable_dma_channel_interrupt(pb, channel->channel_id);
-		ipu_pm_disable_dma_channel(pb, channel->channel_id);
+		paintbox_pm_disable_dma_channel(pb, channel);
 		return;
 	}
 
@@ -231,7 +231,7 @@ static void dma_reset_channel_locked(struct paintbox_data *pb,
 		if (!WARN_ON(transfer == NULL)) {
 			list_del(&transfer->entry);
 			dma_report_completion(pb, channel, transfer,
-					-ECANCELED);
+					ktime_get_boottime(), -ECANCELED);
 		}
 	}
 }
@@ -278,7 +278,7 @@ void dma_stop_transfer(struct paintbox_data *pb,
 		 */
 		writel(0, dma->dma_base + DMA_CHAN_IMR);
 		io_disable_dma_channel_interrupt(pb, channel->channel_id);
-		ipu_pm_disable_dma_channel(pb, channel->channel_id);
+		paintbox_pm_disable_dma_channel(pb, channel);
 
 		spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 		return;
@@ -380,7 +380,7 @@ void dma_stop_transfer(struct paintbox_data *pb,
 
 	/* If there are no active transfers then power down the DMA channel. */
 	if (channel->active_count == 0)
-		ipu_pm_disable_dma_channel(pb, channel->channel_id);
+		paintbox_pm_disable_dma_channel(pb, channel);
 
 	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 
@@ -425,7 +425,7 @@ void release_dma_channel(struct paintbox_data *pb,
 
 	/* Make sure the DMA channel is powered down. */
 	if (!WARN_ON(channel->active_count != 0))
-		ipu_pm_disable_dma_channel(pb, channel->channel_id);
+		paintbox_pm_disable_dma_channel(pb, channel);
 
 	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 }
@@ -628,6 +628,9 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 		return ret;
 	}
 
+	if (channel->stats.time_stats_enabled)
+		channel->stats.config_start_time = ktime_get_boottime();
+
 	transfer = kzalloc(sizeof(struct paintbox_dma_transfer), GFP_KERNEL);
 	if (!transfer) {
 		mutex_unlock(&pb->lock);
@@ -684,6 +687,9 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 
 	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 
+	if (channel->stats.time_stats_enabled)
+		channel->stats.config_finish_time = ktime_get_boottime();
+
 	mutex_unlock(&pb->lock);
 
 	return 0;
@@ -738,10 +744,6 @@ int read_dma_transfer_ioctl(struct paintbox_data *pb,
 
 	ret = ipu_dma_release_and_copy_buffer(pb, transfer, req.host_vaddr,
 			req.len_bytes);
-
-	if (channel->stats.time_stats_enabled)
-		channel->stats.last_transfer_time_us = ktime_to_us(ktime_sub(
-				transfer->finish_time, transfer->start_time));
 
 	kfree(transfer);
 
@@ -801,13 +803,13 @@ static void commit_transfer_to_hardware(struct paintbox_data *pb,
 	/* Enable the DMA channel interrupt in the top-level IPU_IMR */
 	io_enable_dma_channel_interrupt(pb, channel->channel_id);
 
+	if (channel->stats.time_stats_enabled)
+		transfer->start_time = ktime_get_boottime();
+
 	/* Write the channel mode register last as this will enqueue the
 	 * transfer into the hardware.
 	 */
 	writel(transfer->chan_mode, dma->dma_base + DMA_CHAN_MODE);
-
-	if (channel->stats.time_stats_enabled)
-		transfer->start_time = ktime_get_boottime();
 
 	LOG_DMA_REGISTERS(pb, channel);
 }
@@ -866,7 +868,7 @@ int start_dma_transfer_ioctl(struct paintbox_data *pb,
 		goto err_exit;
 	}
 
-	ipu_pm_enable_dma_channel(pb, channel_id);
+	paintbox_pm_enable_dma_channel(pb, channel);
 
 	commit_transfer_to_hardware(pb, channel);
 
@@ -952,7 +954,8 @@ static void dma_report_channel_error_locked(struct paintbox_data *pb,
 			struct paintbox_dma_transfer, entry);
 	if (!WARN_ON(transfer == NULL)) {
 		list_del(&transfer->entry);
-		dma_report_completion(pb, channel, transfer, err);
+		dma_report_completion(pb, channel, transfer,
+				ktime_get_boottime(), err);
 	}
 }
 
@@ -1080,12 +1083,16 @@ void dma_set_mipi_error(struct paintbox_data *pb,
  */
 void paintbox_dma_eof_interrupt(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel,
-		struct paintbox_dma_transfer *transfer)
+		struct paintbox_dma_transfer *transfer, ktime_t timestamp)
 {
 	struct paintbox_dma_transfer *next_transfer;
 	int err = transfer->error;
 
 	channel->stats.eof_interrupts++;
+
+	if (channel->stats.time_stats_enabled)
+		channel->stats.last_transfer_time_us = ktime_to_us(ktime_sub(
+				timestamp, transfer->start_time));
 
 	/* If there was a stop request then clear it. */
 	if (channel->stop_request) {
@@ -1100,7 +1107,7 @@ void paintbox_dma_eof_interrupt(struct paintbox_data *pb,
 	dev_dbg(&pb->pdev->dev, "dma channel%u EOF err %d\n",
 			channel->channel_id, err);
 
-	dma_report_completion(pb, channel, transfer, err);
+	dma_report_completion(pb, channel, transfer, timestamp, err);
 
 	/* If there was an error or there are no pending transfers then return
 	 * now.
@@ -1126,7 +1133,7 @@ void paintbox_dma_eof_interrupt(struct paintbox_data *pb,
  */
 void paintbox_dma_va_interrupt(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel,
-		struct paintbox_dma_transfer *transfer)
+		struct paintbox_dma_transfer *transfer, ktime_t timestamp)
 {
 	channel->stats.va_interrupts++;
 
@@ -1148,7 +1155,7 @@ void paintbox_dma_va_interrupt(struct paintbox_data *pb,
 		return;
 	}
 
-	dma_report_completion(pb, channel, transfer, -EIO);
+	dma_report_completion(pb, channel, transfer, timestamp, -EIO);
 
 	/* TODO(ahampson):  This will need to be escalated to a full IPU reset
 	 * once that logic is implemented.  A DMA reset will get the DMA block
@@ -1174,15 +1181,12 @@ static inline struct paintbox_dma_transfer *pop_active_transfer(
 	list_del(&transfer->entry);
 	channel->active_count--;
 
-	if (channel->stats.time_stats_enabled)
-		transfer->finish_time = ktime_get_boottime();
-
 	return transfer;
 }
 
 /* This function must be called in an interrupt context */
 irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
-		uint32_t channel_mask)
+		uint32_t channel_mask, ktime_t timestamp)
 {
 	unsigned int channel_id;
 
@@ -1226,10 +1230,10 @@ irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 
 			if (status & DMA_CHAN_INT_VA_ERR)
 				paintbox_dma_va_interrupt(pb, channel,
-						transfer);
+						transfer, timestamp);
 			else if (status & DMA_CHAN_INT_EOF)
 				paintbox_dma_eof_interrupt(pb, channel,
-						transfer);
+						transfer, timestamp);
 		} else {
 			dev_warn(&pb->pdev->dev,
 					"%s: channel%u no active transfer ISR "
@@ -1251,10 +1255,10 @@ irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 			if (transfer) {
 				if (overflow_status & DMA_CHAN_INT_VA_ERR)
 					paintbox_dma_va_interrupt(pb, channel,
-							transfer);
+							transfer, timestamp);
 				else if (overflow_status & DMA_CHAN_INT_EOF)
 					paintbox_dma_eof_interrupt(pb, channel,
-							transfer);
+							transfer, timestamp);
 			} else {
 				dev_warn(&pb->pdev->dev,
 						"%s: channel%u no active "
@@ -1269,7 +1273,7 @@ irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 		 * channel.
 		 */
 		if (channel->active_count == 0)
-			ipu_pm_disable_dma_channel(pb, channel->channel_id);
+			paintbox_pm_disable_dma_channel(pb, channel);
 
 		spin_unlock(&pb->dma.dma_lock);
 	}

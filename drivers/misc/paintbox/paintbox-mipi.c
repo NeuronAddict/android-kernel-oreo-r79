@@ -16,8 +16,10 @@
 #include <linux/delay.h>
 #include <linux/interrupt.h>
 #include <linux/kernel.h>
+#include <linux/ktime.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
+#include <linux/timekeeping.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
 #include <linux/workqueue.h>
@@ -1057,13 +1059,6 @@ static void reset_mipi_stream(struct paintbox_data *pb,
 			"input" : "output", stream->stream_id);
 }
 
-/* The caller to this function must hold pb->io_ipu.mipi_lock. */
-void mipi_report_completion(struct paintbox_data *pb,
-		struct paintbox_mipi_stream *stream, int err)
-{
-	signal_waiters(pb, stream->irq, err);
-}
-
 /* The caller to this function must hold pb->lock. */
 void mipi_request_cleanup(struct paintbox_data *pb,
 		struct paintbox_mipi_stream *stream)
@@ -1103,7 +1098,8 @@ void mipi_request_cleanup(struct paintbox_data *pb,
 		writel(ctrl, pb->io_ipu.ipu_base + stream->ctrl_offset);
 	}
 
-	mipi_report_completion(pb, stream, -ECANCELED);
+	paintbox_irq_waiter_signal(pb, stream->irq, ktime_get_boottime(), 0,
+			-ECANCELED);
 
 	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
 
@@ -1278,8 +1274,6 @@ int bind_mipi_interrupt_ioctl(struct paintbox_data *pb,
 	ret = bind_mipi_interrupt(pb, session, stream, req.interrupt_id,
 			is_input);
 
-	init_waiters(pb, stream->irq);
-
 	dev_dbg(&pb->pdev->dev, "mipi %s stream%u bind irq%u\n",
 			stream->is_input ? "input" : "output", req.stream_id,
 			req.interrupt_id);
@@ -1336,14 +1330,15 @@ void mipi_input_handle_dma_completed(struct paintbox_data *pb,
 
 /* This function must be called in an interrupt context */
 static void paintbox_mipi_input_sof_interrupt(struct paintbox_data *pb,
-		struct paintbox_mipi_stream *stream)
+		struct paintbox_mipi_stream *stream, ktime_t timestamp)
 {
 	stream->input.frame_in_progress = true;
 
 	dev_dbg(&pb->pdev->dev, "mipi input stream%u SOF interrupt\n",
 			stream->stream_id);
 
-	mipi_report_completion(pb, stream, 0);
+	paintbox_irq_waiter_signal(pb, stream->irq, timestamp,
+			stream->input.last_frame_number, 0 /* error */);
 
 	/* If the stream is free running then exit now and skip the frame count
 	 * and disable logic.
@@ -1372,11 +1367,12 @@ static void paintbox_mipi_input_sof_interrupt(struct paintbox_data *pb,
 
 /* This function must be called in an interrupt context */
 static void paintbox_mipi_output_eof_interrupt(struct paintbox_data *pb,
-		struct paintbox_mipi_stream *stream)
+		struct paintbox_mipi_stream *stream, ktime_t timestamp)
 {
 	uint32_t ctrl_clear_mask = MPO_STRM_EOF_ISR;
 
-	mipi_report_completion(pb, stream, 0);
+	paintbox_irq_waiter_signal(pb, stream->irq, timestamp, 0 /* payload */,
+			0 /* error */);
 
 	/* If the stream is free running then exit now and skip the frame count
 	 * and disable logic.
@@ -1412,7 +1408,7 @@ static void paintbox_mipi_output_eof_interrupt(struct paintbox_data *pb,
 
 /* This function must be called in an interrupt context */
 static void paintbox_mipi_input_ovf_interrupt(struct paintbox_data *pb,
-		struct paintbox_mipi_stream *stream)
+		struct paintbox_mipi_stream *stream, ktime_t timestamp)
 {
 	uint32_t ctrl = readl(pb->io_ipu.ipu_base + MPI_STRM_CTRL);
 	if (ctrl & MPI_STRM_CLEANUP) {
@@ -1443,7 +1439,8 @@ static void paintbox_mipi_input_ovf_interrupt(struct paintbox_data *pb,
 				"completed)\n", stream->stream_id);
 	}
 
-	mipi_report_completion(pb, stream, -EIO);
+	paintbox_irq_waiter_signal(pb, stream->irq, timestamp,
+			stream->input.last_frame_number, -EIO);
 
 	/* Set the MIPI error for the active transfer so the error can
 	 * be reported on the DMA EOF interrupt.
@@ -1453,7 +1450,7 @@ static void paintbox_mipi_input_ovf_interrupt(struct paintbox_data *pb,
 
 /* This function must be called in an interrupt context */
 static void paintbox_mipi_input_stream_interrupt(struct paintbox_data *pb,
-		struct paintbox_mipi_stream *stream)
+		struct paintbox_mipi_stream *stream, ktime_t timestamp)
 {
 	uint32_t ctrl;
 
@@ -1478,7 +1475,7 @@ static void paintbox_mipi_input_stream_interrupt(struct paintbox_data *pb,
 
 		stream->input.stats.sof_interrupts++;
 
-		paintbox_mipi_input_sof_interrupt(pb, stream);
+		paintbox_mipi_input_sof_interrupt(pb, stream, timestamp);
 	}
 
 	if (stream->input.missed_sof_interrupt) {
@@ -1490,7 +1487,7 @@ static void paintbox_mipi_input_stream_interrupt(struct paintbox_data *pb,
 		 */
 		stream->input.last_frame_number = MIPI_INVALID_FRAME_NUMBER;
 
-		paintbox_mipi_input_sof_interrupt(pb, stream);
+		paintbox_mipi_input_sof_interrupt(pb, stream, timestamp);
 	}
 
 	if (ctrl & MPI_STRM_OVF_ISR) {
@@ -1498,14 +1495,14 @@ static void paintbox_mipi_input_stream_interrupt(struct paintbox_data *pb,
 
 		stream->input.stats.ovf_interrupts++;
 
-		paintbox_mipi_input_ovf_interrupt(pb, stream);
+		paintbox_mipi_input_ovf_interrupt(pb, stream, timestamp);
 	}
 
 	if (stream->input.missed_ovf_interrupt) {
 		stream->input.missed_ovf_interrupt = false;
 		stream->input.stats.missed_ovf_interrupts++;
 
-		paintbox_mipi_input_ovf_interrupt(pb, stream);
+		paintbox_mipi_input_ovf_interrupt(pb, stream, timestamp);
 	}
 
 	spin_unlock(&pb->io_ipu.mipi_lock);
@@ -1513,7 +1510,7 @@ static void paintbox_mipi_input_stream_interrupt(struct paintbox_data *pb,
 
 /* This function must be called in an interrupt context */
 irqreturn_t paintbox_mipi_input_interrupt(struct paintbox_data *pb,
-		uint32_t interface_mask)
+		uint32_t interface_mask, ktime_t timestamp)
 {
 	unsigned int interface_id, stream_index;
 
@@ -1530,7 +1527,8 @@ irqreturn_t paintbox_mipi_input_interrupt(struct paintbox_data *pb,
 		for (stream_index = 0; stream_index < interface->num_streams;
 				stream_index++)
 			paintbox_mipi_input_stream_interrupt(pb,
-					interface->streams[stream_index]);
+					interface->streams[stream_index],
+					timestamp);
 	}
 
 	return IRQ_HANDLED;
@@ -1538,7 +1536,7 @@ irqreturn_t paintbox_mipi_input_interrupt(struct paintbox_data *pb,
 
 /* This function must be called in an interrupt context */
 static void paintbox_mipi_output_stream_interrupt(struct paintbox_data *pb,
-		struct paintbox_mipi_stream *stream)
+		struct paintbox_mipi_stream *stream, ktime_t timestamp)
 {
 	uint32_t ctrl;
 
@@ -1551,14 +1549,14 @@ static void paintbox_mipi_output_stream_interrupt(struct paintbox_data *pb,
 		stream->output.stats.eof_interrupts++;
 
 		/* The interrupt is acknowledged in the EOF interrupt handler */
-		paintbox_mipi_output_eof_interrupt(pb, stream);
+		paintbox_mipi_output_eof_interrupt(pb, stream, timestamp);
 	}
 
 	if (stream->output.missed_eof_interrupt) {
 		stream->output.missed_eof_interrupt = false;
 		stream->output.stats.missed_eof_interrupts++;
 
-		paintbox_mipi_output_eof_interrupt(pb, stream);
+		paintbox_mipi_output_eof_interrupt(pb, stream, timestamp);
 	}
 
 	spin_unlock(&pb->io_ipu.mipi_lock);
@@ -1566,7 +1564,7 @@ static void paintbox_mipi_output_stream_interrupt(struct paintbox_data *pb,
 
 /* This function must be called in an interrupt context */
 irqreturn_t paintbox_mipi_output_interrupt(struct paintbox_data *pb,
-		uint32_t interface_mask)
+		uint32_t interface_mask, ktime_t timestamp)
 {
 	unsigned int interface_id, stream_index;
 
@@ -1583,7 +1581,8 @@ irqreturn_t paintbox_mipi_output_interrupt(struct paintbox_data *pb,
 		for (stream_index = 0; stream_index < interface->num_streams;
 				stream_index++)
 			paintbox_mipi_output_stream_interrupt(pb,
-					interface->streams[stream_index]);
+					interface->streams[stream_index],
+					timestamp);
 	}
 
 	return IRQ_HANDLED;
