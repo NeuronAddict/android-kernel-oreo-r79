@@ -392,7 +392,7 @@ static int handle_vm(int vm)
 				& MNH_VALID_VM) {
 			vm = CSR_IN(PCIE_RX_MSG0_PYLD_REG0);
 			inc.vm = vm;
-			dev_err(pcie_ep_dev->dev, "Vendor msg %x rcvd\n", vm);
+			dev_dbg(pcie_ep_dev->dev, "Vendor msg %x rcvd\n", vm);
 			irq_callback(&inc);
 			CSR_OUTf(PCIE_RX_VMSG0_ID, PCIE_RADM_MSG0_REQ_ID,
 				MNH_CLEAR_VM);
@@ -402,7 +402,7 @@ static int handle_vm(int vm)
 				& MNH_VALID_VM) {
 			vm = CSR_IN(PCIE_RX_MSG0_PYLD_REG1);
 			inc.vm = vm;
-			dev_err(pcie_ep_dev->dev, "Vendor msg %x rcvd\n", vm);
+			dev_dbg(pcie_ep_dev->dev, "Vendor msg %x rcvd\n", vm);
 			irq_callback(&inc);
 			CSR_OUTf(PCIE_RX_VMSG1_ID, PCIE_RADM_MSG1_REQ_ID,
 				MNH_CLEAR_VM);
@@ -419,7 +419,7 @@ static void dma_rx_handler(void)
 	if (dma_callback != NULL) {
 		data1 = CSR_INx(PCIE_GP, 2);
 		data = data1;
-		dev_err(pcie_ep_dev->dev, "DMA msg %x rcvd\n", data);
+		dev_dbg(pcie_ep_dev->dev, "DMA msg %x rcvd\n", data);
 		if (data & DMA_READ_DONE_MASK) {
 			dma_event.type = MNH_DMA_READ;
 			dma_event.status = MNH_DMA_DONE;
@@ -488,7 +488,7 @@ static void msi_rx_worker(struct work_struct *work)
 
 	apirq = CSR_IN(PCIE_SW_INTR_TRIGG);
 	while (apirq != 0) {
-		dev_err(pcie_ep_dev->dev, "AP IRQ %x received\n", apirq);
+		dev_dbg(pcie_ep_dev->dev, "AP IRQ %x received\n", apirq);
 
 		if (apirq & (0x1 << MSG_SEND_I)) {
 			if (irq_callback != NULL) {
@@ -540,39 +540,39 @@ static irqreturn_t pcie_handle_cluster_irq(int irq, void *dev_id)
 		pcieirq = CSR_IN(PCIE_SS_INTR_STS);
 		if (pcieirq != 0) {
 			if (pcieirq & MNH_PCIE_MSI_SENT) {
-				dev_err(pcie_ep_dev->dev, "MSI Sent\n");
+				dev_dbg(pcie_ep_dev->dev, "MSI Sent\n");
 				release_link();
 				CSR_OUT(PCIE_SS_INTR_STS,
 					(MNH_PCIE_MSI_SENT));
 			}
 			if (pcieirq & MNH_PCIE_VMSG_SENT) {
-				dev_err(pcie_ep_dev->dev, "VM Sent\n");
+				dev_dbg(pcie_ep_dev->dev, "VM Sent\n");
 				release_link();
 				CSR_OUT(PCIE_SS_INTR_STS,
 					(MNH_PCIE_VMSG_SENT));
 			}
 			if ((pcieirq & MNH_PCIE_VMSG1_RXD)
 				& (irq_callback != NULL)) {
-				dev_err(pcie_ep_dev->dev, "VM1 received\n");
+				dev_dbg(pcie_ep_dev->dev, "VM1 received\n");
 				schedule_work(&vm1_work);
 				CSR_OUT(PCIE_SS_INTR_STS,
 					(MNH_PCIE_VMSG1_RXD));
 			}
 			if ((pcieirq & MNH_PCIE_VMSG0_RXD)
 				& (irq_callback != NULL)) {
-				dev_err(pcie_ep_dev->dev, "VM2 received\n");
+				dev_dbg(pcie_ep_dev->dev, "VM2 received\n");
 				schedule_work(&vm0_work);
 				CSR_OUT(PCIE_SS_INTR_STS,
 					(MNH_PCIE_VMSG0_RXD));
 			}
 			if (pcieirq & MNH_PCIE_LINK_EQ_REQ_INT) {
-				dev_err(pcie_ep_dev->dev,
+				dev_dbg(pcie_ep_dev->dev,
 				"MNH_PCIE_LINK_EQ_REQ_INT received\n");
 				CSR_OUT(PCIE_SS_INTR_STS,
 					(MNH_PCIE_LINK_EQ_REQ_INT));
 			}
 			if (pcieirq & MNH_PCIE_LINK_REQ_RST_NOT) {
-				dev_err(pcie_ep_dev->dev,
+				dev_dbg(pcie_ep_dev->dev,
 				"MNH_PCIE_LINK_REQ_RST_NOT received\n");
 				CSR_OUT(PCIE_SS_INTR_STS,
 					(MNH_PCIE_LINK_REQ_RST_NOT));
@@ -583,43 +583,43 @@ static irqreturn_t pcie_handle_cluster_irq(int irq, void *dev_id)
 					(MNH_PCIE_LTR_SENT));
 				}
 			if (pcieirq & MNH_PCIE_COR_ERR) {
-				dev_err(pcie_ep_dev->dev,
+				dev_dbg(pcie_ep_dev->dev,
 				"MNH_PCIE_COR_ERR received\n");
 				CSR_OUT(PCIE_SS_INTR_STS,
 					(MNH_PCIE_COR_ERR));
 			}
 			if (pcieirq & MNH_PCIE_NONFATAL_ERR) {
-				dev_err(pcie_ep_dev->dev,
+				dev_dbg(pcie_ep_dev->dev,
 				"MNH_PCIE_NONFATAL_ERR received\n");
 				CSR_OUT(PCIE_SS_INTR_STS,
 					(MNH_PCIE_NONFATAL_ERR));
 			}
 			if (pcieirq & MNH_PCIE_FATAL_ERR) {
-				dev_err(pcie_ep_dev->dev,
+				dev_dbg(pcie_ep_dev->dev,
 				"MNH_PCIE_FATAL_ERR received\n");
 				CSR_OUT(PCIE_SS_INTR_STS,
 					(MNH_PCIE_FATAL_ERR));
 				}
 			if (pcieirq & MNH_PCIE_RADM_MSG_UNLOCK) {
-				dev_err(pcie_ep_dev->dev,
+				dev_dbg(pcie_ep_dev->dev,
 				"MNH_PCIE_RADM_MSG_UNLOCK received\n");
 				CSR_OUT(PCIE_SS_INTR_STS,
 					(MNH_PCIE_RADM_MSG_UNLOCK));
 			}
 			if (pcieirq & MNH_PCIE_PM_TURNOFF) {
-				dev_err(pcie_ep_dev->dev,
+				dev_dbg(pcie_ep_dev->dev,
 				"MNH_PCIE_PM_TURNOFF received\n");
 				CSR_OUT(PCIE_SS_INTR_STS,
 					(MNH_PCIE_PM_TURNOFF));
 			}
 			if (pcieirq & MNH_PCIE_RADM_CPL_TIMEOUT) {
-				dev_err(pcie_ep_dev->dev,
+				dev_dbg(pcie_ep_dev->dev,
 				"MNH_PCIE_RADM_CPL_TIMEOUT received\n");
 				CSR_OUT(PCIE_SS_INTR_STS,
 					(MNH_PCIE_RADM_CPL_TIMEOUT));
 			}
 			if (pcieirq & MNH_PCIE_TRGT_CPL_TIMEOUT) {
-				dev_err(pcie_ep_dev->dev,
+				dev_dbg(pcie_ep_dev->dev,
 				"MNH_PCIE_TRGT_CPL_TIMEOUT received\n");
 				CSR_OUT(PCIE_SS_INTR_STS,
 					(MNH_PCIE_TRGT_CPL_TIMEOUT));
@@ -653,7 +653,7 @@ static int pcie_read_data(uint8_t *buff, uint32_t size, uint64_t adr)
 	uint64_t addr = (uint64_t)pcie_ep_dev->outb_mem + adr;
 
 	memcpy(buff, (char *) addr, size);
-	dev_err(pcie_ep_dev->dev, "finished copy\n");
+	dev_dbg(pcie_ep_dev->dev, "finished copy\n");
 	return 0;
 }
 
@@ -663,7 +663,7 @@ static int pcie_write_data(uint8_t *buff, uint32_t size, uint64_t adr)
 	uint64_t addr = (uint64_t)pcie_ep_dev->outb_mem + adr;
 
 	memcpy((char *) addr, buff, size);
-	dev_err(pcie_ep_dev->dev, "finished copy\n");
+	dev_dbg(pcie_ep_dev->dev, "finished copy\n");
 	return 0;
 }
 
@@ -844,7 +844,7 @@ static int pcie_ll_build(struct mnh_sg_entry *src_sg,
 	u = 0;
 	sg_src = src_sg[i];
 	sg_dst = dst_sg[s];
-	dev_err(pcie_ep_dev->dev, "LL checkpoint 2\n");
+	dev_dbg(pcie_ep_dev->dev, "LL checkpoint 2\n");
 	if ((sg_src.paddr == 0x0) || (sg_dst.paddr == 0x0)) {
 		dev_err(pcie_ep_dev->dev, "Input lists invalid\n");
 		return -EINVAL;
@@ -1174,7 +1174,7 @@ static int clear_mem(void)
 int test_callback(struct mnh_pcie_irq *irq)
 {
 	sysfs_irq = *irq;
-	dev_err(pcie_ep_dev->dev, "PCIE MSI IRQ %x PCIE IRQ %x VM IRQ %x",
+	dev_dbg(pcie_ep_dev->dev, "PCIE MSI IRQ %x PCIE IRQ %x VM IRQ %x",
 		sysfs_irq.msi_irq, sysfs_irq.pcie_irq, sysfs_irq.vm);
 	return 0;
 }
@@ -1182,7 +1182,7 @@ int test_callback(struct mnh_pcie_irq *irq)
 int test_dma_callback(struct mnh_dma_irq *irq)
 {
 	/*TODO do something */
-	dev_err(pcie_ep_dev->dev, "DMA Event channel %x type %x Event %x",
+	dev_dbg(pcie_ep_dev->dev, "DMA Event channel %x type %x Event %x",
 		irq->channel, irq->type, irq->status);
 	return 0;
 }
@@ -1479,7 +1479,7 @@ static ssize_t sysfs_set_lone(struct device *dev,
 		if ((val < 0) || (val > 1))
 			return -EINVAL;
 		enable = val;
-		dev_err(pcie_ep_dev->dev, "L1 state is %lx\n", val);
+		dev_dbg(pcie_ep_dev->dev, "L1 state is %lx\n", val);
 	} else {
 		return -EINVAL;
 	}
@@ -1492,7 +1492,7 @@ static ssize_t sysfs_set_lone(struct device *dev,
 		if ((val < 0) || (val > 1))
 			return -EINVAL;
 		pmclock = val;
-		dev_err(pcie_ep_dev->dev, "PM Clock is %lx\n", val);
+		dev_dbg(pcie_ep_dev->dev, "PM Clock is %lx\n", val);
 	} else {
 		return -EINVAL;
 	}
@@ -1720,7 +1720,7 @@ static int mnh_pcie_ep_probe(struct platform_device *pdev)
 {
 	int err;
 
-	dev_err(&pdev->dev, "PCIE endpoint probe start\n");
+	dev_info(&pdev->dev, "PCIE endpoint probe start\n");
 	pcie_ep_dev = kzalloc(sizeof(*pcie_ep_dev), GFP_KERNEL);
 	if (!pcie_ep_dev) {
 		dev_err(&pdev->dev, "Could not allocated pcie_ep_dev\n");
