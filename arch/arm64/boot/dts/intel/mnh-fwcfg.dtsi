@@ -85,18 +85,6 @@ firmware_config {
 	};
 	*/
 
-	/* scu configuration for power optimization */
-
-	/* scu_config {
-		compatible = "intel,mnh_cfg_scu";
-		rstc = <0x0FBF1C04>;
-		ccu_clk_ctl = <0xA1FF5C43>;
-		peripheral_clk_ctl = <0x0000E048>;
-		mem_pwr_mgmnt = <0x0200c500>;
-		global_wake_en_set0 = <0x0FFE2000>;
-		global_wake_en_set1 = <0x00020000>;
-	};
-	*/
 	/* dtnode and dtprop are where to put the value
 	extracted from the efuse data */
 	pll_valid {
@@ -243,5 +231,18 @@ firmware_config {
 			bit_high= <31>;
 			bit_low = <0>;
 	};
-};
 
+	/* scu configuration for power optimization */
+	scu_config {
+		compatible = "intel,mnh_cfg_scu";
+		/* don't put IPU related things in reset or clk gated mode
+		   also e-fuse uses timers so can't put those in reset,
+		   at least until efuse is done */
+		rstc = <0x0F311000>;
+		ccu_clk_ctl = <0xA1FF5C63>;
+		peripheral_clk_ctl = <0x8000e0ce>;
+		mem_pwr_mgmnt = <0x0200c500>;
+		global_wake_en_set0 = <0x0FFE2000>;
+		global_wake_en_set1 = <0x00020002>;
+	};
+};

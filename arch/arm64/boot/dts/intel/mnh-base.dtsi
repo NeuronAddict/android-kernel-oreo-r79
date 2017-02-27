@@ -147,6 +147,7 @@
 		clock-frequency = <100000>;
 		i2c-sda-hold-time-ns = <500>;
 		clocks = <&soc_refclk100mhz>;
+		status = "disabled";
 	};
 
 	i2c1@04046000 {
@@ -158,11 +159,7 @@
 		clock-frequency = <100000>;
 		i2c-sda-hold-time-ns = <500>;
 		clocks = <&soc_refclk100mhz>;
-
-		ds1341: rtc@D0 {
-			compatible = "rtc-ds1307";
-			reg = <0x68>;
- 		};
+		status = "disabled";
 	};
 
 	i2c2@04047000 {
@@ -174,6 +171,7 @@
 		clock-frequency = <100000>;
 		i2c-sda-hold-time-ns = <500>;
 		clocks = <&soc_refclk100mhz>;
+		status = "disabled";
 	};
 
 	i2c3@04048000 {
@@ -185,6 +183,7 @@
 		clock-frequency = <100000>;
 		i2c-sda-hold-time-ns = <500>;
 		clocks = <&soc_refclk100mhz>;
+		status = "disabled";
 	};
 
 	soc_uart0: uart@04049000 {
