@@ -36,6 +36,7 @@ config ION_TEGRA
 config ION_EASEL
 	tristate "Ion for Easel"
 	depends on ARCH_MNH && ION
+	select ION_OF
 	help
 	 Choose this option if you wish to use ion on Easel
 
