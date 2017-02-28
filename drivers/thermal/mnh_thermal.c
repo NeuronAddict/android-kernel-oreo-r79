@@ -219,8 +219,7 @@ static int calculate_temp(int code, int slope, int offset)
 	int temp_ms;
 
 
-	mnh_debug("temp code:%d, slope:%d, offset:%d",
-		code, slope, offset);
+	mnh_debug("pvt data:%d\n", code);
 
 	/* Make sure code is 10bit */
 	code = code & 0x3FF;
@@ -244,10 +243,10 @@ static int calculate_temp(int code, int slope, int offset)
 	 */
 	error_ = n01234_/ RES_SLOPE_DIVIDER * slope * API_RES_SLOPE
 		+ (long)offset * RES_OFFSET_E15_MULTIPLIER * API_RES_OFFSET;
+	pr_debug("temp err:%ld, n01234_:%ld\n", error_, n01234_);
 
 	final_temp_ = n01234_ - error_;
 	temp_ms = (final_temp_ + N12_ROUNDING_NUM) / N12_DIVIDER;
-	mnh_debug("temp n01234:%ld, err:%ld\n", n01234_, error_);
 
 	return temp_ms;
 }
@@ -298,7 +297,7 @@ static int mnh_thermal_get_data(void *data, int *data_out)
 		op_mode = sensor->tzd->tzp->op_mode;
 		psample = mnh_op_mode_table[op_mode].psample;
 		vsample = mnh_op_mode_table[op_mode].vsample;
-		mnh_debug("pvt opmode:%d, vsample:%d, psample:%d\n",
+		mnh_debug("pvt op:%d, vs:%d, ps:%d\n",
 			op_mode, vsample, psample);
 
 		/* Program VSAMPLE/PSAMPLE for temperature evaulation */
@@ -478,6 +477,35 @@ static int mnh_thermal_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static int mnh_thermal_resume(struct platform_device *pdev)
+{
+	struct mnh_thermal_device *mnh_dev = platform_get_drvdata(pdev);
+
+	/* Enable 1.2MHz clock to PVT sensor and wait for 2usecs
+	 * until the clock is ticking
+	 */
+	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, PVT_CLKEN, 1);
+	udelay(2);
+
+	mnh_dev->init_done = 1;
+
+	dev_info(&pdev->dev, "resume\n");
+
+	return 0;
+}
+
+static int mnh_thermal_suspend(struct platform_device *pdev, pm_message_t state)
+{
+	struct mnh_thermal_device *mnh_dev = platform_get_drvdata(pdev);
+
+	mnh_dev->init_done = 0;
+
+	/* Turn off PVT clock */
+	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, PVT_CLKEN, 0);
+	dev_info(&pdev->dev, "suspend\n");
+	return 0;
+}
+
 /*
  * of_device_id structure
  */
@@ -494,6 +522,8 @@ MODULE_DEVICE_TABLE(of, mnh_thermal_of_match);
 static struct platform_driver mnh_thermal_driver = {
 	.probe = mnh_thermal_probe,
 	.remove = mnh_thermal_remove,
+	.resume = mnh_thermal_resume,
+	.suspend = mnh_thermal_suspend,
 	.driver = {
 		.name = "intel, mnh_thermal",
 		.owner = THIS_MODULE,

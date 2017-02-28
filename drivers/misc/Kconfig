@@ -817,6 +817,13 @@ config GOOGLE_EASEL_AP
 	 Say 'y' if this kernel is for the AP/Android side of the link.	 Say
 	 'n' if this kernel is for the Easel/MonetteHill side of the link.
 
+config MNH_PM_DEBUG
+	bool "MNH_PM_DEBUG"
+	depends on ARCH_MNH
+	default n
+	---help---
+	This enables mnh pm debug features
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
