@@ -1729,6 +1729,7 @@ static int mnh_pcie_ep_probe(struct platform_device *pdev)
 	pcie_ep_dev->dev = &pdev->dev;
 	pcie_ep_dev->pendingmsi = 0;
 	pcie_ep_dev->msimode = 0;
+	pcie_ep_dev->rb_base = 0;
 	strcpy(pcie_ep_dev->name, DEVICE_NAME);
 	irq_callback = NULL;
 	dma_callback = NULL;
@@ -1803,6 +1804,30 @@ static int mnh_pcie_ep_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static int mnh_pcie_ep_suspend(struct platform_device *pdev, pm_message_t state)
+{
+	cancel_delayed_work_sync(&msi_work);
+	pcie_ep_dev->rb_base = pcie_cluster_read(MNH_PCIE_GP_1);
+
+	return 0;
+}
+
+static int mnh_pcie_ep_resume(struct platform_device *pdev)
+{
+	/*enable L1 entry */
+
+	PCIECAP_OUTf(PCIE_CAP_LINK_CONTROL_LINK_STATUS,
+			PCIE_CAP_ACTIVE_STATE_LINK_PM_CONTROL, 0x2);
+
+	/* Enable interupts */
+	CSR_OUT(PCIE_SS_INTR_EN, PCIE_SS_IRQ_MASK);
+	/* Clear all interrupts */
+	CSR_OUT(PCIE_SW_INTR_TRIGG, MNH_PCIE_SW_IRQ_CLEAR);
+	CSR_OUTx(PCIE_GP, 1, pcie_ep_dev->rb_base);
+
+	return 0;
+}
+
 /*
  * of_device_id structure
  */
@@ -1811,6 +1836,7 @@ static const struct of_device_id mnh_pcie_ep[] = {
 	{ }
 };
 
+
 MODULE_DEVICE_TABLE(of, mnh_pcie_ep);
 /*
  * Platform driver structure
@@ -1818,6 +1844,8 @@ MODULE_DEVICE_TABLE(of, mnh_pcie_ep);
 static struct platform_driver __refdata mnh_pcie_ep_pdrv = {
 	.remove = mnh_pcie_ep_remove,
 	.probe  = mnh_pcie_ep_probe,
+	.resume = mnh_pcie_ep_resume,
+	.suspend = mnh_pcie_ep_suspend,
 	.driver   = {
 		.name   = "snps, dw_pcie_ep",
 		.owner = THIS_MODULE,
