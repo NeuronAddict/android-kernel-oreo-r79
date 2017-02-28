@@ -75,6 +75,22 @@ int mnh_cpu_freq_change(int index);
 int mnh_ipu_freq_change(int index);
 
 /**
+ * CPU and IPU SYS200 clock control driver
+ * Return: 0 on success, an error code otherwise.
+ *
+ * CPU and IPU clock is derived from sys200 clk instead of separate plls
+ */
+int mnh_cpu_ipu_sys200_mode(void);
+
+/**
+ * LPDDR clock control driver
+ * Return: 0 on success, an error code otherwise.
+ *
+ * LPDDR clock is derived from sys200 clk instead of separate lpddr clk
+ */
+int mnh_lpddr_sys200_mode(void);
+
+/**
  * LPDDR clock control driver
  * @index: int with frquency table index info.
  * Return: 0 on success, an error code otherwise.
