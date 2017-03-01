@@ -28,6 +28,8 @@
 #include "paintbox-dma.h"
 #include "paintbox-stp.h"
 
+#define SESSION_WAIT_MAX_SLEEP_US 100
+
 struct paintbox_irq_group_waiter {
 	struct list_head session_entry;
 	struct paintbox_irq_group_wait *wait;
@@ -98,25 +100,13 @@ static bool paintbox_irq_group_add_event(
 		entry->triggered = true;
 		memcpy(&entry->event, event, sizeof(struct paintbox_irq_event));
 
-		/* TODO(ahampson):  This could be computed by the HAL based on
-		 * data in the irqs entry array.
-		 */
-		wait->base.interrupt_mask_fired |= 1ULL << irq->interrupt_id;
-
 		if (event->error) {
 			/* The first error in the irq group will be reported
 			 * through errno.  Any additional errors will only be
 			 * reported in the entry array.
 			 */
-			if (waiter->error == 0) {
+			if (waiter->error == 0)
 				waiter->error = event->error;
-				/* TODO(ahampson):  This could be computed by
-				 * the HAL based on data in the irqs entry
-				 * array.
-				 */
-				wait->base.interrupt_id_error =
-						irq->interrupt_id;
-			}
 		}
 
 		if (entry->flags & PB_IRQ_PRIORITY)
@@ -188,11 +178,6 @@ static int paintbox_irq_group_wait_dup_from_user(struct paintbox_data *pb,
 		return -EFAULT;
 	}
 
-	/* TODO(ahampson):  This could be moved completely into the HAL and be
-	 * based on information in the irqs entry array.
-	 */
-	wait->base.interrupt_id_error = -1;  /* invalid interrupt id */
-
 	*out = wait;
 
 	return 0;
@@ -226,7 +211,7 @@ static void release_all_waiters(struct paintbox_data *pb,
 	 */
 	struct paintbox_irq_group_waiter *waiter, *waiter_next;
 
-	if (!irq)
+	if (!irq || !irq->session)
 		return;
 
 	/* waiting threads have priority on getting interrupts (longest waiting
@@ -247,12 +232,6 @@ static void release_all_waiters(struct paintbox_data *pb,
 			continue;
 
 		waiter->error = -EPIPE;
-
-		/* TODO(ahampson):  This could be moved completely into the HAL
-		 * and be based on information in the irqs entry array.
-		 */
-		waiter->wait->base.interrupt_id_error = irq->interrupt_id;
-
 		complete(&waiter->completion);
 	}
 
@@ -585,6 +564,16 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 
 	spin_lock_irqsave(&pb->irq_lock, irq_flags);
 
+	/* It shouldn't be possible to enter this ioctl while a release is
+	 * occuring but check and warn if does happen.
+	 */
+	if (WARN_ON(session->releasing)) {
+		spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
+		mutex_unlock(&pb->lock);
+		kfree(wait);
+		return -EPIPE;
+	}
+
 	/* Check each requested interrupt in the group and make sure that the
 	 * session has access to it and check whether the interrupt has
 	 * already occurred.
@@ -602,16 +591,8 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 			 */
 			entry->event.error = err;
 
-			if (waiter.error == 0) {
+			if (waiter.error == 0)
 				waiter.error = err;
-
-				/* TODO(ahampson):  This should be removed but
-				 * it will first need to be removed from the HAL
-				 * interface.
-				 */
-				wait->base.interrupt_id_error =
-						entry->interrupt_id;
-			}
 
 			/* TODO, I am not sure we necessarily want to break on
 			 * the first error.  It might be better to collect all
@@ -686,6 +667,12 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 
 	/* remove this thread from the waiting thread list */
 	list_del(&waiter.session_entry);
+
+	/* If we are releasing the session or shutting down then notify the
+	 * release/shutdown code that the release is complete.
+	 */
+	if (session->releasing)
+		complete(&session->release_completion);
 
 	spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
 	mutex_unlock(&pb->lock);
@@ -810,6 +797,8 @@ int paintbox_irq_init(struct paintbox_data *pb)
 {
 	unsigned int interrupt_id;
 
+	spin_lock_init(&pb->irq_lock);
+
 	pb->irqs = kzalloc(sizeof(struct paintbox_irq) *
 			pb->io.num_interrupts, GFP_KERNEL);
 	if (!pb->irqs)
@@ -825,4 +814,93 @@ int paintbox_irq_init(struct paintbox_data *pb)
 	}
 
 	return 0;
+}
+
+void paintbox_irq_release_all_waiters(struct paintbox_data *pb)
+{
+	unsigned long irq_flags;
+	unsigned int interrupt_id;
+
+	spin_lock_irqsave(&pb->irq_lock, irq_flags);
+
+	for (interrupt_id = 0; interrupt_id < pb->io.num_interrupts;
+			interrupt_id++)
+		release_all_waiters(pb, &pb->irqs[interrupt_id]);
+
+	spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
+}
+
+/* The caller to this function must hold pb->lock */
+void paintbox_irq_wait_for_release_complete(struct paintbox_data *pb,
+		struct paintbox_session *session)
+{
+	unsigned long timeout, irq_flags;
+
+	timeout = usecs_to_jiffies(SESSION_WAIT_MAX_SLEEP_US);
+
+	spin_lock_irqsave(&pb->irq_lock, irq_flags);
+
+	if (list_empty(&session->wait_list)) {
+		spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
+		return;
+	}
+
+	/* It shouldn't be possible to call release() twice so there should not
+	 * be an in progress release.
+	 */
+	if (WARN_ON(session->releasing)) {
+		spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
+		return;
+	}
+
+	session->releasing = true;
+
+	reinit_completion(&session->release_completion);
+
+	while (!list_empty(&session->wait_list)) {
+		unsigned ret;
+
+		spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
+		mutex_unlock(&pb->lock);
+
+		ret = wait_for_completion_interruptible_timeout(
+				&session->release_completion, timeout);
+
+		mutex_lock(&pb->lock);
+
+		if (ret == 0) {
+			dev_err(&pb->pdev->dev,
+					"%s: timeout waiting for release\n",
+					__func__);
+			return;
+		}
+
+		spin_lock_irqsave(&pb->irq_lock, irq_flags);
+	}
+
+	session->releasing = false;
+
+	spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
+}
+
+void paintbox_irq_remove(struct paintbox_data *pb)
+{
+	unsigned int interrupt_id;
+
+	paintbox_irq_release_all_waiters(pb);
+
+	mutex_lock(&pb->lock);
+
+	for (interrupt_id = 0; interrupt_id < pb->io.num_interrupts;
+			interrupt_id++) {
+		struct paintbox_irq *irq = &pb->irqs[interrupt_id];
+
+		if (irq->session)
+			paintbox_irq_wait_for_release_complete(pb,
+					irq->session);
+	}
+
+	mutex_unlock(&pb->lock);
+
+	kfree(pb->irqs);
 }

@@ -108,10 +108,13 @@ int dma_setup_dram_to_lbp_transfer(struct paintbox_data *pb,
 		return -ERANGE;
 	}
 
-	ret = ipu_dma_attach_buffer(pb, transfer, &config->src.dram,
+	ret = ipu_dma_attach_buffer(pb, channel, transfer, &config->src.dram,
 			DMA_TO_DEVICE);
 	if (ret < 0)
 		return ret;
+
+	if (channel->stats.time_stats_enabled)
+		channel->stats.non_dram_setup_start_time = ktime_get_boottime();
 
 	set_dma_channel_mode(transfer, DMA_CHAN_SRC_DRAM, DMA_CHAN_DST_LBP,
 			config->dst.lbp.gather);
@@ -130,6 +133,10 @@ int dma_setup_dram_to_lbp_transfer(struct paintbox_data *pb,
 		goto err_exit;
 
 	LOG_DMA_DRAM_TO_LBP_TRANSFER(pb, channel, transfer, config);
+
+	if (channel->stats.time_stats_enabled)
+		channel->stats.non_dram_setup_finish_time =
+				ktime_get_boottime();
 
 	return 0;
 
@@ -157,10 +164,13 @@ int dma_setup_lbp_to_dram_transfer(struct paintbox_data *pb,
 		return -ERANGE;
 	}
 
-	ret = ipu_dma_attach_buffer(pb, transfer, &config->dst.dram,
+	ret = ipu_dma_attach_buffer(pb, channel, transfer, &config->dst.dram,
 			DMA_FROM_DEVICE);
 	if (ret < 0)
 		return ret;
+
+	if (channel->stats.time_stats_enabled)
+		channel->stats.non_dram_setup_start_time = ktime_get_boottime();
 
 	set_dma_channel_mode(transfer, DMA_CHAN_SRC_LBP, DMA_CHAN_DST_DRAM,
 			config->src.lbp.gather);
@@ -180,6 +190,10 @@ int dma_setup_lbp_to_dram_transfer(struct paintbox_data *pb,
 
 	LOG_DMA_LBP_TO_DRAM_TRANSFER(pb, channel, transfer, config);
 
+	if (channel->stats.time_stats_enabled)
+		channel->stats.non_dram_setup_finish_time =
+				ktime_get_boottime();
+
 	return 0;
 
 err_exit:
@@ -196,6 +210,9 @@ int dma_setup_mipi_to_lbp_transfer(struct paintbox_data *pb,
 		struct dma_transfer_config *config)
 {
 	int ret;
+
+	if (channel->stats.time_stats_enabled)
+		channel->stats.non_dram_setup_start_time = ktime_get_boottime();
 
 	if (config->dst.lbp.gather) {
 		dev_err(&pb->pdev->dev,
@@ -233,6 +250,10 @@ int dma_setup_mipi_to_lbp_transfer(struct paintbox_data *pb,
 
 	LOG_DMA_MIPI_TO_LBP_TRANSFER(pb, channel, transfer, config);
 
+	if (channel->stats.time_stats_enabled)
+		channel->stats.non_dram_setup_finish_time =
+				ktime_get_boottime();
+
 	return 0;
 }
 
@@ -244,6 +265,9 @@ int dma_setup_lbp_to_mipi_transfer(struct paintbox_data *pb,
 		struct dma_transfer_config *config)
 {
 	int ret;
+
+	if (channel->stats.time_stats_enabled)
+		channel->stats.non_dram_setup_start_time = ktime_get_boottime();
 
 	if (config->src.lbp.gather) {
 		dev_err(&pb->pdev->dev,
@@ -280,6 +304,10 @@ int dma_setup_lbp_to_mipi_transfer(struct paintbox_data *pb,
 		return ret;
 
 	LOG_DMA_LBP_TO_MIPI_TRANSFER(pb, channel, transfer, config);
+
+	if (channel->stats.time_stats_enabled)
+		channel->stats.non_dram_setup_finish_time =
+				ktime_get_boottime();
 
 	return 0;
 }

@@ -61,10 +61,14 @@ static void ipu_release_kernel_dma_buffer(struct paintbox_data *pb,
 }
 
 static int ipu_import_dma_buf(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel,
 		struct paintbox_dma_transfer *transfer,
 		struct dma_dram_config *config)
 {
 	int ret;
+
+	if (channel->stats.time_stats_enabled)
+		channel->stats.dma_buf_map_start_time = ktime_get_boottime();
 
 	transfer->dma_buf = dma_buf_get(config->dma_buf.fd);
 	if (IS_ERR(transfer->dma_buf))
@@ -89,6 +93,9 @@ static int ipu_import_dma_buf(struct paintbox_data *pb,
 		goto err_detach;
 	}
 
+	if (channel->stats.time_stats_enabled)
+		channel->stats.dma_buf_map_finish_time = ktime_get_boottime();
+
 	/* TODO(ahampson):  dma_buf_offset_bytes + config->len_bytes should be
 	 * less than or equal sg_dma_len(transfer->sg_table->sgl).  Currently
 	 * the config->len_bytes value supplied by the runtime is not the
@@ -102,6 +109,10 @@ static int ipu_import_dma_buf(struct paintbox_data *pb,
 
 		dma_set_attr(DMA_ATTR_SKIP_CPU_SYNC, &attrs);
 
+		if (channel->stats.time_stats_enabled)
+			channel->stats.iommu_map_start_time =
+					ktime_get_boottime();
+
 		ret = dma_map_sg_attrs(&pb->pdev->dev, transfer->sg_table->sgl,
 				transfer->sg_table->nents, transfer->dir,
 				&attrs);
@@ -112,6 +123,10 @@ static int ipu_import_dma_buf(struct paintbox_data *pb,
 			ret = -EINVAL;
 			goto err_unmap;
 		}
+
+		if (channel->stats.time_stats_enabled)
+			channel->stats.iommu_map_finish_time =
+					ktime_get_boottime();
 	}
 #endif
 
@@ -157,6 +172,7 @@ static void ipu_release_dma_buf(struct paintbox_data *pb,
 
 /* The caller to this function must hold pb->lock */
 int ipu_dma_attach_buffer(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel,
 		struct paintbox_dma_transfer *transfer,
 		struct dma_dram_config *config, enum dma_data_direction dir)
 {
@@ -171,7 +187,7 @@ int ipu_dma_attach_buffer(struct paintbox_data *pb,
 		ret = ipu_copy_user_to_dma_buffer(pb, transfer, config);
 		break;
 	case DMA_DRAM_BUFFER_DMA_BUF:
-		ret = ipu_import_dma_buf(pb, transfer, config);
+		ret = ipu_import_dma_buf(pb, channel, transfer, config);
 		break;
 	case DMA_DRAM_BUFFER_UNUSED:
 	default:

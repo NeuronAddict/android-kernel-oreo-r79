@@ -218,7 +218,7 @@ int dma_setup_dram_to_stp_transfer(struct paintbox_data *pb,
 			config->src.dram.len_bytes))
 		return -EFAULT;
 
-	ret = ipu_dma_attach_buffer(pb, transfer, &config->src.dram,
+	ret = ipu_dma_attach_buffer(pb, channel, transfer, &config->src.dram,
 			DMA_TO_DEVICE);
 	if (ret < 0)
 		return ret;

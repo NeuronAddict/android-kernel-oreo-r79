@@ -22,6 +22,7 @@
 
 /* The caller to this function must hold pb->lock */
 int ipu_dma_attach_buffer(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel,
 		struct paintbox_dma_transfer *transfer,
 		struct dma_dram_config *config, enum dma_data_direction dir);
 

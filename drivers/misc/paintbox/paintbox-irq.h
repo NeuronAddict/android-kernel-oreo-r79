@@ -33,6 +33,8 @@ int paintbox_flush_all_interrupts_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 
 int paintbox_irq_init(struct paintbox_data *pb);
+void paintbox_irq_remove(struct paintbox_data *pb);
+void paintbox_irq_release_all_waiters(struct paintbox_data *pb);
 
 /* The caller to these functions must hold pb->lock */
 int validate_interrupt(struct paintbox_data *pb,
@@ -62,6 +64,8 @@ int bind_mipi_interrupt(struct paintbox_data *pb,
 int unbind_mipi_interrupt(struct paintbox_data *pb,
 		struct paintbox_session *session,
 		struct paintbox_mipi_stream *stream);
+void paintbox_irq_wait_for_release_complete(struct paintbox_data *pb,
+		struct paintbox_session *session);
 
 /* The following function must be called with interrupts disabled. */
 void paintbox_irq_waiter_signal(struct paintbox_data *pb,

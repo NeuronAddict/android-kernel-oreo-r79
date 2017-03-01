@@ -1093,11 +1093,33 @@ int dump_dma_channel_stats(struct paintbox_debug *debug, char *buf,
 			"\tstop request pending: %u\n", channel->stop_request);
 	if (channel->stats.time_stats_enabled) {
 		written += snprintf(buf + written, len - written,
-				"\tlast transfer time: %lldus config time: %lldus\n",
-				channel->stats.last_transfer_time_us,
+				"\tlast transfer time %lldus\n",
+				channel->stats.last_transfer_time_us);
+
+		written += snprintf(buf + written, len - written,
+				"\ttotal setup time %lldus\n",
 				ktime_to_us(ktime_sub(
-				channel->stats.config_finish_time,
-				channel->stats.config_start_time)));
+				channel->stats.setup_finish_time,
+				channel->stats.setup_start_time)));
+		written += snprintf(buf + written, len - written,
+				"\tnon-dram setup time %lldus\n",
+				ktime_to_us(ktime_sub(
+				channel->stats.non_dram_setup_finish_time,
+				channel->stats.non_dram_setup_start_time)));
+
+		written += snprintf(buf + written, len - written,
+				"\tdma buf map time %lldus\n",
+				ktime_to_us(ktime_sub(
+				channel->stats.dma_buf_map_finish_time,
+				channel->stats.dma_buf_map_start_time)));
+
+#ifdef CONFIG_PAINTBOX_IOMMU
+		written += snprintf(buf + written, len - written,
+				"\tiommu map time %lldus\n",
+				ktime_to_us(ktime_sub(
+				channel->stats.iommu_map_finish_time,
+				channel->stats.iommu_map_start_time)));
+#endif
 	}
 
 	return written;

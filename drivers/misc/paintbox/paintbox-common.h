@@ -59,6 +59,10 @@ struct paintbox_session {
 	struct list_head mipi_input_list;
 	struct list_head mipi_output_list;
 	struct list_head wait_list;
+
+	/* The fields below are protected by pb->irq_lock */
+	struct completion release_completion;
+	bool releasing;
 };
 
 struct paintbox_debug_reg_entry;
@@ -382,8 +386,16 @@ struct paintbox_dma_channel {
 		unsigned int reported_completions;
 		unsigned int reported_discards;
 		bool time_stats_enabled;
-		ktime_t config_start_time;
-		ktime_t config_finish_time;
+		ktime_t setup_start_time;
+		ktime_t setup_finish_time;
+		ktime_t non_dram_setup_start_time;
+		ktime_t non_dram_setup_finish_time;
+		ktime_t dma_buf_map_start_time;
+		ktime_t dma_buf_map_finish_time;
+#ifdef CONFIG_PAINTBOX_IOMMU
+		ktime_t iommu_map_start_time;
+		ktime_t iommu_map_finish_time;
+#endif
 		int64_t last_transfer_time_us;
 	} stats;
 };
@@ -401,6 +413,7 @@ struct paintbox_dma {
 	 */
 	struct list_head discard_list;
 	unsigned int discard_count;
+	struct work_struct discard_queue_work;
 
 	/* dma_lock protects access to DMA transfer queues and registers. */
 	spinlock_t dma_lock;

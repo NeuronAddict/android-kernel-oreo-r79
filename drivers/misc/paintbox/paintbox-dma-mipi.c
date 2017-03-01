@@ -60,7 +60,7 @@ int dma_setup_mipi_to_dram_transfer(struct paintbox_data *pb,
 		return -EINVAL;
 	}
 
-	ret = ipu_dma_attach_buffer(pb, transfer, &config->dst.dram,
+	ret = ipu_dma_attach_buffer(pb, channel, transfer, &config->dst.dram,
 			DMA_FROM_DEVICE);
 	if (ret < 0)
 		return ret;

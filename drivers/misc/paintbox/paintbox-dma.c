@@ -23,6 +23,8 @@
 #include <linux/types.h>
 #include <linux/uaccess.h>
 #include <linux/version.h>
+#include <linux/workqueue.h>
+
 #include <uapi/paintbox.h>
 
 #include "paintbox-dma.h"
@@ -38,7 +40,6 @@
 #include "paintbox-power.h"
 #include "paintbox-regs.h"
 #include "paintbox-sim-regs.h"
-
 
 #define MAX_DMA_STOP_ATTEMPTS 2
 
@@ -112,6 +113,34 @@ static void drain_queue(struct paintbox_data *pb,
 	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 }
 
+static void paintbox_dma_discard_queue_work(struct work_struct *work)
+{
+	struct paintbox_dma *dma = container_of(work, struct paintbox_dma,
+			discard_queue_work);
+	struct paintbox_data *pb = container_of(dma, struct paintbox_data, dma);
+
+	drain_queue(pb, &dma->discard_list, &dma->discard_count);
+}
+
+/* The caller to this function must hold pb->dma.dma_lock. */
+static void paintbox_dma_discard_transfer(struct paintbox_data *pb,
+		struct paintbox_dma_transfer *transfer)
+{
+	list_add_tail(&transfer->entry, &pb->dma.discard_list);
+	pb->dma.discard_count++;
+	queue_work(system_wq, &pb->dma.discard_queue_work);
+}
+
+/* The caller to this function must hold pb->dma.dma_lock. */
+static void paintbox_dma_enqueue_pending_read(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel,
+		struct paintbox_dma_transfer *transfer)
+{
+	list_add_tail(&transfer->entry, &channel->completed_list);
+	channel->completed_count++;
+	channel->stats.reported_completions++;
+}
+
 /* The caller to this function must hold pb->dma.dma_lock. */
 static void dma_report_completion(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel,
@@ -121,18 +150,29 @@ static void dma_report_completion(struct paintbox_data *pb,
 	dev_dbg(&pb->pdev->dev, "dma channel%u: transfer %p completed err %d\n",
 			channel->channel_id, transfer, err);
 
-	if (transfer->notify_on_completion) {
-		list_add_tail(&transfer->entry, &channel->completed_list);
+	if (!transfer->notify_on_completion) {
+		paintbox_dma_discard_transfer(pb, transfer);
+		channel->stats.reported_discards++;
+		return;
+	}
 
-		channel->completed_count++;
-		channel->stats.reported_completions++;
-
-		paintbox_irq_waiter_signal(pb, channel->irq, timestamp,
-				0 /* data */, err);
+	/* Buffers that need to be copied back to user space go on a separate
+	 * read queue that is emptied by read_dma_transfer_ioctl().  All other
+	 * transfers go on a discard queue and are cleaned up by a work queue.
+	 *
+	 * TODO(ahampson): Remove the read queue support when b/35196591 is
+	 * fixed.
+	 */
+	if (transfer->buffer_type == DMA_DRAM_BUFFER_USER &&
+			transfer->dir == DMA_FROM_DEVICE) {
+		paintbox_dma_enqueue_pending_read(pb, channel, transfer);
 	} else {
-		list_add_tail(&transfer->entry, &pb->dma.discard_list);
+		paintbox_dma_discard_transfer(pb, transfer);
 		channel->stats.reported_discards++;
 	}
+
+	paintbox_irq_waiter_signal(pb, channel->irq, timestamp, 0 /* data */,
+			err);
 }
 
 int bind_dma_interrupt_ioctl(struct paintbox_data *pb,
@@ -629,7 +669,7 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 	}
 
 	if (channel->stats.time_stats_enabled)
-		channel->stats.config_start_time = ktime_get_boottime();
+		channel->stats.setup_start_time = ktime_get_boottime();
 
 	transfer = kzalloc(sizeof(struct paintbox_dma_transfer), GFP_KERNEL);
 	if (!transfer) {
@@ -688,7 +728,7 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 
 	if (channel->stats.time_stats_enabled)
-		channel->stats.config_finish_time = ktime_get_boottime();
+		channel->stats.setup_finish_time = ktime_get_boottime();
 
 	mutex_unlock(&pb->lock);
 
@@ -746,9 +786,6 @@ int read_dma_transfer_ioctl(struct paintbox_data *pb,
 			req.len_bytes);
 
 	kfree(transfer);
-
-	/* Take this opportunity to drain the discard queue */
-	drain_queue(pb, &pb->dma.discard_list, &pb->dma.discard_count);
 
 	mutex_unlock(&pb->lock);
 
@@ -1316,6 +1353,8 @@ int paintbox_dma_init(struct paintbox_data *pb)
 		paintbox_dma_channel_debug_init(pb, channel);
 #endif
 	}
+
+	INIT_WORK(&pb->dma.discard_queue_work, paintbox_dma_discard_queue_work);
 
 	dev_dbg(&pb->pdev->dev, "dma: base %p len %u dma channels %u\n",
 			pb->dma.dma_base, DMA_BLOCK_LEN,

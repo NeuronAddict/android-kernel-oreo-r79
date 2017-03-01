@@ -260,22 +260,6 @@ struct paintbox_irq_group_wait_base {
 	 * be the number of required IRQs that have triggered.
 	 */
 	unsigned int required_irqs_triggered;
-
-	/* TODO(ahampson, ahalambi):  This field is used to populate an output
-	 * parameter in the HAL interface.  Since the HAL code will have to
-	 * traverse the irqs array to get the IRQ data it may be able to be
-	 * generated at the HAL level.
-	 */
-	uint64_t interrupt_mask_fired;
-
-	/* TODO(ahampson, ahalambi):  When an error occurs this is set to the
-	 * interrupt id for the interrupt that generated the error.  This field
-	 * is also used to populate an output parameter in the HAL interface.
-	 * Since the IRQ errors are now included in the paintbox_irq_event
-	 * structure it would be possible to determine which IRQs generated
-	 * errors by traversing the irqs array.
-	 */
-	int32_t interrupt_id_error;
 };
 
 struct paintbox_irq_group_wait {

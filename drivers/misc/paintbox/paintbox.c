@@ -75,13 +75,12 @@ static int paintbox_open(struct inode *ip, struct file *fp)
 	INIT_LIST_HEAD(&session->mipi_output_list);
 	INIT_LIST_HEAD(&session->wait_list);
 
+	init_completion(&session->release_completion);
+
 	fp->private_data = session;
 
 	return 0;
 }
-
-#define SESSION_WAIT_MIN_SLEEP_US 10
-#define SESSION_WAIT_MAX_SLEEP_US 100
 
 static int paintbox_release(struct inode *ip, struct file *fp)
 {
@@ -133,15 +132,7 @@ static int paintbox_release(struct inode *ip, struct file *fp)
 			&session->mipi_output_list, session_entry)
 		release_mipi_stream(pb, session, stream);
 
-	/* release_interrupt above should have woken up all sleeping threads.
-	 * block here until all threads have removed themselves from
-	 * session->wait_list
-	 */
-	while (!list_empty(&session->wait_list)) {
-		mutex_unlock(&pb->lock);
-		usleep_range(SESSION_WAIT_MIN_SLEEP_US, SESSION_WAIT_MAX_SLEEP_US);
-		mutex_lock(&pb->lock);
-	}
+	paintbox_irq_wait_for_release_complete(pb, session);
 
 	mutex_unlock(&pb->lock);
 
@@ -386,7 +377,6 @@ static void paintbox_deinit(struct paintbox_data *pb)
 
 	paintbox_stp_deinit(pb);
 
-	kfree(pb->irqs);
 	kfree(pb->dma.channels);
 	kfree(pb->vdbg_log);
 }
@@ -572,7 +562,7 @@ static int paintbox_remove(struct platform_device *pdev)
 	struct paintbox_data *pb = platform_get_drvdata(pdev);
 
 	misc_deregister(&pb->misc_device);
-
+	paintbox_irq_remove(pb);
 	paintbox_deinit(pb);
 	paintbox_pm_remove(pb);
 	paintbox_fpga_remove(pb);
