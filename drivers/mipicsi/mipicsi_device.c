@@ -64,9 +64,6 @@ static LIST_HEAD(devlist_global);
 
 #define TX_MASK(reg, fld)      HWIO_MIPI_TX_##reg##_##fld##_FLDMASK
 
-/* Disable MIPI timing overrides */
-#undef ENABLE_MIPI_TIMING
-
 void config_clk_data_timing(enum mipicsi_top_dev dev, uint32_t mbps)
 {
 	uint32_t ui_ps, byteclk_ps;
@@ -181,6 +178,10 @@ void config_clk_data_timing(enum mipicsi_top_dev dev, uint32_t mbps)
 				byteclk_ps)+1;
 		mipicsi_dev_dphy_write(dev, R_CSI2_DCPHY_TX_THS_EXIT,
 				       (1<<5) | value);
+
+		/* Phy Stop Wait time */
+		mipicsi_pll_get_stop_wait (mbps, &value);
+		TX_OUTf(PHY_IF_CFG, PHY_STOP_WAIT_TIME, value);
 	} else {
 		int8_t tclk_trail_atf_ns = 0, tclk_zero_atf_ns = 0;
 		int8_t ths_trail_atf_ns = 0, ths_zero_atf_ns = 0;
@@ -296,6 +297,11 @@ void config_clk_data_timing(enum mipicsi_top_dev dev, uint32_t mbps)
 		mipicsi_dev_dphy_write(dev, R_DPHY_RDWR_TX_SYSTIMERS_23,
 				       (1<<7) | value);
 		pr_info("\t ths_zero_ns %d - %d\n", ths_zero_ns, value);
+
+		/* Phy Stop Wait time */
+		mipicsi_pll_get_stop_wait(mbps, &value);
+		pr_info("%s: Phy stop wait = %d", __func__, value);
+		TX_OUTf(PHY_IF_CFG, PHY_STOP_WAIT_TIME, value);
 	}
 }
 
@@ -672,14 +678,7 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 		mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_PWR_CTRL_L2, 0x0C);
 		mipicsi_dev_dphy_write (dev, R_CSI2_DCPHY_HS_TX_PWR_CTRL_L3, 0x0C);
 
-#ifdef ENABLE_MIPI_TIMING
 		config_clk_data_timing (config->dev, config->mbps);
-#endif
-
-		/* Phy Stop Wait time */
-		mipicsi_pll_get_stop_wait(config->mbps, &val);
-		pr_info("%s: Phy stop wait = %d", __func__, val);
-		TX_OUTf(PHY_IF_CFG, PHY_STOP_WAIT_TIME, val);
 
 		TX_OUT(PHY_RSTZ, 0x07);
 		udelay(1);
@@ -715,14 +714,7 @@ int mipicsi_device_start(struct mipicsi_top_cfg *config)
 		udelay(1);
 		TX_OUTf(PHY_IF_CFG, LANE_EN_NUM, (config->num_lanes-1));
 
-#ifdef ENABLE_MIPI_TIMING
 		config_clk_data_timing (config->dev, config->mbps);
-#endif
-
-		/* Phy Stop Wait time */
-		mipicsi_pll_get_stop_wait(config->mbps, &val);
-		pr_info("%s: Phy stop wait = %d", __func__, val);
-		TX_OUTf(PHY_IF_CFG, PHY_STOP_WAIT_TIME, val);
 
 		/*
 		 * Enableclk=1'b1; Wait 5ns; Set shutdownz=1'b1;  Wait 5ns;
