@@ -473,40 +473,75 @@ static irqreturn_t mipicsi_host_irq(int irq, void *device)
 
 	if (int_status->main & RX_MASK(INT_ST_MAIN, STATUS_INT_PHY_FATAL)) {
 		int_status->phy_fatal = RX_IN(INT_ST_PHY_FATAL);
-		dev_info(mipidev->dev, "CSI INT PHY FATAL: %x\n",
-			 int_status->phy_fatal);
+		if (int_status->phy_fatal & 0xF)
+			dev_info(mipidev->dev,
+				 "PhyFatal SOT error lanes[3:0] 0x%x\n",
+				 int_status->phy_fatal & 0xF);
 		ret = IRQ_HANDLED;
 	}
 
 	if (int_status->main & RX_MASK(INT_ST_MAIN, STATUS_INT_PKT_FATAL)) {
 		int_status->pkt_fatal = RX_IN(INT_ST_PKT_FATAL);
-		dev_info(mipidev->dev, "CSI INT PKT FATAL: %x\n",
-			 int_status->pkt_fatal);
+		if (int_status->pkt_fatal & 0xF)
+			dev_info(mipidev->dev,
+				 "PktFatal checksum error VC[3:0] 0x%x\n",
+				 int_status->pkt_fatal & 0xF);
 		ret = IRQ_HANDLED;
 	}
 
 	if (int_status->main & RX_MASK(INT_ST_MAIN, STATUS_INT_FRAME_FATAL)) {
 		int_status->frame_fatal = RX_IN(INT_ST_FRAME_FATAL);
-		dev_info(mipidev->dev, "CSI INT FRAME FATAL: %x\n",
-			 int_status->frame_fatal);
+		if (int_status->frame_fatal & 0xF0000)
+			dev_info(mipidev->dev,
+				 "FrameFatal CRC error VC[3:0] 0x%x\n",
+				 (int_status->frame_fatal&0xF0000)>>16);
+		if (int_status->frame_fatal & 0xF00)
+			dev_info(mipidev->dev,
+				 "FrameFatal wrong frame seq VC[3:0] 0x%x\n",
+				 (int_status->frame_fatal & 0xF00)>>8);
+		if (int_status->frame_fatal & 0xF)
+			dev_info(mipidev->dev,
+				 "FrameFatal mismatch start/end VC[3:0] 0x%x\n",
+				 int_status->frame_fatal & 0xF);
 		ret = IRQ_HANDLED;
 	}
 
 	if (int_status->main & RX_MASK(INT_ST_MAIN, STATUS_INT_PHY)) {
 		int_status->phy = RX_IN(INT_ST_PHY);
-		dev_info(mipidev->dev, "CSI INT PHY: %x\n", int_status->phy);
+		if (int_status->phy & 0xF0000)
+			dev_info(mipidev->dev,
+				 "SOT error no sync on Lane[3:0] 0x%x\n",
+				 (int_status->phy & 0xF0000)>>16);
+		if (int_status->phy & 0xF)
+			dev_info(mipidev->dev,
+				"SOT error on Lane[3:0] 0x%x\n",
+				int_status->phy & 0xF);
 		ret = IRQ_HANDLED;
 	}
 
 	if (int_status->main & RX_MASK(INT_ST_MAIN, STATUS_INT_PKT)) {
 		int_status->pkt = RX_IN(INT_ST_PKT);
-		dev_info(mipidev->dev, "CSI INT PKT: %x\n", int_status->pkt);
+		if (int_status->pkt & 0xF0000)
+			dev_info(mipidev->dev,
+				 "Header error corrected on VC[3:0] 0x%x\n",
+				 (int_status->pkt & 0xF0000)>>16);
+		if (int_status->pkt & 0xF)
+			dev_info(mipidev->dev,
+				"DT error on VC[3:0] 0x%x\n",
+				int_status->pkt & 0xF);
 		ret = IRQ_HANDLED;
 	}
 
 	if (int_status->main & RX_MASK(INT_ST_MAIN, STATUS_INT_LINE)) {
 		int_status->line = RX_IN(INT_ST_LINE);
-		dev_info(mipidev->dev, "CSI INT LINE: %x\n", int_status->line);
+		if (int_status->line & 0xF0000)
+			dev_info(mipidev->dev,
+				 "Line sequence error VC[3:0] 0x%x\n",
+				 (int_status->line & 0xF0000)>>16);
+		if (int_status->line & 0xF)
+			dev_info(mipidev->dev,
+				"Line boundary error DT/VC[3:0] 0x%x\n",
+				int_status->line & 0xF);
 		ret = IRQ_HANDLED;
 	}
 
@@ -527,11 +562,10 @@ int mipicsi_host_get_interrupt_status(enum mipicsi_top_dev devid,
 		mipidev = mipicsi_get_device(devid);
 		if (mipidev != NULL) {
 			cur_status = (struct mipi_host_irq_st *) mipidev->data;
-			dev_dbg(mipidev->dev, "mipidev 0x%x, int_status 0x%x\n",
-				mipidev, cur_status);
-			/* copy the values from current status
-			* and reset the current status.
-			*/
+			/*
+			 * copy the values from current status
+			 * and reset the current status.
+			 */
 			int_status->main = cur_status->main;
 			int_status->phy_fatal = cur_status->phy_fatal;
 			int_status->pkt_fatal = cur_status->pkt_fatal;
@@ -539,6 +573,19 @@ int mipicsi_host_get_interrupt_status(enum mipicsi_top_dev devid,
 			int_status->phy = cur_status->phy;
 			int_status->pkt = cur_status->pkt;
 			int_status->line = cur_status->line;
+			dev_dbg(mipidev->dev, "int_status main 0x%x\n",
+				int_status->main);
+			dev_dbg(mipidev->dev, "int_status phy_fatal 0x%x\n",
+				int_status->phy_fatal);
+			dev_dbg(mipidev->dev, "int_status pkt_fatal 0x%x\n",
+				int_status->pkt_fatal);
+			dev_dbg(mipidev->dev, "int_status phy 0x%x\n",
+				int_status->phy);
+			dev_dbg(mipidev->dev, "int_status pkt 0x%x\n",
+				int_status->pkt);
+			dev_dbg(mipidev->dev, "int_status line 0x%x\n",
+				int_status->line);
+
 			memset(cur_status, 0, sizeof(*cur_status));
 			return ret;
 		}
@@ -560,7 +607,7 @@ int mipicsi_host_set_interrupt_mask(enum mipicsi_top_dev devid,
 		mipidev = mipicsi_get_device(devid);
 		if (mipidev != NULL) {
 			baddr = mipidev->base_address;
-			dev_dbg("%s Set masks\n", __func__);
+			dev_dbg(mipidev->dev, "%s Set masks\n", __func__);
 			RX_OUT(INT_MSK_PHY_FATAL, mask->phy_fatal);
 			RX_OUT(INT_MSK_PKT_FATAL, mask->pkt_fatal);
 			RX_OUT(INT_MSK_FRAME_FATAL, mask->frame_fatal);
@@ -587,7 +634,8 @@ int mipicsi_host_force_interrupt(enum mipicsi_top_dev devid,
 		mipidev = mipicsi_get_device(devid);
 		if (mipidev != NULL) {
 			baddr = mipidev->base_address;
-			dev_dbg("%s Force interrupts\n", __func__);
+			dev_dbg(mipidev->dev, "%s Force interrupts\n",
+				__func__);
 			RX_OUT(INT_FORCE_PHY_FATAL, mask->phy_fatal);
 			RX_OUT(INT_FORCE_PKT_FATAL, mask->pkt_fatal);
 			RX_OUT(INT_FORCE_FRAME_FATAL, mask->frame_fatal);

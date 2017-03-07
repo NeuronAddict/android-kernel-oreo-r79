@@ -970,7 +970,7 @@ static irqreturn_t mipicsi_top_irq(int irq, void *dev_id)
 	if (status & TOP_MASK(TX0_BYPINT, TX0_BYP_OF)) {
 		/* clear the interrupt */
 		TOP_OUTf(TX0_BYPINT, TX0_BYP_OF, 1);
-		dev_info(dev->dev, "TX0_BYPINT occurred\n");
+		dev_info(dev->dev, "Bypass overflow occurred\n");
 		ret = IRQ_HANDLED;
 	}
 
@@ -978,7 +978,7 @@ static irqreturn_t mipicsi_top_irq(int irq, void *dev_id)
 	if (status & TOP_MASK(TX1_BYPINT, TX1_BYP_OF)) {
 		/* clear the interrupt */
 		TOP_OUTf(TX1_BYPINT, TX1_BYP_OF, 1);
-		dev_info(dev->dev, "TX1_BYPINT occurred\n");
+		dev_info(dev->dev, "Bypass overflow occurred\n");
 		ret = IRQ_HANDLED;
 	}
 

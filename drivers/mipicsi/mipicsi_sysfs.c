@@ -38,6 +38,7 @@
 #include <linux/string.h>
 #include "mipicsi_debug.h"
 #include "mipicsi_device.h"
+#include "mipicsi_host.h"
 #include "mipicsi_top.h"
 #include "mipicsi_util.h"
 #include "mipicsi_sysfs.h"
@@ -444,6 +445,55 @@ static ssize_t get_device_status_store(struct device *dev,
 static DEVICE_ATTR(get_device_status, S_IRUGO | S_IWUSR | S_IWGRP,
 		   get_device_status_show, get_device_status_store);
 
+SHOW_FMT_NA(enable_irq);
+
+static ssize_t enable_irq_store(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf,
+				size_t count)
+{
+	enum mipicsi_top_dev device;
+	struct mipi_device_irq_mask dmask;
+	struct mipi_host_irq_mask hmask;
+
+	if (find_device(buf, &device) >= 0) {
+		switch (device) {
+		case MIPI_RX0:
+		case MIPI_RX1:
+		case MIPI_RX2:
+			hmask.phy_fatal = 0xFFFFFFFF;
+			hmask.pkt_fatal = 0xFFFFFFFF;
+			hmask.frame_fatal = 0xFFFFFFFF;
+			hmask.phy = 0xFFFFFFFF;
+			hmask.pkt = 0xFFFFFFFF;
+			hmask.line = 0xFFFFFFFF;
+			mipicsi_host_set_interrupt_mask(device, &hmask);
+			return count;
+
+		case MIPI_TX0:
+		case MIPI_TX1:
+			dmask.vpg = 0xFFFFFFFF;
+			dmask.idi = 0xFFFFFFFF;
+			dmask.phy = 0xFFFFFFFF;
+			mipicsi_device_set_interrupt_mask(device, &dmask);
+			mipicsi_util_write_top(HWIO_MIPI_TOP_TX0_BYPINT_REGOFF,
+					       0x2);
+			mipicsi_util_write_top(HWIO_MIPI_TOP_TX1_BYPINT_REGOFF,
+					       0x2);
+			return count;
+
+		default:
+			break;
+		}
+	}
+	pr_err("Usage: echo\"<dev>\">enable_irq\n");
+	pr_err("dev=Rx0,Rx1,Rx2,Tx0,Tx1\n");
+	return -EINVAL;
+}
+
+static DEVICE_ATTR(enable_irq, S_IRUGO | S_IWUSR | S_IWGRP,
+		   enable_irq_show, enable_irq_store);
+
 SHOW_FMT_NA(vpg_preset);
 
 static ssize_t vpg_preset_store(struct device *dev,
@@ -821,6 +871,14 @@ int mipicsi_sysfs_init(struct device *mipicsi_top_device)
 	}
 
 	ret = device_create_file(mipicsi_top_device,
+				 &dev_attr_enable_irq);
+	if (ret) {
+		dev_err(mipicsi_top_device,
+			"Failed to create sysfs: enable_irq\n");
+		return -EINVAL;
+	}
+
+	ret = device_create_file(mipicsi_top_device,
 				 &dev_attr_vpg_preset);
 	if (ret) {
 		dev_err(mipicsi_top_device,
@@ -909,6 +967,9 @@ void mipicsi_sysfs_clean(struct device *mipicsi_top_device)
 
 	device_remove_file(mipicsi_top_device,
 			   &dev_attr_get_device_status);
+
+	device_remove_file(mipicsi_top_device,
+			   &dev_attr_enable_irq);
 
 	device_remove_file(mipicsi_top_device,
 			   &dev_attr_reg_read);

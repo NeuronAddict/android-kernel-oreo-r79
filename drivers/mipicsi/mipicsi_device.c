@@ -603,7 +603,7 @@ int mipicsi_device_vpg(struct mipicsi_top_vpg *vpg)
 int mipicsi_device_start(struct mipicsi_top_cfg *config)
 {
 	uint32_t data = 0;
-	uint8_t counter = 0, val;
+	uint8_t counter = 0;
 	enum mipicsi_top_dev dev = config->dev;
 	void * baddr = dev_addr_map[dev];
 	const uint32_t stop_mask =
@@ -801,19 +801,19 @@ static irqreturn_t mipicsi_device_irq(int irq, void *device)
 
 	if (int_status->main & TX_MASK(INT_ST_MAIN, INT_ST_VPG)) {
 		int_status->vpg = TX_IN(INT_ST_VPG);
-		dev_info(mipidev->dev, "CSI INT_ST_VPG: %x\n", int_status->vpg);
+		dev_info(mipidev->dev, "VPG error: %x\n", int_status->vpg);
 		ret = IRQ_HANDLED;
 	}
 
 	if (int_status->main & TX_MASK(INT_ST_MAIN, INT_ST_IDI)) {
 		int_status->idi = TX_IN(INT_ST_IDI);
-		dev_info(mipidev->dev, "CSI INT_ST_IDI: %x\n", int_status->idi);
+		dev_info(mipidev->dev, "IDI error: %x\n", int_status->idi);
 		ret = IRQ_HANDLED;
 	}
 
 	if (int_status->main & TX_MASK(INT_ST_MAIN, INT_ST_PHY)) {
 		int_status->phy = TX_IN(INT_ST_PHY);
-		dev_info(mipidev->dev, "CSI INT_ST_PHY: %x\n", int_status->phy);
+		dev_info(mipidev->dev, "Phy error: %x\n", int_status->phy);
 		ret = IRQ_HANDLED;
 	}
 
@@ -830,19 +830,26 @@ int mipicsi_device_get_interrupt_status(enum mipicsi_top_dev devid,
 	struct mipi_device_irq_st *cur_status;
 
 	pr_debug("%s: dev %d\n", __func__, devid);
-	if ((devid == MIPI_RX0) || (devid == MIPI_RX1) || (devid == MIPI_RX1)) {
+	if ((devid == MIPI_RX0) || (devid == MIPI_RX1) || (devid == MIPI_RX2)) {
 		mipidev = mipicsi_get_device(devid);
 		if (mipidev != NULL) {
 			cur_status = (struct mipi_device_irq_st *)mipidev->data;
-			dev_dbg(mipidev->dev, "mipidev 0x%x, int_status 0x%x\n",
-				mipidev, cur_status);
-			/* copy the values from current status
-			* and reset the current status.
-			*/
+			/*
+			 * copy the values from current status
+			 * and reset the current status.
+			 */
 			int_status->main = cur_status->main;
 			int_status->vpg = cur_status->vpg;
 			int_status->idi = cur_status->idi;
 			int_status->phy = cur_status->phy;
+			dev_dbg(mipidev->dev, "int_status main 0x%x\n",
+				int_status->main);
+			dev_dbg(mipidev->dev, "int_status vpg 0x%x\n",
+				int_status->vpg);
+			dev_dbg(mipidev->dev, "int_status idi 0x%x\n",
+				int_status->idi);
+			dev_dbg(mipidev->dev, "int_status phy 0x%x\n",
+				int_status->phy);
 			memset(cur_status, 0, sizeof(*cur_status));
 			return ret;
 		}
@@ -864,7 +871,7 @@ int mipicsi_device_set_interrupt_mask(enum mipicsi_top_dev devid,
 		mipidev = mipicsi_get_device(devid);
 		if (mipidev != NULL) {
 			baddr = mipidev->base_address;
-			dev_dbg("%s Set masks\n", __func__);
+			dev_dbg(mipidev->dev, "%s Set masks\n", __func__);
 			TX_OUT(INT_MASK_N_VPG, mask->vpg);
 			TX_OUT(INT_MASK_N_IDI, mask->idi);
 			TX_OUT(INT_MASK_N_PHY, mask->phy);
@@ -888,7 +895,8 @@ int mipicsi_device_force_interrupt(enum mipicsi_top_dev devid,
 		mipidev = mipicsi_get_device(devid);
 		if (mipidev != NULL) {
 			baddr = mipidev->base_address;
-			dev_dbg("%s Force interrupts\n", __func__);
+			dev_dbg(mipidev->dev, "%s Force interrupts\n",
+				__func__);
 			TX_OUT(INT_FORCE_VPG, mask->vpg);
 			TX_OUT(INT_FORCE_IDI, mask->idi);
 			TX_OUT(INT_FORCE_PHY, mask->phy);
