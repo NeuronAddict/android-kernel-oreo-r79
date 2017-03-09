@@ -52,7 +52,7 @@
 #include <soc/mnh/mnh-hwio-pcie-ep.h>
 #include <soc/mnh/mnh-hwio-pcie-ss.h>
 #include <linux/pagemap.h>
-
+#include <linux/dma-buf.h>
 
 
 #define VENDOR_ID				0x8086
@@ -686,6 +686,196 @@ static int pcie_set_l_one(uint32_t enable, uint32_t clkpm)
 	return 0;
 }
 
+static enum dma_data_direction mnh_to_dma_dir(enum mnh_dma_chan_dir_t mnh_dir)
+{
+	/*
+	 * This is the EP version, so the DMA direction is opposite to
+	 * AP version.
+	 */
+	return (mnh_dir == DMA_AP2EP) ? DMA_FROM_DEVICE : DMA_TO_DEVICE;
+}
+
+/**
+ * Convert Linux scatterlist to array of entries used by PCIe EP DMA engine
+ * @param[in] sc_list   Scatter gather list for DMA buffer
+ * @param[in] count  Number of entries in scatterlist
+ * @param[out] sg  Array generated dma addresses and length.
+ * @param[in] maxsg  Allocated max array number of the sg
+ * @return a count of sg entries used on success
+ *         -EINVAL if exceeding maxsg
+ */
+static int scatterlist_to_mnh_sg(struct scatterlist *sc_list, int count,
+	struct mnh_sg_entry *sg, size_t maxsg)
+{
+	struct scatterlist *in_sg;
+	int i, u;
+
+	i = 0;	/* iterator of *sc_list */
+	u = 0;	/* iterator of *sg */
+
+	for_each_sg(sc_list, in_sg, count, i) {
+		if (u < maxsg) {
+			sg[u].paddr = sg_dma_address(in_sg);
+			sg[u].size = sg_dma_len(in_sg);
+
+		dev_dbg(pcie_ep_dev->dev,
+			"sg[%d] : Address %pa , length %zu\n",
+			u, &sg[u].paddr, sg[u].size);
+#ifdef COMBINE_SG
+			if ((u > 0) && (sg[u-1].paddr + sg[u-1].size ==
+				sg[u].paddr)) {
+				sg[u-1].size = sg[u-1].size
+					+ sg[u].size;
+				sg[u].size = 0;
+			} else {
+				u++;
+			}
+#else
+			u++;
+#endif
+		} else {
+			dev_err(pcie_ep_dev->dev, "maxsg exceeded\n");
+			return -EINVAL;
+		}
+	}
+	sg[u].paddr = 0x0;
+
+	dev_dbg(pcie_ep_dev->dev, "SGL with %d/%d entries\n", u, i);
+
+	return u;
+}
+
+/**
+ * Import dma_buf (from ION buffer)
+ * @param[in] fd   Handle of dma_buf passed from user
+ * @param[out] sgl pointer of Scatter gather list which has information of
+ *			scatter gather list and num of its entries
+ * @return 0        on SUCCESS
+ *         negative on failure
+ */
+static int mnh_sg_import_dma_buf(int fd, struct mnh_sg_list *sgl)
+{
+	int ret;
+
+	sgl->dma_buf = dma_buf_get(fd);
+	if (IS_ERR(sgl->dma_buf)) {
+		ret = PTR_ERR(sgl->dma_buf);
+		dev_err(pcie_ep_dev->dev,
+				"%s: failed to get dma_buf, err %d\n",
+				__func__, ret);
+		return ret;
+	}
+
+	sgl->attach = dma_buf_attach(sgl->dma_buf, pcie_ep_dev->dev);
+	if (IS_ERR(sgl->attach)) {
+		ret = PTR_ERR(sgl->attach);
+		dev_err(pcie_ep_dev->dev,
+				"%s: failed to attach dma_buf, err %d\n",
+				__func__, ret);
+		goto err_put;
+	}
+
+	sgl->sg_table = dma_buf_map_attachment(sgl->attach,
+						mnh_to_dma_dir(sgl->dir));
+	if (IS_ERR(sgl->sg_table)) {
+		ret = PTR_ERR(sgl->sg_table);
+		dev_err(pcie_ep_dev->dev,
+				"%s: failed to map dma_buf, err %d\n",
+				__func__, ret);
+		goto err_detach;
+	}
+
+	return 0;
+
+err_detach:
+	dma_buf_detach(sgl->dma_buf, sgl->attach);
+err_put:
+	dma_buf_put(sgl->dma_buf);
+	return ret;
+}
+
+/**
+ * API to build a scatter-gather list for multi-block DMA transfer for a
+ * dma_buf
+ * @param[in] fd   Handle of dma_buf passed from user
+ * @param[out] sg  Array of maxsg pointers to struct mnh_sg_entry, allocated
+ *			and filled out by this routine.
+ * @param[out] sgl pointer of Scatter gather list which has information of
+ *			scatter gather list and num of its entries.
+ * @return 0        on SUCCESS
+ *         negative on failure
+ */
+int mnh_sg_retrieve_from_dma_buf(int fd, struct mnh_sg_entry **sg,
+		struct mnh_sg_list *sgl)
+{
+	int ret;
+	size_t maxsg;
+
+	/* Retrieve sg_table from dma_buf framework */
+	ret = mnh_sg_import_dma_buf(fd, sgl);
+	if (ret)
+		return ret;
+
+	/* Use sg_table->sgl as our sc_list */
+	sgl->sc_list = sgl->sg_table->sgl;
+	sgl->n_num = sgl->sg_table->nents;
+
+	/*
+	 * The driver assumes either ION userspace code (e.g. Camera HAL)
+	 * or dma_buf provider has handled cache correctly.
+	 */
+	/* dma_sync_sg_for_device(pcie_ep_dev->dev, sgl->sc_list,
+				sgl->n_num, mnh_to_dma_dir(sgl->dir)); */
+
+	/*
+	 * Allocate enough for one entry per sc_list entry, plus end of list.
+	 */
+	maxsg = sgl->n_num + 1;
+	*sg = kcalloc(maxsg, sizeof(struct mnh_sg_entry), GFP_KERNEL);
+	if (!(*sg)) {
+		mnh_sg_release_from_dma_buf(sgl);
+		return -ENOMEM;
+	}
+
+	dev_dbg(pcie_ep_dev->dev,
+		"Enter %s: n_num:%d maxsg:%zu\n", __func__, sgl->n_num, maxsg);
+
+	/* Convert sc_list to a Synopsys compatible linked-list */
+	sgl->length = scatterlist_to_mnh_sg(sgl->sc_list, sgl->n_num,
+								*sg, maxsg);
+	if (IS_ERR(&sgl->length)) {
+		kfree((*sg));
+		*sg = NULL;
+		ret = PTR_ERR(&sgl->length);
+		mnh_sg_release_from_dma_buf(sgl);
+		return ret;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(mnh_sg_retrieve_from_dma_buf);
+
+/**
+ * API to release a scatter-gather list for a dma_buf
+ * @param[in] *sgl pointer to the scatter gather list that was built during
+ *		mnh_sg_retrieve_from_dma_buf
+ * @return 0 for SUCCESS
+ */
+int mnh_sg_release_from_dma_buf(struct mnh_sg_list *sgl)
+{
+	/* dma_sync_sg_for_cpu(pcie_ep_dev->dev, sgl->sc_list,
+				sgl->n_num, mnh_to_dma_dir(sgl->dir)); */
+	dma_buf_unmap_attachment(sgl->attach, sgl->sg_table,
+						mnh_to_dma_dir(sgl->dir));
+	sgl->sc_list = NULL;
+	sgl->n_num = 0;
+	sgl->length = 0;
+	dma_buf_detach(sgl->dma_buf, sgl->attach);
+	dma_buf_put(sgl->dma_buf);
+	return 0;
+}
+EXPORT_SYMBOL(mnh_sg_release_from_dma_buf);
+
 int pcie_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
 			struct mnh_sg_list *sgl, uint32_t maxsg)
 {
@@ -748,7 +938,7 @@ int pcie_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
 				- ((n_num-2)*PAGE_SIZE), 0);
 		}
 		count = dma_map_sg(pcie_ep_dev->dev, sgl->sc_list,
-				n_num, DMA_BIDIRECTIONAL);
+				n_num, mnh_to_dma_dir(sgl->dir));
 		i = 0;
 		u = 0;
 		for_each_sg(sgl->sc_list, in_sg, count, i) {
@@ -771,7 +961,7 @@ int pcie_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
 			} else {
 				dev_err(pcie_ep_dev->dev, "maxsg exceeded\n");
 				dma_unmap_sg(pcie_ep_dev->dev,
-					sgl->sc_list, n_num, DMA_BIDIRECTIONAL);
+					sgl->sc_list, n_num, mnh_to_dma_dir(sgl->dir));
 				sgl->n_num = 0;
 				sgl->length = 0;
 				for (z = 0; z < n_num; z++)
@@ -786,7 +976,7 @@ int pcie_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
 	} else {
 		dev_err(pcie_ep_dev->dev, "maxsg exceeded\n");
 		dma_unmap_sg(pcie_ep_dev->dev, sgl->sc_list,
-			sgl->n_num, DMA_BIDIRECTIONAL);
+			sgl->n_num, mnh_to_dma_dir(sgl->dir));
 		sgl->n_num = 0;
 		sgl->length = 0;
 		for (z = 0; z < n_num; z++)
@@ -803,7 +993,7 @@ int pcie_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
 static int pcie_sg_sync(struct mnh_sg_list *sgl)
 {
 	dma_sync_sg_for_cpu(pcie_ep_dev->dev, sgl->sc_list,
-			sgl->n_num, DMA_BIDIRECTIONAL);
+			sgl->n_num, mnh_to_dma_dir(sgl->dir));
 	return 0;
 }
 
@@ -811,15 +1001,23 @@ static int pcie_sg_sync(struct mnh_sg_list *sgl)
 static int pcie_sg_destroy(struct mnh_sg_list *sgl)
 {
 	int i;
+	struct page *page;
 
 	//dma_sync_sg_for_cpu(pcie_ep_dev->dev, sgl->sc_list,
 	//		sgl->n_num, DMA_BIDIRECTIONAL);
 	dma_unmap_sg(pcie_ep_dev->dev, sgl->sc_list,
-			sgl->n_num, DMA_BIDIRECTIONAL);
-	for (i = 0; i < sgl->n_num; i++)
-		put_page(*(sgl->mypage + i));
+			sgl->n_num, mnh_to_dma_dir(sgl->dir));
+	for (i = 0; i < sgl->n_num; i++) {
+		page = *(sgl->mypage + i);
+		/* Mark page as dirty before releasing the pages. */
+		if (!PageReserved(page))
+			SetPageDirty(page);
+		put_page(page);
+	}
 	kfree(sgl->mypage);
+	sgl->mypage = NULL;
 	kfree(sgl->sc_list);
+	sgl->sc_list = NULL;
 	sgl->n_num = 0;
 	return 0;
 }
@@ -1021,10 +1219,25 @@ int mnh_pcie_write(uint8_t *buff, uint32_t size, uint64_t adr)
 }
 EXPORT_SYMBOL(mnh_pcie_write);
 
-int mnh_sg_build(void *dmadest, size_t size, struct mnh_sg_entry *sg,
-		struct mnh_sg_list *sgl, uint32_t maxsg)
+int mnh_sg_build(void *dmadest, size_t size, struct mnh_sg_entry **sg,
+		struct mnh_sg_list *sgl)
 {
-	return pcie_sg_build(dmadest, size, sg, sgl, maxsg);
+	int ret;
+
+	size_t maxsg = (size / PAGE_SIZE) + 3;
+	*sg = kcalloc(maxsg, sizeof(struct mnh_sg_entry), GFP_KERNEL);
+	if (!(*sg))
+		return -ENOMEM;
+
+	ret = pcie_sg_build(dmadest, size, *sg, sgl, maxsg);
+
+	if (ret) {
+		kfree(*sg);
+		*sg = NULL;
+		return ret;
+	}
+
+	return 0;
 }
 EXPORT_SYMBOL(mnh_sg_build);
 
