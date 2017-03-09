@@ -2038,7 +2038,8 @@ static int mnh_pcie_ep_resume(struct platform_device *pdev)
 	CSR_OUT(PCIE_SS_INTR_EN, PCIE_SS_IRQ_MASK);
 	/* Clear all interrupts */
 	CSR_OUT(PCIE_SW_INTR_TRIGG, MNH_PCIE_SW_IRQ_CLEAR);
-	CSR_OUTx(PCIE_GP, 1, pcie_ep_dev->rb_base);
+	/* set ringbuffer base address and send bootstrap msi */
+	pcie_set_rb_base(pcie_ep_dev->rb_base);
 
 	return 0;
 }
