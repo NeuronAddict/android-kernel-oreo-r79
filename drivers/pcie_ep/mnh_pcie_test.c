@@ -61,7 +61,7 @@ static struct device *pcie_ep_tst_device;
 #define MAX_STR_COPY	32
 
 struct mnh_sg_entry *sg1, *sg2;
-static dma_addr_t dma1, dma2;
+static dma_addr_t dma2;
 
 struct mnh_sg_list *sgl;
 
@@ -73,9 +73,9 @@ static int buildll(void)
 	dev_err(pcie_ep_tst_device, "Start LL build \n");
 	if (dma_dir == 1) {
 		if (mnh_ll_build(sg2, sg1, ll_adr) == 0)
-			dev_err(pcie_ep_tst_device, "LL build succesfully %d  %x\n", ll_adr->size, ll_adr->dma[0]);
+			dev_err(pcie_ep_tst_device, "LL build succesfully %d  %pad\n", ll_adr->size, &ll_adr->dma[0]);
 	} else if (mnh_ll_build(sg1, sg2, ll_adr) == 0)
-			dev_err(pcie_ep_tst_device, "LL build succesfully %d  %x\n", ll_adr->size, ll_adr->dma[0]);
+			dev_err(pcie_ep_tst_device, "LL build succesfully %d  %pad\n", ll_adr->size, &ll_adr->dma[0]);
 	mnh_set_rb_base(ll_adr->dma[0]);
 	status = 2;
 	//status = 3;
@@ -114,22 +114,17 @@ static int mth_fs_pcie_open(struct inode *inode, struct file *file)
 	dev_err(pcie_ep_tst_device, "File Open\n");
 	ll_index = 0;
 	status = 0;
-	//sg1 = dma_alloc_coherent(&pcie_ep_tst_device, SGL_SIZE * sizeof(struct mnh_sg_entry), &dma1, GFP_KERNEL);
-	sg1 = mnh_alloc_coherent(SGL_SIZE * sizeof(struct mnh_sg_entry), &dma1);
-	if (!sg1) {
-	dev_err(pcie_ep_tst_device, "failed to assign sgl 1  %p\n",dma1);
-	return -EINVAL;
-	}
+
 	sg2 = mnh_alloc_coherent(SGL_SIZE * sizeof(struct mnh_sg_entry), &dma2);
 	if (!sg2) {
 		dev_err(pcie_ep_tst_device, "failed to assign sgl 2\n");
-		kfree(sg1);
 		return -EINVAL;
 	}
 	sgl = kcalloc(SGL_SIZE, sizeof(struct mnh_sg_list), GFP_KERNEL);
 	if (!sgl) {
 		dev_err(pcie_ep_tst_device, "failed to assign sgl\n");
-		kfree(sg1);
+		mnh_free_coherent(SGL_SIZE * sizeof(struct mnh_sg_entry),
+				  sg2, dma2);
 		return -EINVAL;
 	}
 	ll_adr = kmalloc(sizeof(struct mnh_dma_ll), GFP_KERNEL);
@@ -150,7 +145,8 @@ static int mth_fs_pcie_close(struct inode *inode, struct file *file)
 		mnh_ll_destroy(ll_adr);
 	mnh_sg_destroy(sgl);
 	kfree(ll_adr);
-	mnh_free_coherent(SGL_SIZE * sizeof(struct mnh_sg_entry), sg1, dma1);
+	kfree(sg1);
+	sg1 = NULL;
 	mnh_free_coherent(SGL_SIZE * sizeof(struct mnh_sg_entry), sg2, dma2);
 	kfree(sgl);
 	return 0;
@@ -160,7 +156,7 @@ static ssize_t  mth_fs_pcie_write(struct file *file, const char __user *buf, siz
 {
 
 	dev_err(pcie_ep_tst_device, "File write \n");
-	mnh_sg_build(buf, count, sg1, sgl, SGL_SIZE);
+	mnh_sg_build((void *)buf, count, &sg1, sgl);
 	dev_err(pcie_ep_tst_device, "SG list build  %d %d\n",ll_index, status);
 	ll_index =1;
 	if (status == 1)
