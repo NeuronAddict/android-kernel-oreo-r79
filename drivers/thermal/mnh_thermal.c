@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Intel Corporation. All rights reserved.
+ * Copyright (c) 2016-2017, Intel Corporation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -50,7 +50,6 @@
 
 /* Thermal characterization data */
 #define API_TRIM_CODE		0xF
-#define API_PRECISION_CODE	0x0
 
 /* Thermal efuse data */
 #define NUM_BITS_EFUSE	10
@@ -64,22 +63,22 @@
 #define API_POLY_N1 (+31020)  /* +3.1020e-01 : 15bits excluding sign */
 #define API_POLY_N0 (-48380)  /* -4.8380e+01 : 16bits excluding sign */
 
-#define N3_E15_MULTIPLIER 1000 /* 1e3*/
-#define N2_E15_MULTIPLIER 10000000 /* 1e7 */
-#define N1_E15_MULTIPLIER 10000000000 /* 1e10 */
-#define N0_E15_MULTIPLIER 1000000000000 /* 1e12 */
+#define N3_E15_MULTIPLIER 1000		/* 1e3*/
+#define N2_E15_MULTIPLIER 10000000	/* 1e7 */
+#define N1_E15_MULTIPLIER 10000000000	/* 1e10 */
+#define N0_E15_MULTIPLIER 1000000000000	/* 1e12 */
 
-#define API_RES_SLOPE  1  /* 0.000010 */
-#define API_RES_OFFSET 1  /* 0.001000 */
+#define API_RES_SLOPE  78125	/* 0.0078125 */
+#define API_RES_OFFSET 5	/* 0.5 */
 
-#define RES_SLOPE_DIVIDER 100000 /* 1e5 */
-#define RES_OFFSET_E15_MULTIPLIER 1000000000000 /* 1e12 */
+#define RES_SLOPE_DIVIDER 10000000 /* 1e7 */
+#define RES_OFFSET_E15_MULTIPLIER 100000000000000 /* 1e14 */
 
 #define API_BITS_SLOPE_MASK    0x1F
 #define API_BITS_OFFSET_MASK   0x1F
 
-#define N12_DIVIDER  1000000000000 /* 1e12 */
-#define N12_ROUNDING_NUM 500000000000 /* 5e11 */
+#define N12_DIVIDER  1000000000000	/* 1e12 */
+#define N12_ROUNDING_NUM 500000000000	/* 5e11 */
 
 /* PVT Data conversion wait time calculation
  * PVT_FREQ: 1.15MHZ
@@ -90,16 +89,19 @@
  *   temp/vol mode: 376 PVT_SENSOR_CLK cycles
  *   process mode: 4 PVT_SENSOR_CLK cycles
  */
-#define PVT_FREQ		1150
-#define PVT_FREQ_UNIT   1000000
-#define PVT_CYCLE		(PVT_FREQ_UNIT/PVT_FREQ)
+#define PVT_FREQ_KHZ		1150
+#define PVT_FREQ_MS_UNIT	1000000
+#define PVT_FREQ_US_UNIT	1000
+#define PVT_CYCLE	(PVT_FREQ_MS_UNIT/PVT_FREQ_KHZ)
 #define PVT_WAIT_CYCLE	390
-#define PVT_WAIT_MS		(((PVT_CYCLE*PVT_WAIT_CYCLE* \
-	(1<<(API_PRECISION_CODE*2)))/PVT_FREQ_UNIT)+1)
+#define PVT_AVG_SAMPLES(p)	(1<<(p*2))
+#define PVT_WAIT_MS(p)	(((PVT_CYCLE*PVT_WAIT_CYCLE*PVT_AVG_SAMPLES(p)) \
+			/PVT_FREQ_MS_UNIT)+1)
+#define PVT_WAIT_US(p)	((PVT_CYCLE*PVT_WAIT_CYCLE*PVT_AVG_SAMPLES(p)) \
+			/PVT_FREQ_US_UNIT)
 
 /* PVT debug messages definition */
-#define MNH_THERM_DBG 1
-#if MNH_THERM_DBG
+#if CONFIG_MNH_PVT_DEBUG
 #define mnh_debug pr_err
 #else
 #define mnh_debug pr_debug
@@ -116,7 +118,8 @@ struct mnh_thermal_device {
 	struct reset_control *reset;
 	void __iomem *regs;
 	uint32_t emulation;
-	uint32_t wait_time_ms;
+	uint32_t wait_time_us;
+	uint32_t precision;
 	uint32_t init_done;
 	struct mnh_thermal_sensor *sensors[MNH_NUM_PVT_SENSORS];
 };
@@ -216,7 +219,7 @@ static void read_efuse_trim(struct mnh_thermal_device *dev)
 static int calculate_temp(int code, int slope, int offset)
 {
 	long n1_, n2_, n3_, n4_, n0_, n01234_, final_temp_, error_;
-	int temp_ms;
+	int temp_md;
 
 
 	mnh_debug("pvt data:%d\n", code);
@@ -224,7 +227,7 @@ static int calculate_temp(int code, int slope, int offset)
 	/* Make sure code is 10bit */
 	code = code & 0x3FF;
 
-	/* Calculate DegC
+	/* Calculate degree Celcius value
 	 * n4: 55bits
 	 * n3: 57bits
 	 * n2: 55bits
@@ -238,17 +241,21 @@ static int calculate_temp(int code, int slope, int offset)
 	n0_ = API_POLY_N0 * N0_E15_MULTIPLIER;
 	n01234_ = n4_ + n3_ + n2_ + n1_ + n0_;
 
-	/* n01234_ is 59bit, max slope is 5bit, which may overflow
+	/* slope = trim_slope * API_RES_SLOPE
+	 * offset = trim_offset * API_RES_OFFSET
+	 * error = slope * degC + offset
+	 * n01234_ is 59bit, max slope is 5bit, which may overflow
 	 * when multiplied without first down-scaling.
 	 */
 	error_ = n01234_/ RES_SLOPE_DIVIDER * slope * API_RES_SLOPE
 		+ (long)offset * RES_OFFSET_E15_MULTIPLIER * API_RES_OFFSET;
-	pr_debug("temp err:%ld, n01234_:%ld\n", error_, n01234_);
 
 	final_temp_ = n01234_ - error_;
-	temp_ms = (final_temp_ + N12_ROUNDING_NUM) / N12_DIVIDER;
+	temp_md = (final_temp_ + N12_ROUNDING_NUM) / N12_DIVIDER;
 
-	return temp_ms;
+	mnh_debug("deg:%ld, err:%ld, temp:%ld\n", n01234_, error_, final_temp_);
+
+	return temp_md;
 }
 
 /* Read raw temperature data from sensors
@@ -297,8 +304,6 @@ static int mnh_thermal_get_data(void *data, int *data_out)
 		op_mode = sensor->tzd->tzp->op_mode;
 		psample = mnh_op_mode_table[op_mode].psample;
 		vsample = mnh_op_mode_table[op_mode].vsample;
-		mnh_debug("pvt op:%d, vs:%d, ps:%d\n",
-			op_mode, vsample, psample);
 
 		/* Program VSAMPLE/PSAMPLE for temperature evaulation */
 		HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id,
@@ -319,7 +324,7 @@ static int mnh_thermal_get_data(void *data, int *data_out)
 				sensor->id, DATAVALID);
 			if(val == 1)
 				break;
-			mdelay(sensor->dev->wait_time_ms);
+			udelay(sensor->dev->wait_time_us);
 		} while (time_before(jiffies, timeout));
 
 		/* Read DATA_OUT from sensor */
@@ -351,12 +356,6 @@ static int mnh_thermal_get_temp(void *data, int *temp_out)
 	if (!sensor->dev->init_done)
 		return 0;
 
-	/* Apply 5 bit trim and 2 bit precision to PVT sensor register */
-	HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id,
-	       TRIM, API_TRIM_CODE);
-	HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id,
-	       PRECISION, API_PRECISION_CODE);
-
 	/* Get raw temp code */
 	sensor->tzd->tzp->op_mode = THERMAL_OPMODE_TEMP;
 	mnh_thermal_get_data(data, &temp_raw);
@@ -378,7 +377,7 @@ static int mnh_thermal_probe(struct platform_device *pdev)
 {
 	struct mnh_thermal_device *mnh_dev;
 	struct resource *res;
-	unsigned int i;
+	unsigned int i, precision;
 	int err;
 
 	mnh_dev = devm_kzalloc(&pdev->dev, sizeof(*mnh_dev),
@@ -386,6 +385,7 @@ static int mnh_thermal_probe(struct platform_device *pdev)
 	if (!mnh_dev)
 		return -ENOMEM;
 
+	mnh_dev->init_done = 0;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
@@ -399,20 +399,22 @@ static int mnh_thermal_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 
-	mnh_dev->init_done = 0;
+	err = device_property_read_u32(&pdev->dev, "precision", &precision);
+	if (!err)
+		mnh_dev->precision = precision;
+
+	/* Read target settings */
+	mnh_dev->emulation = read_emulation_setting();
+
+	/* Calculate PVT data read wait time */
+	mnh_dev->wait_time_us = PVT_WAIT_US(mnh_dev->precision);
+	mnh_debug("pvt wait time: %d us\n", mnh_dev->wait_time_us);
 
 	/* Enable 1.2MHz clock to PVT sensor and wait for 2usecs
 	 * until the clock is ticking
 	 */
 	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, PVT_CLKEN, 1);
 	udelay(2);
-
-	/* Read target settings */
-	mnh_dev->emulation = read_emulation_setting();
-
-	/* Calculate PVT data read wait time */
-	mnh_dev->wait_time_ms = PVT_WAIT_MS;
-	mnh_debug("pvt wait time: %d\n", mnh_dev->wait_time_ms);
 
 	/* Initialize thermctl sensors */
 	for (i = 0; i < ARRAY_SIZE(mnh_dev->sensors); ++i) {
@@ -432,6 +434,12 @@ static int mnh_thermal_probe(struct platform_device *pdev)
 		}
 
 		mnh_dev->sensors[i] = sensor;
+
+		/* Configure trim and precision data */
+		HW_OUTxf(mnh_dev->regs, SCU, PVT_CONTROL, sensor->id,
+		       TRIM, API_TRIM_CODE);
+		HW_OUTxf(mnh_dev->regs, SCU, PVT_CONTROL, sensor->id,
+		       PRECISION, mnh_dev->precision);
 	}
 
 	mnh_dev->init_done = 1;
@@ -480,12 +488,21 @@ static int mnh_thermal_remove(struct platform_device *pdev)
 static int mnh_thermal_resume(struct platform_device *pdev)
 {
 	struct mnh_thermal_device *mnh_dev = platform_get_drvdata(pdev);
+	unsigned int i;
 
 	/* Enable 1.2MHz clock to PVT sensor and wait for 2usecs
 	 * until the clock is ticking
 	 */
 	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, PVT_CLKEN, 1);
 	udelay(2);
+
+	/* Configure trim and precision data */
+	for (i = 0; i < ARRAY_SIZE(mnh_dev->sensors); ++i) {
+		HW_OUTxf(mnh_dev->regs, SCU, PVT_CONTROL,
+			mnh_dev->sensors[i]->id, TRIM, API_TRIM_CODE);
+		HW_OUTxf(mnh_dev->regs, SCU, PVT_CONTROL,
+			mnh_dev->sensors[i]->id, PRECISION, mnh_dev->precision);
+	}
 
 	mnh_dev->init_done = 1;
 

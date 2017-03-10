@@ -150,8 +150,6 @@ static int mnh_pm_probe(struct platform_device *pdev)
 	int err, ret;
 	struct resource *res;
 
-	dev_info(&pdev->dev, "init\n");
-
 	if (!pdev)
 		return -EINVAL;
 

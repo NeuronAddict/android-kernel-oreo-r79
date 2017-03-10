@@ -222,14 +222,15 @@
 	};
 
 	soc_thermal: thermal@40030000 {
-	    compatible = "intel, mnh_thermal";
-	    reg = <0x0 0x4003000 0x0 0x1000>;
-	    #thermal-sensor-cells = <1>;
+		compatible = "intel, mnh_thermal";
+		reg = <0x0 0x4003000 0x0 0x1000>;
+		precision = <1>;
+		#thermal-sensor-cells = <1>;
 	};
 
 	freq_cooling: freq_cooling@40030000 {
-	    compatible = "intel, mnh_freq_cooling";
-	    reg = <0x0 0x4003000 0x0 0x1000>;
+		compatible = "intel, mnh_freq_cooling";
+		reg = <0x0 0x4003000 0x0 0x1000>;
 	};
 
 	pcie@041C2000 {

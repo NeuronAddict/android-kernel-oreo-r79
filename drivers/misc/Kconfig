@@ -824,6 +824,13 @@ config MNH_PM_DEBUG
 	---help---
 	This enables mnh pm debug features
 
+config MNH_PVT_DEBUG
+	bool "MNH_PVT_DEBUG"
+	depends on ARCH_MNH && MNH_THERMAL
+	default n
+	---help---
+	This enables mnh pvt thermal debug features
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
