@@ -103,6 +103,7 @@
 	mipitop: mipitop@04015000 {
 		compatible = "intel,mipicsi_top";
 		reg = <0x0 0x04015000 0x0 0x0FFF>;
+		interrupts = <GIC_SPI 7 IRQ_TYPE_LEVEL_HIGH>;
 		device-id = "TOP";
 	};
 

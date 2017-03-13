@@ -968,15 +968,17 @@ static irqreturn_t mipicsi_top_irq(int irq, void *dev_id)
 
 	status = TOP_IN(TX0_BYPINT);
 	if (status & TOP_MASK(TX0_BYPINT, TX0_BYP_OF)) {
-		dev_info(dev->dev, "TX0_BYPINT BYP_OF occurred\n");
-		/* TODO clear the interrupt*/
+		/* clear the interrupt */
+		TOP_OUTf(TX0_BYPINT, TX0_BYP_OF, 1);
+		dev_info(dev->dev, "TX0_BYPINT occurred\n");
 		ret = IRQ_HANDLED;
 	}
 
 	status = TOP_IN(TX1_BYPINT);
 	if (status & TOP_MASK(TX1_BYPINT, TX1_BYP_OF)) {
-		dev_info(dev->dev, "TX1_BYPINT BYP_OF occurred\n");
-		/* TODO clear the interrupt*/
+		/* clear the interrupt */
+		TOP_OUTf(TX1_BYPINT, TX1_BYP_OF, 1);
+		dev_info(dev->dev, "TX1_BYPINT occurred\n");
 		ret = IRQ_HANDLED;
 	}
 
