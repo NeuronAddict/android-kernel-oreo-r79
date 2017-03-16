@@ -26,7 +26,8 @@
  */
 #define MIPI_DEBUG_BUFFER_SIZE (IO_IPU_NUM_REGS * REG_DEBUG_BUFFER_SIZE)
 
-int dump_io_ipu_registers(struct paintbox_debug *debug, char *buf, size_t len);
+int dump_mipi_common_registers(struct paintbox_debug *debug, char *buf,
+		size_t len);
 int dump_mipi_input_stream_registers(struct paintbox_debug *debug, char *buf,
 		size_t len);
 int dump_mipi_output_stream_registers(struct paintbox_debug *debug, char *buf,

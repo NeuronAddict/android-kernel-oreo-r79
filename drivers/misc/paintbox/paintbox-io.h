@@ -19,8 +19,7 @@
 #include <linux/io.h>
 
 #include "paintbox-common.h"
-#include "paintbox-regs-supplemental.h"
-
+#include "paintbox-regs.h"
 
 /* Size of the debug buffer used for debugfs or verbose logging.  These values
  * should be reevaluated whenever the dump_*_registers functions are changed.

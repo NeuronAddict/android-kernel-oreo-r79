@@ -32,7 +32,6 @@
 #include "paintbox-io.h"
 #include "paintbox-power.h"
 #include "paintbox-regs.h"
-#include "paintbox-regs-supplemental.h"
 
 /* Paintbox IO virtual address space bounds
  * TODO(ahampson):  These are place holder values.  I need to figure out the
@@ -679,9 +678,11 @@ int paintbox_mmu_init(struct paintbox_data *pb)
 	if (ret < 0)
 		return ret;
 
+#ifdef CONFIG_PAINTBOX_IOMMU_ENABLED
 	ret = paintbox_mmu_iommu_attach(pb);
 	if (ret < 0)
 		return ret;
+#endif
 #endif
 
 	return 0;

@@ -30,7 +30,6 @@
 #include "paintbox-lbp-debug.h"
 #include "paintbox-power.h"
 #include "paintbox-regs.h"
-#include "paintbox-regs-supplemental.h"
 #include "paintbox-sram.h"
 #include "paintbox-stp.h"
 
@@ -50,19 +49,19 @@ static int validate_lb_config(struct paintbox_data *pb,
 		return -EINVAL;
 	}
 
-	if (lb_config->num_reuse_rows > LB_REUSE_ROWS_MAX) {
+	if (lb_config->num_reuse_rows > LB_CTRL0_REUSE_ROWS_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: lb%u lb%u: invalid reuse rows, %u >= %u\n",
+				"%s: lb%u lb%u: invalid reuse rows, %u (max %llu)\n",
 				__func__, lb_config->lb_pool_id,
 				lb_config->lb_id, lb_config->num_reuse_rows,
-				LB_REUSE_ROWS_MAX);
+				LB_CTRL0_REUSE_ROWS_MAX);
 		return -EINVAL;
 	}
 
 	if (lb_config->num_read_ptrs > pb->lbp.max_rptrs) {
 		dev_err(&pb->pdev->dev,
-				"%s: lb%u lb%u: invalid max read ptrs, %u > %u"
-				"\n", __func__, lb_config->lb_pool_id,
+				"%s: lb%u lb%u: invalid max read ptrs, %u (max %u)\n",
+				__func__, lb_config->lb_pool_id,
 				lb_config->lb_id, lb_config->num_read_ptrs,
 				pb->lbp.max_rptrs);
 		return -EINVAL;
@@ -70,54 +69,54 @@ static int validate_lb_config(struct paintbox_data *pb,
 
 	if (lb_config->fb_rows > pb->lbp.max_fb_rows) {
 		dev_err(&pb->pdev->dev,
-				"%s: lb%u lb%u invalid fb_rows, %u > %u\n",
+				"%s: lbp%u lb%u invalid fb_rows, %u (max %u)\n",
 				__func__, lb_config->lb_pool_id,
 				lb_config->lb_id, lb_config->fb_rows,
 				pb->lbp.max_fb_rows);
 		return -EINVAL;
 	}
 
-	if (lb_config->x_offset_pixels > LB_OFFSET_MAX ||
-			lb_config->x_offset_pixels < LB_OFFSET_MIN) {
+	if (lb_config->x_offset_pixels < LB_OFFSET_OFFSET_X_MIN ||
+			lb_config->x_offset_pixels > LB_OFFSET_OFFSET_X_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: lbp%u lb%u x offset out of bounds, %d <= "
-				"%d <= %d\n", __func__, lb_config->lb_pool_id,
-				lb_config->lb_id, LB_OFFSET_MIN,
-				lb_config->x_offset_pixels, LB_OFFSET_MAX);
+				"%s: lbp%u lb%u x offset out of bounds, %d (min %d max %d)\n",
+				__func__, lb_config->lb_pool_id,
+				lb_config->lb_id, lb_config->x_offset_pixels,
+				LB_OFFSET_OFFSET_X_MIN, LB_OFFSET_OFFSET_X_MAX);
 		return -ERANGE;
 	}
 
-	if (lb_config->y_offset_pixels > LB_OFFSET_MAX ||
-			lb_config->y_offset_pixels < LB_OFFSET_MIN) {
+	if (lb_config->y_offset_pixels < LB_OFFSET_OFFSET_Y_MIN ||
+			lb_config->y_offset_pixels > LB_OFFSET_OFFSET_Y_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: lbp%u lb%u y offset out of bounds, %d <= "
-				"%d <= %d\n", __func__, lb_config->lb_pool_id,
-				lb_config->lb_id, LB_OFFSET_MIN,
-				lb_config->y_offset_pixels, LB_OFFSET_MAX);
+				"%s: lbp%u lb%u y offset out of bounds, %d (min %d max %d)\n",
+				__func__, lb_config->lb_pool_id,
+				lb_config->lb_id, lb_config->y_offset_pixels,
+				LB_OFFSET_OFFSET_Y_MIN, LB_OFFSET_OFFSET_Y_MAX);
 		return -ERANGE;
 	}
 
-	if (lb_config->chan_offset_pixels > LB_OFFSET_CHAN_MAX) {
+	if (lb_config->chan_offset_pixels > LB_OFFSET_OFFSET_CHAN_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: lb%u lb%u invalid CHAN offset, %u > %u\n",
+				"%s: lbp%u lb%u invalid CHAN offset, %u (max %llu)\n",
 				__func__, lb_config->lb_pool_id,
 				lb_config->lb_id, lb_config->chan_offset_pixels,
-				LB_OFFSET_CHAN_MAX);
+				LB_OFFSET_OFFSET_CHAN_MAX);
 		return -EINVAL;
 	}
 
-	if ((lb_config->ipu_fb_base_addr & LB_ADDR_ALIGN_MASK) != 0) {
+	if ((lb_config->ipu_fb_base_addr & LB_BASE_FB_BASE_ALIGN_MASK) != 0) {
 		dev_err(&pb->pdev->dev,
-				"%s: lb%u lb%u FB base alignment error, 0x%x\n",
+				"%s: lbp%u lb%u FB base alignment error, 0x%x\n",
 				__func__, lb_config->lb_pool_id,
 				lb_config->lb_id, lb_config->ipu_fb_base_addr);
 		return -EINVAL;
 	}
 
-	if ((lb_config->ipu_sb_base_addr & LB_ADDR_ALIGN_MASK) != 0) {
+	if ((lb_config->ipu_sb_base_addr & LB_BASE_SB_BASE_ALIGN_MASK) != 0) {
 		dev_err(&pb->pdev->dev,
-				"%s: lbp%u lb%u: SB base alignment error, 0x%x"
-				"\n", __func__, lb_config->lb_pool_id,
+				"%s: lbp%u lb%u: SB base alignment error, 0x%x\n",
+				__func__, lb_config->lb_pool_id,
 				lb_config->lb_id, lb_config->ipu_fb_base_addr);
 		return -EINVAL;
 	}
@@ -148,7 +147,9 @@ int validate_lbp(struct paintbox_data *pb,
 struct paintbox_lbp *get_lbp(struct paintbox_data *pb,
 		struct paintbox_session *session, int pool_id, int *err)
 {
-	int ret = validate_lbp(pb, session, pool_id);
+	int ret;
+
+	ret = validate_lbp(pb, session, pool_id);
 	if (ret < 0) {
 		*err = ret;
 		return NULL;
@@ -224,9 +225,9 @@ void release_lbp(struct paintbox_data *pb, struct paintbox_session *session,
 {
 	dev_dbg(&pb->pdev->dev, "lbp%u release\n", lbp->pool_id);
 
-	/* The LBP access control masks are not implemented on the V1 hardware.
+	/* The LBP access control masks are not implemented on the V0 IPU.
 	 */
-#ifndef CONFIG_PAINTBOX_V1
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
 	disable_stp_access_to_lbp(pb, session, lbp);
 #endif
 	/* Disable all line buffers within the pool. */
@@ -275,9 +276,9 @@ int allocate_lbp_ioctl(struct paintbox_data *pb,
 	writeq(LBP_CTRL_LBP_RESET_MASK, pb->lbp.reg_base + LBP_CTRL);
 	writeq(0, pb->lbp.reg_base + LBP_CTRL);
 
-	/* The LBP access control masks are not implemented on the V1 hardware.
+	/* The LBP access control masks are not implemented on the V0 IPU.
 	 */
-#ifndef CONFIG_PAINTBOX_V1
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
 	/* Grant access to all STPs in this session. */
 	enable_stp_access_to_lbp(pb, session, lbp);
 #endif
@@ -316,15 +317,13 @@ static int write_l_param_register(struct paintbox_data *pb,
 	sb_cols_rounded =  (lb->sb_cols + LB_BLOCK_TRANSFER_HEIGHT - 1) /
 			LB_BLOCK_TRANSFER_HEIGHT;
 
-	/* Linear address increment.
-	 * (ROUND_UP4(img_width) / 4
-	 */
+	/* Linear address increment, (ROUND_UP4(img_width) / 4 */
 	l_inc = width_rounded;
-	if (l_inc > LB_L_INC_MAX) {
+	if (l_inc > LB_L_PARAM_L_INC_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: lbp%u lb%u invalid l_inc valid %u (max %u)"
-				"\n", __func__, lb->lbp->pool_id, lb->lb_id,
-				l_inc, LB_L_INC_MAX);
+				"%s: lbp%u lb%u invalid l_inc valid %u (max %llu)\n",
+				__func__, lb->lbp->pool_id, lb->lb_id,
+				l_inc, LB_L_PARAM_L_INC_MAX);
 		return -EINVAL;
 	}
 
@@ -332,11 +331,11 @@ static int write_l_param_register(struct paintbox_data *pb,
 	 * ROUND_UP4(img_width) / 4 + ROUND_UP4(sb_cols) / 4
 	 */
 	l_width = width_rounded + sb_cols_rounded;
-	if (l_width > LB_L_WIDTH_MAX) {
+	if (l_width > LB_L_PARAM_L_WIDTH_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: lbp%u lb%u: invalid l_width valid %u (max "
-				"%u)\n", __func__, lb->lbp->pool_id, lb->lb_id,
-				l_width, LB_L_WIDTH_MAX);
+				"%s: lbp%u lb%u: invalid l_width valid %u (max %llu)\n",
+				__func__, lb->lbp->pool_id, lb->lb_id,
+				l_width, LB_L_PARAM_L_WIDTH_MAX);
 		return -EINVAL;
 	}
 
@@ -378,19 +377,22 @@ int setup_lb_ioctl(struct paintbox_data *pb,
 
 	switch (lb_config.padding.method) {
 	case IPU_PADDING_DO_NOT_PAD:
-		lb_bdry = LB_BDRY_CLAMP;
+		lb_bdry = LB_BDRY_BDRY_VAL_CLAMP;
 		break;
 	case IPU_PADDING_CONSTANT:
 		lb_bdry = (lb_config.padding.value_or_period <<
-				LB_BDRY_BDRY_VAL_SHIFT) | LB_BDRY_CLAMP;
+				LB_BDRY_BDRY_VAL_SHIFT) |
+				LB_BDRY_BDRY_VAL_CLAMP;
 		break;
 	case IPU_PADDING_PERIODIC:
 		lb_bdry = (lb_config.padding.value_or_period <<
-				LB_BDRY_BDRY_VAL_SHIFT) | LB_BDRY_REPEAT;
+				LB_BDRY_BDRY_VAL_SHIFT) |
+				LB_BDRY_BDRY_VAL_REPEAT;
 		break;
 	case IPU_PADDING_SYMMETRIC:
 		lb_bdry = (lb_config.padding.value_or_period <<
-				LB_BDRY_BDRY_VAL_SHIFT) | LB_BDRY_REFLECT;
+				LB_BDRY_BDRY_VAL_SHIFT) |
+				LB_BDRY_BDRY_VAL_REFLECT;
 		break;
 	default:
 		dev_err(&pb->pdev->dev,
@@ -431,13 +433,13 @@ int setup_lb_ioctl(struct paintbox_data *pb,
 			LB_CTRL0_REUSE_ROWS_SHIFT;
 	writeq(ctrl, pb->lbp.reg_base + LB_CTRL0);
 
-	lb_offset = ((uint64_t)lb_config.x_offset_pixels) &
+	lb_offset = (uint64_t)lb_config.x_offset_pixels &
 			LB_OFFSET_OFFSET_X_MASK;
-	lb_offset |= (((uint64_t)lb_config.y_offset_pixels) &
-			LB_OFFSET_OFFSET_Y_M ) << LB_OFFSET_OFFSET_Y_SHIFT;
-	lb_offset |= ((uint64_t)lb_config.chan_offset_pixels) <<
-			LB_OFFSET_OFFSET_CHAN_SHIFT;
-	lb_offset |= (((uint64_t)lb_config.fb_offset_pixels) &
+	lb_offset |= ((uint64_t)lb_config.y_offset_pixels &
+			LB_OFFSET_OFFSET_Y_M) << LB_OFFSET_OFFSET_Y_SHIFT;
+	lb_offset |= ((uint64_t)lb_config.chan_offset_pixels &
+			LB_OFFSET_OFFSET_CHAN_M) << LB_OFFSET_OFFSET_CHAN_SHIFT;
+	lb_offset |= ((uint64_t)lb_config.fb_offset_pixels &
 			LB_OFFSET_FB_OFFSET_M) << LB_OFFSET_FB_OFFSET_SHIFT;
 	writeq(lb_offset, pb->lbp.reg_base + LB_OFFSET);
 
@@ -449,8 +451,9 @@ int setup_lb_ioctl(struct paintbox_data *pb,
 	writel(lb_config.sb_rows << LB_SB_SIZE_SB_ROWS_SHIFT |
 			lb_config.sb_cols, pb->lbp.reg_base + LB_SB_SIZE);
 
-	lb_base = lb_config.ipu_fb_base_addr >> LB_ADDR_ALIGN_SHIFT;
-	lb_base |= (lb_config.ipu_sb_base_addr >> LB_ADDR_ALIGN_SHIFT) <<
+	lb_base = lb_config.ipu_fb_base_addr >> LB_BASE_FB_BASE_ALIGN_SHIFT;
+	lb_base |= (lb_config.ipu_sb_base_addr >>
+			LB_BASE_SB_BASE_ALIGN_SHIFT) <<
 			LB_BASE_SB_BASE_ADDR_SHIFT;
 	writel(lb_base, pb->lbp.reg_base + LB_BASE);
 
@@ -465,7 +468,7 @@ int setup_lb_ioctl(struct paintbox_data *pb,
 		/* In full buffer mode the L_INC field is set to zero and the
 		 * L_WIDTH field is set to the maximum value.
 		 */
-		writel(LB_L_WIDTH_MAX << LB_L_PARAM_L_WIDTH_SHIFT,
+		writel(LB_L_PARAM_L_WIDTH_MAX << LB_L_PARAM_L_WIDTH_SHIFT,
 				pb->lbp.reg_base + LB_L_PARAM);
 	}
 
@@ -566,8 +569,7 @@ static int validate_sram_transfer(struct paintbox_data *pb,
 {
 	if (sram_byte_addr + len_bytes > pb->lbp.mem_size_bytes) {
 		dev_err(&pb->pdev->dev,
-				"%s: lbp%u memory transfer out of range: SRAM "
-				"addr 0x%08x + %lu > %u bytes\n",
+				"%s: lbp%u memory transfer out of range: SRAM addr 0x%08x + %lu > %u bytes\n",
 				__func__, lbp->pool_id, sram_byte_addr,
 				len_bytes, pb->lbp.mem_size_bytes);
 		return -ERANGE;
@@ -609,8 +611,7 @@ int write_lbp_memory_ioctl(struct paintbox_data *pb,
 			req.buf, req.len_bytes);
 	if (ret < 0)
 		dev_err(&pb->pdev->dev,
-				"%s: lbp%u write error addr: 0x%04x "
-				"ram_ctrl 0x%016llx err = %d\n",
+				"%s: lbp%u write error addr: 0x%04x ram_ctrl 0x%016llx err = %d\n",
 				__func__, req.id, req.sram_byte_addr,
 				readq(pb->lbp.reg_base + LBP_RAM_CTRL), ret);
 
@@ -652,9 +653,8 @@ int read_lbp_memory_ioctl(struct paintbox_data *pb,
 			req.buf, req.len_bytes);
 	if (ret < 0)
 		dev_err(&pb->pdev->dev,
-				"%s: lbp%u read error addr: 0x%04x "
-				"ram_ctrl 0x%016llx err = %d\n", __func__,
-				req.id, req.sram_byte_addr,
+				"%s: lbp%u read error addr: 0x%04x ram_ctrl 0x%016llx err = %d\n",
+				__func__, req.id, req.sram_byte_addr,
 				readq(pb->lbp.reg_base + LBP_RAM_CTRL), ret);
 
 	mutex_unlock(&pb->lock);
@@ -747,7 +747,7 @@ static int init_lbp(struct paintbox_data *pb, unsigned int lbp_index)
 	 */
 	lbp->pool_id = lbp_index;
 
-	lbp->lbs = kzalloc(sizeof(struct paintbox_lb) * pb->lbp.max_lbs,
+	lbp->lbs = kcalloc(pb->lbp.max_lbs, sizeof(struct paintbox_lb),
 			GFP_KERNEL);
 	if (!lbp->lbs)
 		return -ENOMEM;
@@ -756,16 +756,12 @@ static int init_lbp(struct paintbox_data *pb, unsigned int lbp_index)
 
 	for (i = 0; i < pb->lbp.max_lbs; i++) {
 		struct paintbox_lb *lb = &lbp->lbs[i];
+
 		lb->lbp = lbp;
 		lb->lb_id = i;
 
 		paintbox_lb_debug_init(pb, lbp, lb);
 	}
-
-#ifdef VERBOSE_DEBUG
-	paintbox_alloc_debug_buffer(pb, max(LBP_DEBUG_BUFFER_SIZE,
-			LB_DEBUG_BUFFER_SIZE));
-#endif
 
 	return 0;
 }
@@ -776,7 +772,7 @@ int paintbox_lbp_init(struct paintbox_data *pb)
 	uint64_t caps;
 	int ret;
 
-	pb->lbp.lbps = kzalloc(sizeof(struct paintbox_lbp) * pb->lbp.num_lbps,
+	pb->lbp.lbps = kcalloc(pb->lbp.num_lbps, sizeof(struct paintbox_lbp),
 			GFP_KERNEL);
 	if (!pb->lbp.lbps)
 		return -ENOMEM;

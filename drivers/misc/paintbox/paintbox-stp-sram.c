@@ -24,7 +24,6 @@
 
 #include "paintbox-common.h"
 #include "paintbox-regs.h"
-#include "paintbox-regs-supplemental.h"
 #include "paintbox-sram.h"
 #include "paintbox-stp.h"
 #include "paintbox-stp-sram.h"

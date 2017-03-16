@@ -27,7 +27,6 @@
 #include "paintbox-dma.h"
 #include "paintbox-io.h"
 #include "paintbox-regs.h"
-#include "paintbox-regs-supplemental.h"
 
 #ifdef CONFIG_DEBUG_FS
 static uint64_t paintbox_bif_reg_entry_read(

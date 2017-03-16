@@ -198,15 +198,12 @@ int ipu_dma_attach_buffer(struct paintbox_data *pb,
 	if (ret < 0)
 		return ret;
 
-	transfer->chan_va_low = (uint32_t)transfer->dma_addr;
-	transfer->chan_va_high = (uint32_t)((uint64_t)transfer->dma_addr >>
-			32);
+	transfer->chan_va = (uint64_t)transfer->dma_addr;
 
 	/* VA_BDRY is the virtual address boundary for the DMA transfer.  The
 	 * memory transferred by DMA is [VA, VA + VA_BDRY].
 	 */
-	transfer->chan_va_bdry_low = (uint32_t)transfer->len_bytes;
-	transfer->chan_va_bdry_high = (uint32_t)(transfer->len_bytes >> 32);
+	transfer->chan_va_bdry = (uint64_t)transfer->len_bytes;
 
 	return 0;
 }

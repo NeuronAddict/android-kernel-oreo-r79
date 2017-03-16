@@ -36,7 +36,7 @@
 		clocks = <&soc_refclk100mhz>;
 	};
 
-	apb_reg@0400C000 {
+	paintbox@0400C000 {
                 compatible = "uio_pdrv_genirq", "google,paintbox";
                 reg = <0x0 0x0400C000 0x0 0xFFFF>;
                 interrupts = <GIC_SPI 1 IRQ_TYPE_LEVEL_HIGH>;

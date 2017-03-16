@@ -20,9 +20,7 @@
 
 #include "paintbox-common.h"
 #include "paintbox-regs.h"
-#include "paintbox-regs-supplemental.h"
 #include "paintbox-sram.h"
-
 
 #ifdef DEBUG
 void dump_registers(struct paintbox_data *pb, void __iomem *reg_start,

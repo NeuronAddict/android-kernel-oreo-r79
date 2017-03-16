@@ -38,9 +38,7 @@
 #include "paintbox-mipi.h"
 #include "paintbox-mmu.h"
 #include "paintbox-regs.h"
-#include "paintbox-regs-supplemental.h"
 #include "paintbox-stp.h"
-
 
 #ifdef CONFIG_DEBUG_FS
 static uint64_t io_apb_reg_entry_read(
@@ -116,10 +114,69 @@ int dump_io_apb_stats(struct paintbox_debug *debug, char *buf,
 		size_t len)
 {
 	struct paintbox_data *pb = debug->pb;
+	int written;
 
-	return snprintf(buf, len, "IPU interrupts: %u IRQ activations %u\n",
+	written = scnprintf(buf, len, "IPU interrupts: %u IRQ activations %u\n",
 			pb->io.ipu_interrupts, pb->io.irq_activations);
+
+	if (pb->io.stats.time_stats_enabled) {
+		written += scnprintf(buf + written, len - written,
+				"Interrupt Processing Time\n");
+		written += scnprintf(buf + written, len - written,
+				"\tshortest %lldns longest %lldns average %lldns total %lldns\n",
+				ktime_to_ns(pb->io.stats.irq_min_time),
+				ktime_to_ns(pb->io.stats.irq_max_time),
+				pb->io.ipu_interrupts != 0 ?
+				ktime_to_ns(pb->io.stats.irq_total_time) /
+				pb->io.ipu_interrupts : 0,
+				ktime_to_ns(pb->io.stats.irq_total_time));
+	}
+
+	return written;
 }
+
+static int paintbox_io_apb_time_stats_enable_show(struct seq_file *s, void *p)
+{
+	struct paintbox_data *pb = s->private;
+
+	seq_printf(s, "%u\n", pb->io.stats.time_stats_enabled);
+	return 0;
+}
+
+static int paintbox_io_apb_time_stats_enable_open(struct inode *inode,
+		struct file *file)
+{
+	return single_open(file, paintbox_io_apb_time_stats_enable_show,
+			inode->i_private);
+}
+
+static ssize_t paintbox_io_apb_time_stats_enable_write(struct file *file,
+		const char __user *user_buf, size_t count, loff_t *ppos)
+{
+	struct seq_file *s = (struct seq_file *)file->private_data;
+	struct paintbox_data *pb = s->private;
+	unsigned int val;
+	int ret;
+
+	ret = kstrtouint_from_user(user_buf, count, 0, &val);
+	if (ret == 0) {
+		pb->io.stats.time_stats_enabled = !!val;
+		return count;
+	}
+
+	dev_err(&pb->pdev->dev, "%s: invalid value, err = %d", __func__, ret);
+
+	return ret;
+}
+
+static const struct file_operations io_apb_time_stats_enable_fops = {
+	.open = paintbox_io_apb_time_stats_enable_open,
+	.write = paintbox_io_apb_time_stats_enable_write,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+	.owner = THIS_MODULE,
+};
 #endif
 
 #ifdef VERBOSE_DEBUG
@@ -163,10 +220,10 @@ static irqreturn_t paintbox_io_interrupt(int irq, void *arg)
 
 	pb->io.ipu_interrupts++;
 
-	if (status & pb->io.bif_mask)
+	if (status & IPU_ISR_BIF_INTR_MASK)
 		paintbox_bif_interrupt(pb);
 
-	if (status & pb->io.mmu_mask)
+	if (status & IPU_IMR_MMU_INTR_MASK)
 		paintbox_mmu_interrupt(pb);
 
 	/* MIPI interrupts need to be processed before DMA interrupts so error
@@ -175,22 +232,38 @@ static irqreturn_t paintbox_io_interrupt(int irq, void *arg)
 	 * channel.  This DMA EOF interrupt needs to be reported as an error and
 	 * not as a normal completion.
 	 */
-	if (status & pb->io.mipi_input_mask)
+	if (status & IPU_IMR_MPI_INTR_MASK)
 		paintbox_mipi_input_interrupt(pb, (status &
-				pb->io.mipi_input_mask) >>
-				pb->io.mipi_input_start, timestamp);
+				IPU_IMR_MPI_INTR_MASK) >>
+				IPU_IMR_MPI_INTR_SHIFT, timestamp);
 
-	if (status & pb->io.mipi_output_mask)
+	if (status & IPU_IMR_MPO_INTR_MASK)
 		paintbox_mipi_output_interrupt(pb, (status &
-				pb->io.mipi_output_mask) >>
-				pb->io.mipi_output_start, timestamp);
+				IPU_IMR_MPO_INTR_MASK) >>
+				IPU_IMR_MPO_INTR_SHIFT, timestamp);
 
-	if (status & pb->io.dma_mask)
-		paintbox_dma_interrupt(pb, status & pb->io.dma_mask, timestamp);
+	if (status & IPU_ISR_DMA_CHAN_INTR_MASK)
+		paintbox_dma_interrupt(pb, status & IPU_ISR_DMA_CHAN_INTR_MASK,
+				timestamp);
 
-	if (status & pb->io.stp_mask)
-		paintbox_stp_interrupt(pb, (status & pb->io.stp_mask) >>
-				pb->io.stp_start, timestamp);
+	if (status & IPU_IMR_STP_INTR_MASK)
+		paintbox_stp_interrupt(pb, (status &
+				IPU_IMR_STP_INTR_MASK) >>
+				IPU_IMR_STP_INTR_SHIFT, timestamp);
+
+	if (pb->io.stats.time_stats_enabled) {
+		ktime_t duration = ktime_sub(ktime_get_boottime(), timestamp);
+
+		pb->io.stats.irq_total_time =
+				ktime_add(pb->io.stats.irq_total_time,
+				duration);
+
+		if (ktime_after(duration, pb->io.stats.irq_max_time))
+			pb->io.stats.irq_max_time = duration;
+
+		if (ktime_before(duration, pb->io.stats.irq_min_time))
+			pb->io.stats.irq_min_time = duration;
+	}
 
 	return IRQ_HANDLED;
 }
@@ -233,7 +306,7 @@ void io_enable_stp_interrupt(struct paintbox_data *pb, unsigned int stp_id)
 	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
 
 	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-	ipu_imr |= 1 << (stp_id_to_index(stp_id) + pb->io.stp_start);
+	ipu_imr |= 1 << (stp_id_to_index(stp_id) + IPU_IMR_STP_INTR_SHIFT);
 	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
 
 	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
@@ -247,7 +320,7 @@ void io_disable_stp_interrupt(struct paintbox_data *pb, unsigned int stp_id)
 	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
 
 	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-	ipu_imr &= ~(1 << (stp_id_to_index(stp_id) + pb->io.stp_start));
+	ipu_imr &= ~(1 << (stp_id_to_index(stp_id) + IPU_IMR_STP_INTR_SHIFT));
 	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
 
 	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
@@ -256,14 +329,14 @@ void io_disable_stp_interrupt(struct paintbox_data *pb, unsigned int stp_id)
 bool get_mipi_input_interface_interrupt_state(struct paintbox_data *pb,
 		unsigned int interface_id)
 {
-	return !!(readl(pb->io.apb_base + IPU_ISR) & (pb->io.mipi_input_start +
+	return !!(readl(pb->io.apb_base + IPU_ISR) & (IPU_IMR_MPI_INTR_SHIFT +
 			interface_id));
 }
 
 bool get_mipi_output_interface_interrupt_state(struct paintbox_data *pb,
 		unsigned int interface_id)
 {
-	return !!(readl(pb->io.apb_base + IPU_ISR) & (pb->io.mipi_output_start +
+	return !!(readl(pb->io.apb_base + IPU_ISR) & (IPU_IMR_MPO_INTR_SHIFT +
 			interface_id));
 }
 
@@ -301,28 +374,28 @@ void io_enable_mipi_input_interface_interrupt(struct paintbox_data *pb,
 		unsigned int interface_id)
 {
 	io_enable_mipi_interface_interrupt(pb, interface_id +
-			pb->io.mipi_input_start);
+			IPU_IMR_MPI_INTR_SHIFT);
 }
 
 void io_disable_mipi_input_interface_interrupt(struct paintbox_data *pb,
 		unsigned int interface_id)
 {
 	io_disable_mipi_interface_interrupt(pb, interface_id +
-			pb->io.mipi_input_start);
+			IPU_IMR_MPI_INTR_SHIFT);
 }
 
 void io_enable_mipi_output_interface_interrupt(struct paintbox_data *pb,
 		unsigned int interface_id)
 {
 	io_enable_mipi_interface_interrupt(pb, interface_id +
-			pb->io.mipi_output_start);
+			IPU_IMR_MPO_INTR_SHIFT);
 }
 
 void io_disable_mipi_output_interface_interrupt(struct paintbox_data *pb,
 		unsigned int interface_id)
 {
 	io_disable_mipi_interface_interrupt(pb, interface_id +
-			pb->io.mipi_output_start);
+			IPU_IMR_MPO_INTR_SHIFT);
 }
 
 void paintbox_enable_bif_interrupt(struct paintbox_data *pb)
@@ -333,7 +406,7 @@ void paintbox_enable_bif_interrupt(struct paintbox_data *pb)
 	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
 
 	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-	ipu_imr |= pb->io.bif_mask;
+	ipu_imr |= IPU_IMR_BIF_INTR_MASK;
 	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
 
 	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
@@ -347,7 +420,7 @@ void paintbox_disable_bif_interrupt(struct paintbox_data *pb)
 	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
 
 	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-	ipu_imr &= ~pb->io.bif_mask;
+	ipu_imr &= ~IPU_IMR_BIF_INTR_MASK;
 	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
 
 	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
@@ -361,7 +434,7 @@ void paintbox_enable_mmu_interrupt(struct paintbox_data *pb)
 	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
 
 	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-	ipu_imr |= pb->io.bif_mask;
+	ipu_imr |= IPU_IMR_MMU_INTR_MASK;
 	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
 
 	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
@@ -375,7 +448,7 @@ void paintbox_disable_mmu_interrupt(struct paintbox_data *pb)
 	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
 
 	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-	ipu_imr &= ~pb->io.bif_mask;
+	ipu_imr &= ~IPU_IMR_MMU_INTR_MASK;
 	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
 
 	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
@@ -395,20 +468,21 @@ int paintbox_io_apb_init(struct paintbox_data *pb)
 	paintbox_debug_create_reg_entries(pb, &pb->io.apb_debug,
 			io_apb_reg_names, IO_APB_NUM_REGS,
 			io_apb_reg_entry_write, io_apb_reg_entry_read);
+
+	pb->io.stats.time_stats_enable_dentry = debugfs_create_file(
+			"time_stats_enable", S_IRUSR | S_IRGRP | S_IWUSR,
+			pb->io.apb_debug.debug_dir, pb,
+			&io_apb_time_stats_enable_fops);
+	if (IS_ERR(pb->io.stats.time_stats_enable_dentry)) {
+		dev_err(&pb->pdev->dev, "%s: err = %ld", __func__,
+				PTR_ERR(pb->io.stats.time_stats_enable_dentry));
+		return PTR_ERR(pb->io.stats.time_stats_enable_dentry);
+	}
 #endif
 
 #ifdef VERBOSE_DEBUG
 	paintbox_alloc_debug_buffer(pb, IO_APB_DEBUG_BUFFER_SIZE);
 #endif
-
-	pb->io.dma_mask = (1 << pb->dma.num_channels) - 1;
-
-	pb->io.stp_start = pb->dma.num_channels;
-	pb->io.stp_mask = ((1 << pb->stp.num_stps) - 1) << pb->io.stp_start;
-	pb->io.bif_start = pb->io.stp_start + pb->stp.num_stps;
-	pb->io.bif_mask = ((1 << NUM_BIF_INTERRUPTS) - 1) << pb->io.bif_start;
-	pb->io.mmu_start = pb->io.bif_start + NUM_BIF_INTERRUPTS;
-	pb->io.mmu_mask = ((1 << NUM_MMU_INTERRUPTS) - 1) << pb->io.mmu_start;
 
 	/* Update the number of available interrupts reported to the user space.
 	 * This value is also used to allocate the number of IRQ waiter objects.
@@ -418,14 +492,10 @@ int paintbox_io_apb_init(struct paintbox_data *pb)
 	 * number of IRQ waiters and the number of interrupts is arbitrary and
 	 * should be cleaned up.  b/31684858
 	 */
-	pb->io.num_interrupts = pb->io.mmu_start + NUM_MMU_INTERRUPTS;
+	pb->io.num_interrupts = pb->dma.num_channels + pb->stp.num_stps
+			+ NUM_BIF_INTERRUPTS + NUM_MMU_INTERRUPTS;
 
 	if (pb->io_ipu.num_mipi_input_interfaces > 0) {
-		pb->io.mipi_input_start = pb->io.mmu_start + NUM_MMU_INTERRUPTS;
-		pb->io.mipi_input_mask = ((1 <<
-				pb->io_ipu.num_mipi_input_interfaces) -
-				1) << pb->io.mipi_input_start;
-
 		/* For the number of interrupts available that is reported to
 		 * the user space we want to have an interrupt per MIPI stream
 		 * rather than per interface.
@@ -434,18 +504,15 @@ int paintbox_io_apb_init(struct paintbox_data *pb)
 	}
 
 	if (pb->io_ipu.num_mipi_output_interfaces > 0) {
-		pb->io.mipi_output_start = pb->io.mipi_input_start +
-				pb->io_ipu.num_mipi_input_interfaces;
-		pb->io.mipi_output_mask = ((1 <<
-				pb->io_ipu.num_mipi_output_interfaces) -
-				1) << pb->io.mipi_output_start;
-
 		/* For the number of interrupts available that is reported to
 		 * the user space we want to have an interrupt per MIPI stream
 		 * rather than per interface.
 		 */
 		pb->io.num_interrupts += pb->io_ipu.num_mipi_output_streams;
 	}
+
+	pb->io.stats.time_stats_enabled = true;
+	pb->io.stats.irq_min_time = ktime_set(KTIME_SEC_MAX, 0);
 
 	ret = devm_request_irq(&pb->pdev->dev, pb->io.irq,
 			paintbox_io_interrupt, IRQF_SHARED, pb->pdev->name, pb);

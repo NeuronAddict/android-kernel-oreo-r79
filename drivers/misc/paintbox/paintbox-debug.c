@@ -310,6 +310,7 @@ void paintbox_debug_create_entry(struct paintbox_data *pb,
 static int reg_entry_show(struct seq_file *s, void *p)
 {
 	struct paintbox_debug_reg_entry *reg_entry = s->private;
+
 	seq_printf(s, "0x%016llx\n", reg_entry->read(reg_entry));
 	return 0;
 }
@@ -356,7 +357,6 @@ int paintbox_debug_alloc_reg_entries(struct paintbox_data *pb,
 	debug->reg_entries = kzalloc(sizeof(struct paintbox_debug_reg_entry) *
 			reg_count, GFP_KERNEL);
 	if (!debug->reg_entries) {
-		dev_err(&pb->pdev->dev, "%s: allocation failure", __func__);
 		debug->num_reg_entries = 0;
 		return -ENOMEM;
 	}
@@ -390,7 +390,7 @@ int paintbox_debug_create_reg_entry(struct paintbox_data *pb,
 			S_IRUSR | S_IRGRP | S_IWUSR, debug->debug_dir,
 			reg_entry, &reg_entry_fops);
 	if (IS_ERR(reg_entry->debug_dentry)) {
-		dev_err(&pb->pdev->dev, "%s: err = %ld",__func__,
+		dev_err(&pb->pdev->dev, "%s: err = %ld", __func__,
 				PTR_ERR(reg_entry->debug_dentry));
 		return PTR_ERR(reg_entry->debug_dentry);
 	}
@@ -456,7 +456,7 @@ static int paintbox_reg_dump_show(struct seq_file *s, void *unused)
 
 	written += ret;
 
-	ret = dump_io_ipu_registers(&pb->io_ipu.debug, buf + written,
+	ret = dump_mipi_common_registers(&pb->io_ipu.debug, buf + written,
 			len - written);
 	if (ret < 0)
 		goto err_exit;

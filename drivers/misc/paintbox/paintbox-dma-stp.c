@@ -35,6 +35,8 @@
 #include "paintbox-regs.h"
 #include "paintbox-stp.h"
 
+/* DRAM to STP transfers must be aligned to 32 byte SRAM offset */
+#define DMA_STP_SRAM_ADDR_ALIGN_MASK 0x1F
 
 static int validate_stp_inst_sram_transfer(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel, struct paintbox_stp *stp,
@@ -46,17 +48,16 @@ static int validate_stp_inst_sram_transfer(struct paintbox_data *pb,
 
 	if ((stp_config->sram_addr & DMA_STP_SRAM_ADDR_ALIGN_MASK) != 0) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma channel%u SRAM address is not aligned,"
-				" 0x%04x\n", __func__, channel->channel_id,
+				"%s: dma channel%u SRAM address 0x%04x is not aligned\n",
+				__func__, channel->channel_id,
 				stp_config->sram_addr);
 		return -EINVAL;
 	}
 
 	if (stp_config->sram_addr + dram_config->len_bytes > sram_size_bytes) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma channel%u not enough space in target "
-				"SRAM, SRAM ADDR 0x%04x + %llu bytes > %lu "
-				"bytes\n", __func__, channel->channel_id,
+				"%s: dma channel%u not enough space in target SRAM, SRAM ADDR 0x%04x + %llu bytes > %lu bytes\n",
+				__func__, channel->channel_id,
 				stp_config->sram_addr, dram_config->len_bytes,
 				sram_size_bytes);
 		return -ERANGE;
@@ -75,17 +76,16 @@ static int validate_stp_cnst_sram_transfer(struct paintbox_data *pb,
 
 	if ((stp_config->sram_addr & DMA_STP_SRAM_ADDR_ALIGN_MASK) != 0) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma channel%u SRAM address is not aligned,"
-				" 0x%04x\n", __func__, channel->channel_id,
+				"%s: dma channel%u SRAM address 0x%04x is not aligned\n",
+				__func__, channel->channel_id,
 				stp_config->sram_addr);
 		return -EINVAL;
 	}
 
 	if (stp_config->sram_addr + dram_config->len_bytes > sram_size_bytes) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma channel%u not enough space in target "
-				"SRAM, SRAM ADDR 0x%04x + %llu bytes > %lu "
-				"bytes\n", __func__, channel->channel_id,
+				"%s: dma channel%u not enough space in target SRAM, SRAM ADDR 0x%04x + %llu bytes > %lu bytes\n",
+				__func__, channel->channel_id,
 				stp_config->sram_addr, dram_config->len_bytes,
 				sram_size_bytes);
 		return -ERANGE;
@@ -104,17 +104,16 @@ static int validate_stp_scalar_sram_transfer(struct paintbox_data *pb,
 
 	if ((stp_config->sram_addr & DMA_STP_SRAM_ADDR_ALIGN_MASK) != 0) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma channel%u SRAM address is not aligned,"
-				" 0x%04x\n", __func__, channel->channel_id,
+				"%s: dma channel%u SRAM address 0x%04x is not aligned\n",
+				__func__, channel->channel_id,
 				stp_config->sram_addr);
 		return -EINVAL;
 	}
 
 	if (stp_config->sram_addr + dram_config->len_bytes > sram_size_bytes) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma channel%u not enough space in target "
-				"SRAM, SRAM ADDR 0x%04x + %llu bytes > %lu "
-				"bytes\n", __func__, channel->channel_id,
+				"%s: dma channel%u not enough space in target SRAM, SRAM ADDR 0x%04x + %llu bytes > %lu bytes\n",
+				__func__, channel->channel_id,
 				stp_config->sram_addr,
 				dram_config->len_bytes, sram_size_bytes);
 		return -ERANGE;
@@ -148,9 +147,9 @@ static int set_dma_stp_parameters(struct paintbox_data *pb,
 		if (ret < 0)
 			return ret;
 
-		transfer->chan_img_pos_high = DMA_CHAN_LB_START_Y_STP_IRAM;
-		transfer->chan_img_pos_high <<= DMA_CHAN_LB_START_Y_SHIFT;
-		transfer->chan_img_pos_high |= (uint16_t)stp_config->sram_addr;
+		paintbox_dma_set_lb_start(transfer,
+				(uint64_t)stp_config->sram_addr,
+				DMA_CHAN_LB_START_Y_STP_IRAM);
 		break;
 	case SRAM_TARGET_STP_CONSTANT_RAM:
 		ret = validate_stp_cnst_sram_transfer(pb, channel, stp,
@@ -158,9 +157,9 @@ static int set_dma_stp_parameters(struct paintbox_data *pb,
 		if (ret < 0)
 			return ret;
 
-		transfer->chan_img_pos_high = DMA_CHAN_LB_START_Y_STP_CRAM;
-		transfer->chan_img_pos_high <<= DMA_CHAN_LB_START_Y_SHIFT;
-		transfer->chan_img_pos_high |= (uint16_t)stp_config->sram_addr;
+		paintbox_dma_set_lb_start(transfer,
+				(uint64_t)stp_config->sram_addr,
+				DMA_CHAN_LB_START_Y_STP_CRAM);
 		break;
 	case SRAM_TARGET_STP_SCALAR_RAM:
 		ret = validate_stp_scalar_sram_transfer(pb, channel, stp,
@@ -168,19 +167,19 @@ static int set_dma_stp_parameters(struct paintbox_data *pb,
 		if (ret < 0)
 			return ret;
 
-		transfer->chan_img_pos_high = DMA_CHAN_LB_START_Y_STP_DRAM;
-		transfer->chan_img_pos_high <<= DMA_CHAN_LB_START_Y_SHIFT;
-		transfer->chan_img_pos_high |= (uint16_t)stp_config->sram_addr;
+		paintbox_dma_set_lb_start(transfer,
+				(uint64_t)stp_config->sram_addr,
+				DMA_CHAN_LB_START_Y_STP_DRAM);
 		break;
 	case SRAM_TARGET_STP_VECTOR_RAM:
-		/* TODO(ahampson):  Add parameter checks for vector b/30969166 */
+		/* TODO(ahampson):  Add parameter checks for vector b/30969166
+		 */
 
-		transfer->chan_img_pos_high = stp_config->include_halo ?
+		paintbox_dma_set_lb_start(transfer,
+				(uint64_t)stp_config->sram_addr,
+				stp_config->include_halo ?
 				DMA_CHAN_LB_START_Y_STP_ARRAY_32x32 :
-				DMA_CHAN_LB_START_Y_STP_ARRAY_16x16;
-
-		transfer->chan_img_pos_high <<= DMA_CHAN_LB_START_Y_SHIFT;
-		transfer->chan_img_pos_high |= (uint16_t)stp_config->sram_addr;
+				DMA_CHAN_LB_START_Y_STP_ARRAY_16x16);
 		break;
 	default:
 		dev_err(&pb->pdev->dev,
@@ -205,13 +204,23 @@ int dma_setup_dram_to_stp_transfer(struct paintbox_data *pb,
 {
 	int ret;
 
-	if (config->src.dram.len_bytes > DMA_MAX_IMG_TRANSFER_LEN) {
+	if (config->src.dram.len_bytes > DMA_CHAN_VA_BDRY_LEN_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma channel%u: transfer too large, %llu > "
-				"%llu bytes", __func__, channel->channel_id,
+				"%s: dma channel%u: transfer too large, %llu max %llu bytes",
+				__func__, channel->channel_id,
 				config->dst.dram.len_bytes,
-				DMA_MAX_IMG_TRANSFER_LEN);
+				DMA_CHAN_VA_BDRY_LEN_MAX);
 		return -ERANGE;
+	}
+
+	/* Verify that the target STP is part of the session. */
+	ret = validate_stp(pb, session, config->dst.stp.stp_id);
+	if (ret < 0) {
+		dev_err(&pb->pdev->dev,
+				"%s: dma channel%u: stp%u is not part of the session, err %d\n",
+				__func__, channel->channel_id,
+				config->dst.stp.stp_id, ret);
+		return ret;
 	}
 
 	if (!access_ok(VERIFY_READ, config->src.dram.host_vaddr,
@@ -223,8 +232,8 @@ int dma_setup_dram_to_stp_transfer(struct paintbox_data *pb,
 	if (ret < 0)
 		return ret;
 
-	set_dma_channel_mode(transfer, DMA_CHAN_SRC_DRAM, DMA_CHAN_DST_STP,
-			false);
+	paintbox_dma_set_channel_mode(transfer, DMA_CHAN_MODE_SRC_DRAM,
+			DMA_CHAN_MODE_DST_STP, false);
 
 	ret = set_dma_stp_parameters(pb, session, channel, transfer,
 			&config->src.dram, &config->dst.stp);

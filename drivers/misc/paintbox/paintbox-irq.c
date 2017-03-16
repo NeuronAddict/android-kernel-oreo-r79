@@ -368,6 +368,15 @@ int bind_dma_interrupt(struct paintbox_data *pb,
 
 	spin_lock_irqsave(&pb->irq_lock, irq_flags);
 
+	if (channel->irq) {
+		spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
+		dev_err(&pb->pdev->dev,
+				"%s: channel%u already bound to int%u\n",
+				__func__, channel->channel_id,
+				channel->irq->interrupt_id);
+		return -EBUSY;
+	}
+
 	if (irq->source != IRQ_SRC_NONE) {
 		spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
 		dev_err(&pb->pdev->dev,
@@ -429,6 +438,14 @@ int bind_stp_interrupt(struct paintbox_data *pb,
 
 	spin_lock_irqsave(&pb->irq_lock, irq_flags);
 
+	if (stp->irq) {
+		spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
+		dev_err(&pb->pdev->dev,
+				"%s: stp%u already bound to int%u\n",
+				__func__, stp->stp_id, stp->irq->interrupt_id);
+		return -EBUSY;
+	}
+
 	if (irq->source != IRQ_SRC_NONE) {
 		spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
 		dev_err(&pb->pdev->dev,
@@ -489,6 +506,15 @@ int bind_mipi_interrupt(struct paintbox_data *pb,
 		return ret;
 
 	spin_lock_irqsave(&pb->irq_lock, irq_flags);
+
+	if (stream->irq) {
+		spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
+		dev_err(&pb->pdev->dev,
+				"%s: mipi stream%u already bound to int%u\n",
+				__func__, stream->stream_id,
+				stream->irq->interrupt_id);
+		return -EBUSY;
+	}
 
 	if (irq->source != IRQ_SRC_NONE) {
 		spin_unlock_irqrestore(&pb->irq_lock, irq_flags);

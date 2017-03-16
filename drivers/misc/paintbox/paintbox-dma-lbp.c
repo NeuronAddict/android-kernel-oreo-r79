@@ -52,41 +52,46 @@ static int set_dma_lbp_parameters(struct paintbox_data *pb,
 
 	if (config->read_ptr_id >= lb->num_read_ptrs) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma channel%u invalid rptr id, %u, num "
-				"read ptrs %u\n", __func__, channel->channel_id,
+				"%s: dma channel%u invalid rptr id, %u, num read ptrs %u\n",
+				__func__, channel->channel_id,
 				config->read_ptr_id, lb->num_read_ptrs);
 		return -EINVAL;
 	}
 
-	if (config->start_x_pixels > DMA_CHAN_LB_START_MAX ||
-			config->start_x_pixels < DMA_CHAN_LB_START_MIN) {
+	if (config->start_x_pixels < DMA_CHAN_IMG_POS_LB_START_MIN ||
+			config->start_x_pixels >
+			DMA_CHAN_IMG_POS_LB_START_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma channel%u lb_start x out of bounds, %d"
-				" (%d..%d)\n", __func__,
-				channel->channel_id, config->start_x_pixels,
-				DMA_CHAN_LB_START_MIN, DMA_CHAN_LB_START_MAX);
+				"%s: dma channel%u lb_start x out of bounds, %d min %d max %d\n",
+				__func__, channel->channel_id,
+				config->start_x_pixels,
+				DMA_CHAN_IMG_POS_LB_START_MIN,
+				DMA_CHAN_IMG_POS_LB_START_MAX);
 		return -ERANGE;
 	}
 
-	if (config->start_y_pixels > DMA_CHAN_LB_START_MAX ||
-			config->start_y_pixels < DMA_CHAN_LB_START_MIN) {
+	if (config->start_y_pixels < DMA_CHAN_IMG_POS_LB_START_MIN ||
+			config->start_y_pixels >
+			DMA_CHAN_IMG_POS_LB_START_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma channel%u lb_start y out of bounds, %d"
-				" (%d..%d)\n", __func__, channel->channel_id,
-				config->start_y_pixels, DMA_CHAN_LB_START_MIN,
-				DMA_CHAN_LB_START_MAX);
+				"%s: dma channel%u lb_start y out of bounds, %d min %d max %d\n",
+				 __func__, channel->channel_id,
+				config->start_y_pixels,
+				DMA_CHAN_IMG_POS_LB_START_MIN,
+				DMA_CHAN_IMG_POS_LB_START_MAX);
 		return -ERANGE;
 	}
 
 	/* Set the LBP node configuration */
 	transfer->chan_node = config->lbp_id;
-	transfer->chan_node |= config->lb_id << DMA_CHAN_LB_ID_SHIFT;
-	transfer->chan_node |= config->read_ptr_id << DMA_CHAN_RPTR_ID_SHIFT;
+	transfer->chan_node |= config->lb_id << DMA_CHAN_NODE_LB_ID_SHIFT;
+	transfer->chan_node |= config->read_ptr_id <<
+			DMA_CHAN_NODE_RPTR_ID_SHIFT;
 
 	/* Set the line buffer image position */
-	transfer->chan_img_pos_high = (uint16_t)config->start_y_pixels;
-	transfer->chan_img_pos_high <<= DMA_CHAN_LB_START_Y_SHIFT;
-	transfer->chan_img_pos_high |= (uint16_t)config->start_x_pixels;
+	paintbox_dma_set_lb_start(transfer, (uint64_t)config->start_x_pixels,
+			(uint64_t)config->start_y_pixels);
+
 	return 0;
 }
 
@@ -99,12 +104,12 @@ int dma_setup_dram_to_lbp_transfer(struct paintbox_data *pb,
 {
 	int ret;
 
-	if (config->src.dram.len_bytes > DMA_MAX_IMG_TRANSFER_LEN) {
+	if (config->src.dram.len_bytes > DMA_CHAN_VA_BDRY_LEN_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma channel%u transfer too large, %llu > "
-				"%llu bytes", __func__, channel->channel_id,
+				"%s: dma channel%u transfer too large, %llu max %llu bytes",
+				__func__, channel->channel_id,
 				config->dst.dram.len_bytes,
-				DMA_MAX_IMG_TRANSFER_LEN);
+				DMA_CHAN_VA_BDRY_LEN_MAX);
 		return -ERANGE;
 	}
 
@@ -116,8 +121,8 @@ int dma_setup_dram_to_lbp_transfer(struct paintbox_data *pb,
 	if (channel->stats.time_stats_enabled)
 		channel->stats.non_dram_setup_start_time = ktime_get_boottime();
 
-	set_dma_channel_mode(transfer, DMA_CHAN_SRC_DRAM, DMA_CHAN_DST_LBP,
-			config->dst.lbp.gather);
+	paintbox_dma_set_channel_mode(transfer, DMA_CHAN_MODE_SRC_DRAM,
+			DMA_CHAN_MODE_DST_LBP, config->dst.lbp.gather);
 
 	ret = set_dma_lbp_parameters(pb, session, channel, transfer,
 			&config->dst.lbp);
@@ -155,12 +160,12 @@ int dma_setup_lbp_to_dram_transfer(struct paintbox_data *pb,
 {
 	int ret;
 
-	if (config->dst.dram.len_bytes > DMA_MAX_IMG_TRANSFER_LEN) {
+	if (config->dst.dram.len_bytes > DMA_CHAN_VA_BDRY_LEN_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma channel%u transfer too large, %llu > "
-				"%llu bytes", __func__, channel->channel_id,
+				"%s: dma channel%u transfer too large, %llu max %llu bytes",
+				__func__, channel->channel_id,
 				config->dst.dram.len_bytes,
-				DMA_MAX_IMG_TRANSFER_LEN);
+				DMA_CHAN_VA_BDRY_LEN_MAX);
 		return -ERANGE;
 	}
 
@@ -172,8 +177,8 @@ int dma_setup_lbp_to_dram_transfer(struct paintbox_data *pb,
 	if (channel->stats.time_stats_enabled)
 		channel->stats.non_dram_setup_start_time = ktime_get_boottime();
 
-	set_dma_channel_mode(transfer, DMA_CHAN_SRC_LBP, DMA_CHAN_DST_DRAM,
-			config->src.lbp.gather);
+	paintbox_dma_set_channel_mode(transfer, DMA_CHAN_MODE_SRC_LBP,
+			DMA_CHAN_MODE_DST_DRAM, config->src.lbp.gather);
 
 	ret = set_dma_lbp_parameters(pb, session, channel, transfer,
 			&config->src.lbp);
@@ -216,9 +221,8 @@ int dma_setup_mipi_to_lbp_transfer(struct paintbox_data *pb,
 
 	if (config->dst.lbp.gather) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma channel%u gather mode not supported "
-				"for MIPI transfers", __func__,
-				channel->channel_id);
+				"%s: dma channel%u gather mode not supported for MIPI transfers",
+				__func__, channel->channel_id);
 		return -EINVAL;
 	}
 
@@ -232,8 +236,8 @@ int dma_setup_mipi_to_lbp_transfer(struct paintbox_data *pb,
 		return -EINVAL;
 	}
 
-	set_dma_channel_mode(transfer, DMA_CHAN_SRC_MIPI_IN, DMA_CHAN_DST_LBP,
-			false);
+	paintbox_dma_set_channel_mode(transfer, DMA_CHAN_MODE_SRC_MIPI_IN,
+			DMA_CHAN_MODE_DST_LBP, false);
 
 	ret = set_dma_lbp_parameters(pb, session, channel, transfer,
 			&config->dst.lbp);
@@ -271,9 +275,8 @@ int dma_setup_lbp_to_mipi_transfer(struct paintbox_data *pb,
 
 	if (config->src.lbp.gather) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma channel%u gather mode not supported "
-				"for MIPI transfers", __func__,
-				channel->channel_id);
+				"%s: dma channel%u gather mode not supported for MIPI transfers",
+				__func__, channel->channel_id);
 		return -EINVAL;
 	}
 
@@ -287,8 +290,8 @@ int dma_setup_lbp_to_mipi_transfer(struct paintbox_data *pb,
 		return -EINVAL;
 	}
 
-	set_dma_channel_mode(transfer, DMA_CHAN_SRC_LBP, DMA_CHAN_DST_MIPI_OUT,
-			false);
+	paintbox_dma_set_channel_mode(transfer, DMA_CHAN_MODE_SRC_LBP,
+			DMA_CHAN_MODE_DST_MIPI_OUT, false);
 
 	ret = set_dma_lbp_parameters(pb, session, channel, transfer,
 			&config->src.lbp);

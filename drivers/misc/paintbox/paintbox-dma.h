@@ -77,13 +77,18 @@ void dma_report_error_all_channels(struct paintbox_data *pb, int err);
 void dma_set_mipi_error(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel, int err);
 
+/* This function must be called in an interrupt context */
+void dma_report_mipi_output_completed(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel);
+
 /* The caller to this function must hold pb->lock */
 int validate_dma_channel(struct paintbox_data *pb,
-		struct paintbox_session *session, uint8_t channel_id);
+		struct paintbox_session *session, unsigned int channel_id);
 
 /* The caller to this function must hold pb->lock */
 struct paintbox_dma_channel *get_dma_channel(struct paintbox_data *pb,
-		struct paintbox_session *session, uint8_t channel_id, int *err);
+		struct paintbox_session *session, unsigned int channel_id,
+		int *err);
 
 /* The caller to this function must hold pb->lock */
 void release_dma_channel(struct paintbox_data *pb,

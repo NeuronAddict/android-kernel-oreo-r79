@@ -41,12 +41,35 @@ config PAINTBOX_TEST_SUPPORT
 	This option enables support for Paintbox test only ioctls.
 	If you are unsure, say N.
 
+config PAINTBOX_IOMMU_ENABLED
+	bool  "Set the default state for the Painbox to on"
+	depends on PAINTBOX
+	depends on PAINTBOX_IOMMU
+	default y
+	---help---
+	This option sets the default state for Paintbox IOMMU to on.
+
+choice
+	prompt "Paintbox Version"
+	depends on PAINTBOX
+	default PAINTBOX_V0
+
+config PAINTBOX_V0
+	bool  "Paintbox V0 functionality and errata"
+	---help---
+	This option enables Paintbox V0 specific functionality and errata.
+
 config PAINTBOX_V1
 	bool  "Paintbox V1 functionality and errata"
-	depends on PAINTBOX
-	default n
 	---help---
 	This option enables Paintbox V1 specific functionality and errata.
-	If you are unsure, say N.
+
+endchoice
+
+config PAINTBOX_VERSION_MAJOR
+	int
+	depends on PAINTBOX
+	default 1 if PAINTBOX_V1
+	default 0
 
 endmenu

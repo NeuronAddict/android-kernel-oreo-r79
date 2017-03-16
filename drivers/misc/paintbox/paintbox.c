@@ -46,13 +46,11 @@
 #include "paintbox-mmu.h"
 #include "paintbox-power.h"
 #include "paintbox-regs.h"
+#include "paintbox-sim-regs.h"
 #include "paintbox-stp.h"
 #include "paintbox-stp-pc-histogram.h"
 #include "paintbox-stp-sim.h"
 #include "paintbox-stp-sram.h"
-
-#include "paintbox-regs.h"
-#include "paintbox-sim-regs.h"
 
 static int paintbox_open(struct inode *ip, struct file *fp)
 {
@@ -229,8 +227,6 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 		return read_lbp_memory_ioctl(pb, session, arg);
 	case PB_ALLOCATE_PROCESSOR:
 		return allocate_stp_ioctl(pb, session, arg);
-	case PB_INIT_PROCESSOR:
-		return init_stp_ioctl(pb, session, arg);
 	case PB_SETUP_PROCESSOR:
 		return setup_stp_ioctl(pb, session, arg);
 	case PB_WRITE_STP_MEMORY:
@@ -271,7 +267,7 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 #ifdef CONFIG_PAINTBOX_SIMULATOR_SUPPORT
 		return sim_get_stp_idle_ioctl(pb, session, arg);
 #else
-		return -ENOSYS;
+		return -EINVAL;
 #endif
 	case PB_ENABLE_STP_INTERRUPT:
 		return enable_stp_interrupt_ioctl(pb, session, arg);
@@ -339,7 +335,7 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 	case PB_TEST_DMA_CHANNEL_RESET:
 	case PB_TEST_MIPI_IN_RESET_STREAM:
 	case PB_TEST_MIPI_OUT_RESET_STREAM:
-		return -ENOSYS;
+		return -EINVAL;
 #endif
 	default:
 		dev_err(&pb->pdev->dev, "%s: unknown ioctl 0x%0x\n", __func__,
@@ -352,6 +348,7 @@ void paintbox_alloc_debug_buffer(struct paintbox_data *pb, size_t len)
 {
 	if (pb->vdbg_log_len < len) {
 		char *buf = pb->vdbg_log;
+
 		buf = krealloc(pb->vdbg_log, len, GFP_KERNEL);
 		if (buf) {
 			pb->vdbg_log_len = len;
@@ -401,24 +398,24 @@ static int paintbox_get_capabilities(struct paintbox_data *pb)
 		IPU_CAP_NUM_LBP_SHIFT;
 
 	pb->dma.num_channels = readl(pb->dma.dma_base + DMA_CAP0) &
-			MAX_DMA_CHAN_MASK;
+			DMA_CAP0_MAX_DMA_CHAN_MASK;
 
 	val = readl(pb->io_ipu.ipu_base + MPI_CAP);
-	pb->io_ipu.num_mipi_input_streams = (val & MPI_MAX_STRM_MASK) >>
-			MPI_MAX_STRM_SHIFT;
-	pb->io_ipu.num_mipi_input_interfaces = val & MPI_MAX_IFC_MASK;
+	pb->io_ipu.num_mipi_input_streams = (val & MPI_CAP_MAX_STRM_MASK) >>
+			MPI_CAP_MAX_STRM_SHIFT;
+	pb->io_ipu.num_mipi_input_interfaces = val & MPI_CAP_MAX_IFC_MASK;
 
 	val = readl(pb->io_ipu.ipu_base + MPO_CAP);
-	pb->io_ipu.num_mipi_output_streams = (val & MPO_MAX_STRM_MASK) >>
-			MPO_MAX_STRM_SHIFT;
-	pb->io_ipu.num_mipi_output_interfaces = val & MPO_MAX_IFC_MASK;
+	pb->io_ipu.num_mipi_output_streams = (val & MPO_CAP_MAX_STRM_MASK) >>
+			MPO_CAP_MAX_STRM_SHIFT;
+	pb->io_ipu.num_mipi_output_interfaces = val & MPO_CAP_MAX_IFC_MASK;
 
 	ret = of_property_read_u64(pb->pdev->dev.of_node, "hardware-id",
 			&hardware_id);
 	if (ret < 0) {
 		dev_err(&pb->pdev->dev,
-				"%s: hardware-id not set in device tree, err "
-				"%d\n", __func__, ret);
+				"%s: hardware-id not set in device tree, err %d\n",
+				__func__, ret);
 		return ret;
 	}
 
@@ -426,8 +423,8 @@ static int paintbox_get_capabilities(struct paintbox_data *pb)
 
 #if defined(CONFIG_PAINTBOX_SIMULATOR_SUPPORT)
 	dev_info(&pb->pdev->dev,
-			"Paintbox IPU Version %u.%u.%u Simulator Hardware ID %u"
-			"\n", major, minor, build, pb->hardware_id);
+			"Paintbox IPU Version %u.%u.%u Simulator Hardware ID %u\n",
+			major, minor, build, pb->hardware_id);
 #else
 	dev_info(&pb->pdev->dev,
 			"Paintbox IPU Version %u.%u.%u %s Hardware ID %u\n",
@@ -435,10 +432,9 @@ static int paintbox_get_capabilities(struct paintbox_data *pb)
 			pb->hardware_id);
 #endif
 	dev_info(&pb->pdev->dev,
-			"STPs %u LBPs %u DMA Channels %u MIPI Input Streams %u "
-			"MIPI Output Streams %u\n", pb->stp.num_stps,
-			pb->lbp.num_lbps, pb->dma.num_channels,
-			pb->io_ipu.num_mipi_input_streams,
+			"STPs %u LBPs %u DMA Channels %u MIPI Input Streams %u MIPI Output Streams %u\n",
+			pb->stp.num_stps, pb->lbp.num_lbps,
+			pb->dma.num_channels, pb->io_ipu.num_mipi_input_streams,
 			pb->io_ipu.num_mipi_output_streams);
 	return 0;
 }
@@ -485,12 +481,12 @@ static int paintbox_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, pb);
 
-	pb->io_ipu.ipu_base = pb->reg_base + IPU_IO_IPU_OFFSET;
-	pb->io.apb_base = pb->reg_base + IPU_IO_APB_OFFSET;
-	pb->io.axi_base = pb->reg_base + IPU_IO_AXI_OFFSET;
-	pb->dma.dma_base = pb->reg_base + IPU_DMA_OFFSET;
-	pb->lbp.reg_base = pb->reg_base + IPU_LBP_OFFSET;
-	pb->stp.reg_base = pb->reg_base + IPU_STP_OFFSET;
+	pb->io.apb_base = pb->reg_base + IPU_CSR_APB_OFFSET;
+	pb->io.axi_base = pb->reg_base + IPU_CSR_AXI_OFFSET;
+	pb->io_ipu.ipu_base = pb->reg_base + IPU_CSR_IO_OFFSET;
+	pb->dma.dma_base = pb->reg_base + IPU_CSR_DMA_OFFSET;
+	pb->stp.reg_base = pb->reg_base + IPU_CSR_STP_OFFSET;
+	pb->lbp.reg_base = pb->reg_base + IPU_CSR_LBP_OFFSET;
 #ifdef CONFIG_PAINTBOX_SIMULATOR_SUPPORT
 	pb->sim_base = pb->reg_base + SIM_GROUP_OFFSET;
 #endif

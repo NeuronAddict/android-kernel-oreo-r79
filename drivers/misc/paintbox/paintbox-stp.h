@@ -41,8 +41,6 @@ int resume_stp_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 int reset_stp_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
-int init_stp_ioctl(struct paintbox_data *pb,
-		struct paintbox_session *session, unsigned long arg);
 int setup_stp_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 int get_program_state_ioctl(struct paintbox_data *pb,
@@ -68,8 +66,8 @@ struct paintbox_stp *get_stp(struct paintbox_data *pb,
 void release_stp(struct paintbox_data *pb,
 		struct paintbox_session *session, struct paintbox_stp *stp);
 
-/* The LBP access control masks are not implemented on the V1 hardware. */
-#ifndef CONFIG_PAINTBOX_V1
+/* The LBP access control masks are not implemented on the V0 IPU. */
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
 void enable_stp_access_to_lbp(struct paintbox_data *pb,
 		struct paintbox_session *session, struct paintbox_lbp *lbp);
 void disable_stp_access_to_lbp(struct paintbox_data *pb,

@@ -37,12 +37,12 @@ int dma_setup_mipi_to_dram_transfer(struct paintbox_data *pb,
 {
 	int ret;
 
-	if (config->dst.dram.len_bytes > DMA_MAX_IMG_TRANSFER_LEN) {
+	if (config->dst.dram.len_bytes > DMA_CHAN_VA_BDRY_LEN_MAX) {
 		dev_err(&pb->pdev->dev,
-				"%s: dma channel%u: transfer too large, %llu > "
-				"%llu bytes", __func__, channel->channel_id,
+				"%s: dma channel%u transfer too large, %llu max %llu bytes",
+				__func__, channel->channel_id,
 				config->dst.dram.len_bytes,
-				DMA_MAX_IMG_TRANSFER_LEN);
+				DMA_CHAN_VA_BDRY_LEN_MAX);
 		return -ERANGE;
 	}
 
@@ -65,8 +65,8 @@ int dma_setup_mipi_to_dram_transfer(struct paintbox_data *pb,
 	if (ret < 0)
 		return ret;
 
-	set_dma_channel_mode(transfer, DMA_CHAN_SRC_MIPI_IN, DMA_CHAN_DST_DRAM,
-			false);
+	paintbox_dma_set_channel_mode(transfer, DMA_CHAN_MODE_SRC_MIPI_IN,
+			DMA_CHAN_MODE_DST_DRAM, false);
 
 	ret = set_dma_image_parameters(pb, channel, transfer, &config->img);
 	if (ret < 0)

@@ -435,6 +435,7 @@ struct mipi_interrupt_config {
  * -ENOSYS: Unimplemented Functionality
  *
  */
+/* TODO(ahampson):  Reorganize and compress ioctl number space.  b/36068296 */
 #define PB_GET_IPU_CAPABILITIES      _IOR('p', 1, struct ipu_capabilities)
 #define PB_ALLOCATE_DMA_CHANNEL      _IOW('p', 2, unsigned int)
 #define PB_SETUP_DMA_TRANSFER        _IOW('q', 3, struct dma_transfer_config)
@@ -506,7 +507,6 @@ struct mipi_interrupt_config {
  * read back into the userspace buffer.
  */
 #define PB_GET_COMPLETED_UNREAD_COUNT _IOW('p', 58, unsigned int)
-#define PB_INIT_PROCESSOR             _IOW('p', 59, unsigned int)
 #define PB_ENABLE_STP_INTERRUPT       _IOW('p', 60, unsigned int)
 #define PB_DISABLE_STP_INTERRUPT      _IOW('p', 61, unsigned int)
 #define PB_BIND_STP_INTERRUPT         _IOW('p', 62, struct stp_interrupt_config)

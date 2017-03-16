@@ -26,11 +26,9 @@
 #include "paintbox-dma-debug.h"
 #include "paintbox-regs.h"
 
-
 static const char *dma_reg_names[DMA_NUM_REGS] = {
 	REG_NAME_ENTRY(DMA_CTRL),
-	REG_NAME_ENTRY(DMA_CHAN_CTRL_L),
-	REG_NAME_ENTRY(DMA_CHAN_CTRL_H),
+	REG_NAME_ENTRY(DMA_CHAN_CTRL),
 	REG_NAME_ENTRY(DMA_CAP0),
 	REG_NAME_ENTRY(DMA_PMON_CFG),
 	REG_NAME_ENTRY(DMA_PMON_CNT_0_CFG),
@@ -52,44 +50,31 @@ static const char *dma_reg_names[DMA_NUM_REGS] = {
 	REG_NAME_ENTRY(DMA_CHAN_MODE),
 	REG_NAME_ENTRY(DMA_CHAN_IMG_FORMAT),
 	REG_NAME_ENTRY(DMA_CHAN_IMG_SIZE),
-	REG_NAME_ENTRY(DMA_CHAN_IMG_POS_L),
-	REG_NAME_ENTRY(DMA_CHAN_IMG_POS_H),
-	REG_NAME_ENTRY(DMA_CHAN_IMG_LAYOUT_L),
-	REG_NAME_ENTRY(DMA_CHAN_IMG_LAYOUT_H),
+	REG_NAME_ENTRY(DMA_CHAN_IMG_POS),
+	REG_NAME_ENTRY(DMA_CHAN_IMG_LAYOUT),
 	REG_NAME_ENTRY(DMA_CHAN_BIF_XFER),
-	REG_NAME_ENTRY(DMA_CHAN_VA_L),
-	REG_NAME_ENTRY(DMA_CHAN_VA_H),
-	REG_NAME_ENTRY(DMA_CHAN_VA_BDRY_L),
-	REG_NAME_ENTRY(DMA_CHAN_VA_BDRY_H),
-	REG_NAME_ENTRY(DMA_CHAN_NOC_XFER_L),
-	REG_NAME_ENTRY(DMA_CHAN_NOC_XFER_H),
+	REG_NAME_ENTRY(DMA_CHAN_VA),
+	REG_NAME_ENTRY(DMA_CHAN_VA_BDRY),
+	REG_NAME_ENTRY(DMA_CHAN_NOC_XFER),
 	REG_NAME_ENTRY(DMA_CHAN_NODE),
 	REG_NAME_ENTRY(DMA_CHAN_IMR),
 	REG_NAME_ENTRY(DMA_CHAN_ISR),
 	REG_NAME_ENTRY(DMA_CHAN_ISR_OVF),
 	REG_NAME_ENTRY(DMA_CHAN_MODE_RO),
 	REG_NAME_ENTRY(DMA_CHAN_IMG_FORMAT_RO),
-	REG_NAME_ENTRY(DMA_CHAN_IMG_SIZE_L_RO),
-	REG_NAME_ENTRY(DMA_CHAN_IMG_SIZE_H_RO),
-	REG_NAME_ENTRY(DMA_CHAN_IMG_POS_L_RO),
-	REG_NAME_ENTRY(DMA_CHAN_IMG_POS_H_RO),
-	REG_NAME_ENTRY(DMA_CHAN_IMG_LAYOUT_L_RO),
-	REG_NAME_ENTRY(DMA_CHAN_IMG_LAYOUT_H_RO),
+	REG_NAME_ENTRY(DMA_CHAN_IMG_SIZE_RO),
+	REG_NAME_ENTRY(DMA_CHAN_IMG_POS_RO),
+	REG_NAME_ENTRY(DMA_CHAN_IMG_LAYOUT_RO),
 	REG_NAME_ENTRY(DMA_CHAN_BIF_XFER_RO),
-	REG_NAME_ENTRY(DMA_CHAN_VA_L_RO),
-	REG_NAME_ENTRY(DMA_CHAN_VA_H_RO),
-	REG_NAME_ENTRY(DMA_CHAN_VA_BDRY_L_RO),
-	REG_NAME_ENTRY(DMA_CHAN_VA_BDRY_H_RO),
-	REG_NAME_ENTRY(DMA_CHAN_NOC_XFER_L_RO),
-	REG_NAME_ENTRY(DMA_CHAN_NOC_XFER_H_RO),
+	REG_NAME_ENTRY(DMA_CHAN_VA_RO),
+	REG_NAME_ENTRY(DMA_CHAN_VA_BDRY_RO),
+	REG_NAME_ENTRY(DMA_CHAN_NOC_XFER_RO),
 	REG_NAME_ENTRY(DMA_CHAN_NODE_RO),
 	REG_NAME_ENTRY(DMA_CHAN_DEPENDENCY),
 	REG_NAME_ENTRY(DMA_STAT_CTRL),
 	REG_NAME_ENTRY(DMA_STAT_STATE),
-	REG_NAME_ENTRY(DMA_STAT_PTR_L),
-	REG_NAME_ENTRY(DMA_STAT_PTR_H),
-	REG_NAME_ENTRY(DMS_STAT_ADDR_L),
-	REG_NAME_ENTRY(DMA_STAT_ADDR_H),
+	REG_NAME_ENTRY(DMA_STAT_PTR),
+	REG_NAME_ENTRY(DMA_STAT_ADDR),
 	REG_NAME_ENTRY(DMA_SPARE)
 };
 
@@ -97,23 +82,21 @@ static void paintbox_log_dma_common_transfer(struct paintbox_data *pb,
 		struct dma_transfer_config *config)
 {
 	dev_info(&pb->pdev->dev,
-			"\twidth %upx height %upx planes %u components %u bit"
-			" depth %u bits\n", config->img.width_pixels,
-			config->img.height_pixels, config->img.planes,
-			config->img.components, config->img.bit_depth);
+			"\twidth %upx height %upx planes %u components %u bit depth %u bits\n",
+			config->img.width_pixels, config->img.height_pixels,
+			config->img.planes, config->img.components,
+			config->img.bit_depth);
 	dev_info(&pb->pdev->dev,
 			"\tplane stride %llu bytes row stride %u bytes\n",
 			config->img.plane_stride_bytes,
 			config->img.row_stride_bytes);
 	dev_info(&pb->pdev->dev,
-			"\tstart X %dpx start Y %dpx block4x4 %d mipi raw "
-			"format %d rgba format %d\n",
+			"\tstart X %dpx start Y %dpx block4x4 %d mipi raw format %d rgba format %d\n",
 			config->img.start_x_pixels,
 			config->img.start_y_pixels, config->img.block4x4,
 			config->img.mipi_raw_format, config->img.rgba_format);
 	dev_info(&pb->pdev->dev,
-			"\tsheet width %upx sheet height %u x stripe height %u "
-			"rows\n",
+			"\tsheet width %upx sheet height %u x stripe height %u rows\n",
 			config->sheet_width, config->sheet_height,
 			config->stripe_height);
 	dev_info(&pb->pdev->dev,
@@ -134,15 +117,14 @@ void paintbox_log_dma_dram_to_lbp_transfer(struct paintbox_data *pb,
 			channel->channel_id, transfer);
 	if (config->src.dram.buffer_type == DMA_DRAM_BUFFER_USER) {
 		dev_info(&pb->pdev->dev,
-				"\tva %p dma addr %pad %llu bytes -> lbp%u lb%u"
-				" rptr id %u\n", config->src.dram.host_vaddr,
+				"\tva %p dma addr %pad %llu bytes -> lbp%u lb%u rptr id %u\n",
+				config->src.dram.host_vaddr,
 				&transfer->dma_addr, config->src.dram.len_bytes,
 				config->dst.lbp.lbp_id, config->dst.lbp.lb_id,
 				config->dst.lbp.read_ptr_id);
 	} else {
 		dev_info(&pb->pdev->dev,
-				"\tdma buf fd %d offset %zu bytes dma_addr %pad"
-				" %llu bytes -> lbp%u lb%u rptr id %u\n",
+				"\tdma buf fd %d offset %zu bytes dma_addr %pad %llu bytes -> lbp%u lb%u rptr id %u\n",
 				config->src.dram.dma_buf.fd,
 				config->src.dram.dma_buf.offset_bytes,
 				&transfer->dma_addr, config->src.dram.len_bytes,
@@ -169,8 +151,8 @@ void paintbox_log_dma_lbp_to_dram_transfer(struct paintbox_data *pb,
 			channel->channel_id, transfer);
 	if (config->dst.dram.buffer_type == DMA_DRAM_BUFFER_USER) {
 		dev_info(&pb->pdev->dev,
-				"\tlbp%u lb%u rptr id %u -> va %p dma addr %pad"
-				" %llu bytes\n", config->src.lbp.lbp_id,
+				"\tlbp%u lb%u rptr id %u -> va %p dma addr %pad %llu bytes\n",
+				config->src.lbp.lbp_id,
 				config->src.lbp.lb_id,
 				config->src.lbp.read_ptr_id,
 				config->dst.dram.host_vaddr,
@@ -178,8 +160,7 @@ void paintbox_log_dma_lbp_to_dram_transfer(struct paintbox_data *pb,
 				config->dst.dram.len_bytes);
 	} else {
 		dev_info(&pb->pdev->dev,
-				"\tlbp%u lb%u rptr id %u -> dma buf fd %d "
-				"offset %zu bytes dma_addr %pad %llu bytes\n",
+				"\tlbp%u lb%u rptr id %u -> dma buf fd %d offset %zu bytes dma_addr %pad %llu bytes\n",
 				config->src.lbp.lbp_id, config->src.lbp.lb_id,
 				config->src.lbp.read_ptr_id,
 				config->dst.dram.dma_buf.fd,
@@ -208,15 +189,14 @@ void paintbox_log_dma_dram_to_stp_transfer(struct paintbox_data *pb,
 
 	if (config->src.dram.buffer_type == DMA_DRAM_BUFFER_USER) {
 		dev_info(&pb->pdev->dev,
-				"\tva %p dma addr %pad %llu bytes -> stp%u sram"
-				" addr 0x%08x\n", config->src.dram.host_vaddr,
+				"\tva %p dma addr %pad %llu bytes -> stp%u sram addr 0x%08x\n",
+				config->src.dram.host_vaddr,
 				&transfer->dma_addr, config->src.dram.len_bytes,
 				config->dst.stp.stp_id,
 				config->dst.stp.sram_addr);
 	} else {
 		dev_info(&pb->pdev->dev,
-				"\tdma buf fd %d offset %zu bytes dma_addr %pad"
-				" %llu bytes -> stp%u sram addr 0x%08x\n",
+				"\tdma buf fd %d offset %zu bytes dma_addr %pad %llu bytes -> stp%u sram addr 0x%08x\n",
 				config->src.dram.dma_buf.fd,
 				config->src.dram.dma_buf.offset_bytes,
 				&transfer->dma_addr, config->src.dram.len_bytes,
@@ -279,15 +259,14 @@ void paintbox_log_dma_mipi_to_dram_transfer(struct paintbox_data *pb,
 			channel->channel_id, transfer);
 	if (config->dst.dram.buffer_type == DMA_DRAM_BUFFER_USER) {
 		dev_info(&pb->pdev->dev,
-				"\tmipi input stream%u -> va %p dma addr %pad "
-				"%llu bytes\n", channel->mipi_stream->stream_id,
+				"\tmipi input stream%u -> va %p dma addr %pad %llu bytes\n",
+				channel->mipi_stream->stream_id,
 				config->dst.dram.host_vaddr,
 				&transfer->dma_addr,
 				config->dst.dram.len_bytes);
 	} else {
 		dev_info(&pb->pdev->dev,
-				"\tmipi input stream%u -> dma buf fd %d offset "
-				"%zu bytes dma_addr %pad %llu bytes\n",
+				"\tmipi input stream%u -> dma buf fd %d offset %zu bytes dma_addr %pad %llu bytes\n",
 				channel->mipi_stream->stream_id,
 				config->dst.dram.dma_buf.fd,
 				config->dst.dram.dma_buf.offset_bytes,
@@ -386,15 +365,16 @@ static void dma_channel_reg_entry_write(
 }
 
 static inline int dump_dma_reg(struct paintbox_data *pb, uint32_t reg_offset,
-		uint32_t reg_value, char *buf, int *written, size_t len)
+		uint64_t reg_value, char *buf, int *written, size_t len)
 {
 	const char *reg_name = dma_reg_names[REG_INDEX(reg_offset)];
-	return dump_ipu_register_with_value(pb, pb->dma.dma_base, reg_offset,
+
+	return dump_ipu_register_with_value64(pb, pb->dma.dma_base, reg_offset,
 			reg_value, reg_name, buf, written, len);
 }
 
 static int dump_dma_reg_verbose(struct paintbox_data *pb, uint32_t reg_offset,
-		uint32_t reg_value, char *buf, int *written, size_t len,
+		uint64_t reg_value, char *buf, int *written, size_t len,
 		const char *format, ...)
 {
 	va_list args;
@@ -413,15 +393,15 @@ static int dump_dma_reg_verbose(struct paintbox_data *pb, uint32_t reg_offset,
 	return ret;
 }
 
-static inline const char *dma_swizzle_to_str(uint32_t val)
+static inline const char *dma_swizzle_to_str(uint64_t val)
 {
-	switch ((val & DMA_AXI_SWIZZLE_MASK) >>
-			DMA_AXI_SWIZZLE_SHIFT) {
-	case DMA_AXI_SWIZZLE_NONE:
+	switch ((val & DMA_CTRL_AXI_SWIZZLE_MASK) >>
+			DMA_CTRL_AXI_SWIZZLE_SHIFT) {
+	case DMA_CTRL_AXI_SWIZZLE_NONE:
 		return "NONE";
-	case DMA_AXI_SWIZZLE_BIG_ENDIAN:
+	case DMA_CTRL_AXI_SWIZZLE_BIG_ENDIAN:
 		return "BIG ENDIAN";
-	case DMA_AXI_SWIZZLE_NEIGHBOR_BYTES:
+	case DMA_CTRL_AXI_SWIZZLE_NEIGHBOR_BYTES:
 		return "NEIGHBOR BYTES";
 	default:
 		return "UNKNOWN";
@@ -431,10 +411,10 @@ static inline const char *dma_swizzle_to_str(uint32_t val)
 /* The caller to this function must hold pb->lock */
 int dump_dma_registers(struct paintbox_debug *debug, char *buf, size_t len)
 {
-	uint32_t dma_ctrl_registers[DMA_CTRL_NUM_REGS];
-	uint32_t dma_stat_registers[DMA_STAT_NUM_REGS];
+	uint64_t dma_ctrl_registers[DMA_CTRL_NUM_REGS];
+	uint64_t dma_stat_registers[DMA_STAT_NUM_REGS];
 	struct paintbox_data *pb = debug->pb;
-	uint32_t val, axi_swizzle;
+	uint64_t val;
 	unsigned long irq_flags;
 	unsigned int i, reg_offset;
 	int ret, written = 0;
@@ -447,39 +427,36 @@ int dump_dma_registers(struct paintbox_debug *debug, char *buf, size_t len)
 			continue;
 
 		dma_ctrl_registers[REG_INDEX(reg_offset)] =
-				readl(pb->dma.dma_base + reg_offset);
+				readq(pb->dma.dma_base + reg_offset);
 	}
 
 	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 
 	val = dma_ctrl_registers[REG_INDEX(DMA_CTRL)];
-	axi_swizzle = (val & DMA_AXI_SWIZZLE_MASK) >> DMA_AXI_SWIZZLE_SHIFT;
 	ret = dump_dma_reg_verbose(pb, DMA_CTRL, val, buf, &written, len,
 			"\tAXI_SWIZZLE %s DMA_CHAN_SEL 0x%02x RESET %d\n",
-			dma_swizzle_to_str(axi_swizzle),
-			(val & DMA_CHAN_SEL_MASK) >> DMA_CHAN_SEL_SHIFT,
-			val & DMA_RESET);
+			dma_swizzle_to_str(val),
+			(val & DMA_CTRL_DMA_CHAN_SEL_MASK) >>
+			DMA_CTRL_DMA_CHAN_SEL_SHIFT,
+			val & DMA_CTRL_DMA_RESET_MASK);
 	if (ret < 0)
 		goto err_exit;
 
-	val = dma_ctrl_registers[REG_INDEX(DMA_CHAN_CTRL_L)];
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_CTRL_L, val, buf, &written, len,
-			"\tDOUBLE_BUF 0x%04x CHAN_RESET 0x%04x\n",
-			(val & DMA_CHAN_DOUBLE_BUF_MASK) >>
-					DMA_CHAN_DOUBLE_BUF_SHIFT,
-			val & DMA_CHAN_RESET_MASK);
-	if (ret < 0)
-		goto err_exit;
-
-	val = dma_ctrl_registers[REG_INDEX(DMA_CHAN_CTRL_H)];
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_CTRL_H, val, buf, &written, len,
-			"\tSTOP 0x%04x\n", val & DMA_STOP_MASK);
+	val = dma_ctrl_registers[REG_INDEX(DMA_CHAN_CTRL)];
+	ret = dump_dma_reg_verbose(pb, DMA_CHAN_CTRL, val, buf, &written, len,
+			"\tSTOP 0x%04x DOUBLE_BUF 0x%04x CHAN_RESET 0x%04x\n",
+			(val & DMA_CHAN_CTRL_STOP_MASK) >>
+					DMA_CHAN_CTRL_STOP_SHIFT,
+			(val & DMA_CHAN_CTRL_DOUBLE_BUF_MASK) >>
+					DMA_CHAN_CTRL_DOUBLE_BUF_SHIFT,
+			val & DMA_CHAN_CTRL_CHAN_RESET_MASK);
 	if (ret < 0)
 		goto err_exit;
 
 	val = dma_ctrl_registers[REG_INDEX(DMA_CAP0)];
 	ret = dump_dma_reg_verbose(pb, DMA_CAP0, val, buf, &written, len,
-			"\tMAX_DMA_CHAN %u\n", val & MAX_DMA_CHAN_MASK);
+			"\tMAX_DMA_CHAN %u\n",
+			val & DMA_CAP0_MAX_DMA_CHAN_MASK);
 	if (ret < 0)
 		goto err_exit;
 
@@ -528,306 +505,212 @@ err_exit:
 	return ret;
 }
 
-static inline unsigned int get_bit_depth(uint32_t val)
+static inline unsigned int get_bit_depth(uint64_t val)
 {
-	switch ((val & DMA_CHAN_BIT_DEPTH_MASK) >> DMA_CHAN_BIT_DEPTH_SHIFT) {
-	case DMA_CHAN_BIT_DEPTH8:
+	switch ((val & DMA_CHAN_IMG_FORMAT_BIT_DEPTH_MASK) >>
+			DMA_CHAN_IMG_FORMAT_BIT_DEPTH_SHIFT) {
+	case DMA_CHAN_IMG_FORMAT_BIT_DEPTH8:
 		return 8;
-	case DMA_CHAN_BIT_DEPTH10:
+	case DMA_CHAN_IMG_FORMAT_BIT_DEPTH10:
 		return 10;
-	case DMA_CHAN_BIT_DEPTH12:
+	case DMA_CHAN_IMG_FORMAT_BIT_DEPTH12:
 		return 12;
-	case DMA_CHAN_BIT_DEPTH14:
+	case DMA_CHAN_IMG_FORMAT_BIT_DEPTH14:
 		return 14;
-	case DMA_CHAN_BIT_DEPTH16:
+	case DMA_CHAN_IMG_FORMAT_BIT_DEPTH16:
 		return 16;
 	default:
 		return 0;
 	};
 }
 
-static inline const char *dma_src_to_str(uint32_t val)
+static inline const char *dma_src_to_str(uint64_t val)
 {
-	switch ((val & DMA_CHAN_SRC_MASK) >> DMA_CHAN_SRC_SHIFT) {
-	case DMA_CHAN_SRC_DRAM:
+	switch ((val & DMA_CHAN_MODE_SRC_MASK) >> DMA_CHAN_MODE_SRC_SHIFT) {
+	case DMA_CHAN_MODE_SRC_DRAM:
 		return "DRAM";
-	case DMA_CHAN_SRC_LBP:
+	case DMA_CHAN_MODE_SRC_LBP:
 		return "LBP";
-	case DMA_CHAN_SRC_STP:
+	case DMA_CHAN_MODE_SRC_STP:
 		return "STP";
-	case DMA_CHAN_SRC_MIPI_IN:
+	case DMA_CHAN_MODE_SRC_MIPI_IN:
 		return "MIPI IN";
 	default:
 		return "UNKNOWN";
 	};
 }
 
-static inline const char *dma_dst_to_str(uint32_t val)
+static inline const char *dma_dst_to_str(uint64_t val)
 {
-	switch ((val & DMA_CHAN_DST_MASK) >> DMA_CHAN_DST_SHIFT) {
-	case DMA_CHAN_DST_DRAM:
+	switch ((val & DMA_CHAN_MODE_DST_MASK) >> DMA_CHAN_MODE_DST_SHIFT) {
+	case DMA_CHAN_MODE_DST_DRAM:
 		return "DRAM";
-	case DMA_CHAN_DST_LBP:
+	case DMA_CHAN_MODE_DST_LBP:
 		return "LBP";
-	case DMA_CHAN_DST_STP:
+	case DMA_CHAN_MODE_DST_STP:
 		return "STP";
-	case DMA_CHAN_DST_MIPI_OUT:
+	case DMA_CHAN_MODE_DST_MIPI_OUT:
 		return "MIPI OUT";
 	default:
 		return "UNKNOWN";
 	};
 }
 
-static inline const char *dma_rgba_to_str(uint32_t val)
+#if CONFIG_PAINTBOX_VERSION_MAJOR == 0
+static inline const char *dma_rgba_to_str(uint64_t val)
 {
-	switch ((val & DMA_CHAN_RGBA_FORMAT_MASK) >>
-			DMA_CHAN_RGBA_FORMAT_SHIFT) {
-	case DMA_CHAN_RGBA_FORMAT_DISABLED:
+	switch ((val & DMA_CHAN_IMG_FORMAT_RGBA_FORMAT_MASK) >>
+			DMA_CHAN_IMG_FORMAT_RGBA_FORMAT_SHIFT) {
+	case DMA_CHAN_IMG_FORMAT_RGBA_FORMAT_DISABLED:
 		return "DISABLED";
-	case DMA_CHAN_RGBA_FORMAT_RGBA:
+	case DMA_CHAN_IMG_FORMAT_RGBA_FORMAT_RGBA:
 		return "RGBA";
-	case DMA_CHAN_RGBA_FORMAT_ARGB:
+	case DMA_CHAN_IMG_FORMAT_RGBA_FORMAT_ARGB:
 		return "ARGB";
 	default:
 		return "UNKNOWN";
 	};
 }
+#endif
 
 static int dump_chan_mode_register(struct paintbox_data *pb,
-		uint32_t reg_offset, uint32_t val, char *buf, int *written,
+		uint32_t reg_offset, uint64_t val, char *buf, int *written,
 		size_t len)
 {
-	int ret, buf_offset = written ? *written : 0;
-
-	ret = dump_dma_reg_verbose(pb, reg_offset, val, buf, &buf_offset, len,
+	return dump_dma_reg_verbose(pb, reg_offset, val, buf, written, len,
 			"\tGATHER %u ADDR_MODE %s DST %s SRC %s ENA %u\n",
-			!!(val & DMA_CHAN_GATHER),
-			val & DMA_CHAN_ADDR_MODE_PHYSICAL ? "PHYSICAL" :
+			!!(val & DMA_CHAN_MODE_GATHER_MASK),
+			val & DMA_CHAN_MODE_ADDR_MODE_MASK ? "PHYSICAL" :
 			"ABSTRACT",
-			dma_dst_to_str(val),
-			dma_src_to_str(val),
-			!!(val & DMA_CHAN_ENA));
-	if (ret < 0)
-		return ret;
-
-	if (written)
-		*written = buf_offset;
-
-	return ret;
+			dma_dst_to_str(val), dma_src_to_str(val),
+			!!(val & DMA_CHAN_MODE_CHAN_ENA_MASK));
 }
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
 static int dump_chan_img_format_register(struct paintbox_data *pb,
-		uint32_t reg_offset, uint32_t val, char *buf, int *written,
+		uint32_t reg_offset, uint64_t val, char *buf, int *written,
 		size_t len)
 {
-	int ret, buf_offset = written ? *written : 0;
-
-	ret = dump_dma_reg_verbose(pb, reg_offset, val, buf, &buf_offset, len,
-			"\tBLOCK_4x4 %u RGBA %s MIPI_RAW_FORMAT %d BIT DEPTH %u"
-			" PLANES %u COMPONENTS %u\n",
-			!!(val & DMA_CHAN_BLOCK_4X4),
-			dma_rgba_to_str(val),
-			!!(val & DMA_CHAN_MIPI_RAW_FORMAT),
+	return dump_dma_reg_verbose(pb, reg_offset, val, buf, written, len,
+			"\tBLOCK_4x4 %u MIPI_RAW_FORMAT %d BIT DEPTH %u PLANES %u COMPONENTS %u\n",
+			!!(val & DMA_CHAN_IMG_FORMAT_BLOCK_4X4_MASK),
+			!!(val & DMA_CHAN_IMG_FORMAT_MIPI_RAW_FORMAT_MASK),
 			get_bit_depth(val),
-			((val & DMA_CHAN_PLANES_MASK) >>
-					DMA_CHAN_PLANES_SHIFT) + 1,
-			(val & DMA_CHAN_COMPONENTS_MASK) + 1);
-	if (ret < 0)
-		return ret;
-
-	if (written)
-		*written = buf_offset;
-
-	return ret;
+			((val & DMA_CHAN_IMG_FORMAT_PLANES_MASK) >>
+					DMA_CHAN_IMG_FORMAT_PLANES_SHIFT) + 1,
+			(val & DMA_CHAN_IMG_FORMAT_COMPONENTS_MASK) + 1);
 }
+#else
+static int dump_chan_img_format_register(struct paintbox_data *pb,
+		uint32_t reg_offset, uint64_t val, char *buf, int *written,
+		size_t len)
+{
+	return dump_dma_reg_verbose(pb, reg_offset, val, buf, written, len,
+			"\tBLOCK_4x4 %u RGBA %s MIPI_RAW_FORMAT %d BIT DEPTH %u PLANES %u COMPONENTS %u\n",
+			!!(val & DMA_CHAN_IMG_FORMAT_BLOCK_4X4_MASK),
+			dma_rgba_to_str(val),
+			!!(val & DMA_CHAN_IMG_FORMAT_MIPI_RAW_FORMAT_MASK),
+			get_bit_depth(val),
+			((val & DMA_CHAN_IMG_FORMAT_PLANES_MASK) >>
+					DMA_CHAN_IMG_FORMAT_PLANES_SHIFT) + 1,
+			(val & DMA_CHAN_IMG_FORMAT_COMPONENTS_MASK) + 1);
+}
+#endif
 
 static int dump_chan_img_size_register(struct paintbox_data *pb,
-		uint32_t reg_offset, uint32_t val, char *buf, int *written,
+		uint32_t reg_offset, uint64_t val, char *buf, int *written,
 		size_t len)
 {
-	int ret, buf_offset = written ? *written : 0;
-
-	ret = dump_dma_reg_verbose(pb, reg_offset, val, buf, &buf_offset, len,
+	return dump_dma_reg_verbose(pb, reg_offset, val, buf, written, len,
 			"\tIMG_HEIGHT %u IMG_WIDTH %u\n",
-			(val & DMA_CHAN_IMG_HEIGHT_MASK) >>
-					DMA_CHAN_IMG_HEIGHT_SHIFT,
-			val & DMA_CHAN_IMG_SIZE_MASK);
-	if (ret < 0)
-		return ret;
-
-	if (written)
-		*written = buf_offset;
-
-	return ret;
+			(val & DMA_CHAN_IMG_SIZE_IMG_HEIGHT_MASK) >>
+					DMA_CHAN_IMG_SIZE_IMG_HEIGHT_SHIFT,
+			val & DMA_CHAN_IMG_SIZE_IMG_WIDTH_MASK);
 }
 
-/* TODO(ahampson):  Remove high/low values once this part of the driver has
- * been converted to 64bit ops.
- */
 static int dump_chan_img_position_register(struct paintbox_data *pb,
-		uint32_t reg_offset, uint32_t low_val, uint32_t high_val,
-		char *buf, int *written, size_t len)
+		uint32_t reg_offset, uint64_t val, char *buf, int *written,
+		size_t len)
 {
-	int ret, buf_offset = written ? *written : 0;
-
-	ret = dump_dma_reg(pb, reg_offset, low_val, buf, &buf_offset, len);
-	if (ret < 0)
-		return ret;
-
-	ret = dump_dma_reg_verbose(pb, reg_offset + sizeof(uint32_t), high_val,
-			buf, &buf_offset, len,
+	return dump_dma_reg_verbose(pb, reg_offset, val, buf, written, len,
 			"\tLB_START_Y %d LB_START_X %d START_Y %u START_X %u\n",
-			(int16_t)((high_val & DMA_CHAN_LB_START_Y_MASK) >>
-					DMA_CHAN_LB_START_Y_SHIFT),
-			(int16_t)(high_val & DMA_CHAN_LB_START_X_MASK),
-			(low_val & DMA_CHAN_START_Y_MASK) >>
-					DMA_CHAN_START_Y_SHIFT,
-			low_val & DMA_CHAN_START_X_MASK);
-	if (ret < 0)
-		return ret;
-
-	if (written)
-		*written = buf_offset;
-
-	return ret;
+			(int16_t)((val & DMA_CHAN_IMG_POS_LB_START_Y_MASK) >>
+					DMA_CHAN_IMG_POS_LB_START_Y_SHIFT),
+			(int16_t)((val & DMA_CHAN_IMG_POS_LB_START_X_MASK) >>
+					DMA_CHAN_IMG_POS_LB_START_X_SHIFT),
+			(int16_t)((val & DMA_CHAN_IMG_POS_START_Y_MASK) >>
+					DMA_CHAN_IMG_POS_START_Y_SHIFT),
+			(int16_t)(val & DMA_CHAN_IMG_POS_START_X_MASK));
 }
 
-/* TODO(ahampson):  Remove high/low values once this part of the driver has
- * been converted to 64bit ops.
- */
 static int dump_chan_img_layout_register(struct paintbox_data *pb,
-		uint32_t reg_offset, uint32_t low_val, uint32_t high_val,
-		char *buf, int *written, size_t len)
+		uint32_t reg_offset, uint64_t val, char *buf, int *written,
+		size_t len)
 {
-	int ret, buf_offset = written ? *written : 0;
-	uint64_t plane_stride;
-	uint32_t row_stride;
-
-	ret = dump_dma_reg(pb, reg_offset, low_val, buf, &buf_offset, len);
-	if (ret < 0)
-		return ret;
-
-	row_stride = low_val & DMA_CHAN_ROW_STRIDE_MASK;
-	plane_stride = (low_val & DMA_CHAN_PLANE_STRIDE_LOW_MASK) >>
-			DMA_CHAN_PLANE_STRIDE_LOW_SHIFT;
-	plane_stride |= (uint64_t)(high_val &
-			DMA_CHAN_PLANE_STRIDE_HIGH_MASK) <<
-			DMA_CHAN_PLANE_STRIDE_LOW_WIDTH;
-
-	ret = dump_dma_reg_verbose(pb, DMA_CHAN_IMG_LAYOUT_H, high_val, buf,
-			&buf_offset, len, "\tROW_STRIDE %u PLANE_STRIDE %llu\n",
-			row_stride, plane_stride);
-	if (ret < 0)
-		return ret;
-
-	if (written)
-		*written = buf_offset;
-
-	return ret;
+	return dump_dma_reg_verbose(pb, reg_offset, val, buf, written, len,
+			"\tPLANE_STRIDE %llu ROW_STRIDE %u\n",
+			(val & DMA_CHAN_IMG_LAYOUT_PLANE_STRIDE_MASK) >>
+			DMA_CHAN_IMG_LAYOUT_PLANE_STRIDE_SHIFT,
+			val & DMA_CHAN_IMG_LAYOUT_ROW_STRIDE_MASK);
 }
 
 static int dump_chan_bif_transfer_register(struct paintbox_data *pb,
-		uint32_t reg_offset, uint32_t val, char *buf, int *written,
+		uint32_t reg_offset, uint64_t val, char *buf, int *written,
 		size_t len)
 {
-	int ret, buf_offset = written ? *written : 0;
-
-	ret = dump_dma_reg_verbose(pb, reg_offset, val, buf, &buf_offset,
-			len, "\tOUTSTANDING %u STRIPE_HEIGHT %u\n",
-			(val & DMA_CHAN_OUTSTANDING_MASK) >>
-					DMA_CHAN_OUTSTANDING_SHIFT,
-			val & DMA_CHAN_STRIPE_HEIGHT_MASK);
-	if (ret < 0)
-		return ret;
-
-	if (written)
-		*written = buf_offset;
-
-	return ret;
+	return dump_dma_reg_verbose(pb, reg_offset, val, buf, written, len,
+			"\tOUTSTANDING %u STRIPE_HEIGHT %u\n",
+			(val & DMA_CHAN_BIF_XFER_OUTSTANDING_MASK) >>
+			DMA_CHAN_BIF_XFER_OUTSTANDING_SHIFT,
+			val & DMA_CHAN_BIF_XFER_STRIPE_HEIGHT_MASK);
 }
 
-/* TODO(ahampson):  Remove high/low values once this part of the driver has
- * been converted to 64bit ops.
- */
 static int dump_chan_va_register(struct paintbox_data *pb, uint32_t reg_offset,
-		uint32_t low_val, uint32_t high_val, char *buf, int *written,
+		uint64_t val, char *buf, int *written, size_t len)
+{
+	return dump_dma_reg_verbose(pb, reg_offset, val, buf, written, len,
+			"\tVA 0x%016llx\n", val & DMA_CHAN_VA_BASE_MASK);
+}
+
+static int dump_chan_va_bdry_register(struct paintbox_data *pb,
+		uint32_t reg_offset, uint64_t val, char *buf, int *written,
 		size_t len)
 {
-	int ret, buf_offset = written ? *written : 0;
-	uint64_t va;
-
-	ret = dump_dma_reg(pb, reg_offset, low_val, buf, &buf_offset, len);
-	if (ret < 0)
-		return ret;
-
-	va = low_val;
-	va |= ((uint64_t)high_val) << 32;
-
-	return dump_dma_reg_verbose(pb, reg_offset + sizeof(uint32_t), high_val,
-			buf, written, len, "\tVA 0x%016llx\n", va);
+	return dump_dma_reg_verbose(pb, reg_offset, val, buf, written, len,
+			"\tVA BDRY %llu\n", val & DMA_CHAN_VA_BDRY_LEN_MASK);
 }
 
-/* TODO(ahampson):  Remove high/low values once this part of the driver has
- * been converted to 64bit ops.
- */
-static int dump_chan_va_bdry_register(struct paintbox_data *pb,
-		uint32_t reg_offset, uint32_t low_val, uint32_t high_val,
-		char *buf, int *written, size_t len)
-{
-	int ret;
-	uint64_t va_bdry;
-
-	ret = dump_dma_reg(pb, reg_offset, low_val, buf, written, len);
-	if (ret < 0)
-		return ret;
-
-	va_bdry = low_val;
-	va_bdry |= ((uint64_t)high_val) << 32;
-
-	return dump_dma_reg_verbose(pb, reg_offset + sizeof(uint32_t), high_val,
-			buf, written, len, "\tVA BDRY %llu\n", va_bdry);
-}
-
-/* TODO(ahampson):  Remove high/low values once this part of the driver has
- * been converted to 64bit ops.
- */
 static int dump_chan_noc_transfer_register(struct paintbox_data *pb,
-		uint32_t reg_offset, uint32_t low_val, uint32_t high_val,
-		char *buf, int *written, size_t len)
+		uint32_t reg_offset, uint64_t val, char *buf, int *written,
+		size_t len)
 {
-	int ret;
-
-	ret = dump_dma_reg_verbose(pb, reg_offset, low_val, buf, written, len,
-			"\tOUTSTANDING %u SHEET_HEIGHT %u SHEET_WIDTH %u\n",
-			(low_val & DMA_CHAN_NOC_OUTSTANDING_MASK) >>
-					DMA_CHAN_NOC_OUTSTANDING_SHIFT,
-			(low_val & DMA_CHAN_SHEET_HEIGHT_MASK) >>
-					DMA_CHAN_SHEET_HEIGHT_SHIFT,
-			low_val & DMA_CHAN_SHEET_WIDTH_MASK);
-	if (ret < 0)
-		return ret;
-
-	return dump_dma_reg_verbose(pb, reg_offset + sizeof(uint32_t), high_val,
-			buf, written, len,
-			"\tDYN_OUTSTANDING %d RETRY_INTERVAL %u\n",
-			!!(high_val & DMA_CHAN_NOC_XFER_DYN_OUTSTANDING_MASK),
-			high_val & DMA_CHAN_RETRY_INTERVAL_MASK);
+	return dump_dma_reg_verbose(pb, reg_offset, val, buf, written, len,
+			"\tDYN_OUTSTANDING %d RETRY_INTERVAL %u OUTSTANDING %u SHEET_HEIGHT %u SHEET_WIDTH %u\n",
+			(val & DMA_CHAN_NOC_XFER_DYN_OUTSTANDING_MASK) >>
+			DMA_CHAN_NOC_XFER_DYN_OUTSTANDING_SHIFT,
+			(val & DMA_CHAN_NOC_XFER_RETRY_INTERVAL_MASK) >>
+			DMA_CHAN_NOC_XFER_RETRY_INTERVAL_SHIFT,
+			(val & DMA_CHAN_NOC_XFER_OUTSTANDING_MASK) >>
+			DMA_CHAN_NOC_XFER_OUTSTANDING_SHIFT,
+			(val & DMA_CHAN_NOC_XFER_SHEET_HEIGHT_MASK) >>
+			DMA_CHAN_NOC_XFER_SHEET_HEIGHT_SHIFT,
+			val & DMA_CHAN_NOC_XFER_SHEET_WIDTH_MASK);
 }
 
 static int dump_chan_node_register(struct paintbox_data *pb,
-		uint32_t reg_offset, uint32_t val, char *buf, int *written,
+		uint32_t reg_offset, uint64_t val, char *buf, int *written,
 		size_t len)
 {
 	return dump_dma_reg_verbose(pb, reg_offset, val, buf, written, len,
 			"\tCORE_ID %u LB_ID %u RPTR_ID %u\n",
-			val & DMA_CHAN_CORE_ID_MASK,
-			(val & DMA_CHAN_LB_ID_MASK) >> DMA_CHAN_LB_ID_SHIFT,
-			(val & DMA_CHAN_RPTR_ID_MASK) >>
-					DMA_CHAN_RPTR_ID_SHIFT);
+			val & DMA_CHAN_NODE_CORE_ID_MASK,
+			(val & DMA_CHAN_NODE_LB_ID_MASK) >>
+			DMA_CHAN_NODE_LB_ID_SHIFT,
+			(val & DMA_CHAN_NODE_RPTR_ID_MASK) >>
+			DMA_CHAN_NODE_RPTR_ID_SHIFT);
 }
 
-static inline uint32_t get_reg_value(uint32_t *reg_values,
-		uint32_t reg_offset)
+static inline uint64_t get_reg_value(uint64_t *reg_values, uint32_t reg_offset)
 {
 	return reg_values[REG_INDEX(reg_offset - DMA_CHAN_BLOCK_START)];
 }
@@ -835,7 +718,7 @@ static inline uint32_t get_reg_value(uint32_t *reg_values,
 int dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
 			size_t len)
 {
-	uint32_t reg_values[DMA_CHAN_NUM_REGS];
+	uint64_t reg_values[DMA_CHAN_NUM_REGS];
 	struct paintbox_dma_channel *channel = container_of(debug,
 			struct paintbox_dma_channel, debug);
 	struct paintbox_data *pb = debug->pb;
@@ -853,7 +736,7 @@ int dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
 			continue;
 
 		reg_values[REG_INDEX(reg_offset - DMA_CHAN_BLOCK_START)] =
-				readl(pb->dma.dma_base + reg_offset);
+				readq(pb->dma.dma_base + reg_offset);
 	}
 
 	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
@@ -876,17 +759,15 @@ int dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
 	if (ret < 0)
 		goto err_exit;
 
-	ret = dump_chan_img_position_register(pb, DMA_CHAN_IMG_POS_L,
-			get_reg_value(reg_values, DMA_CHAN_IMG_POS_L),
-			get_reg_value(reg_values, DMA_CHAN_IMG_POS_H),
-			buf,&written, len);
+	ret = dump_chan_img_position_register(pb, DMA_CHAN_IMG_POS,
+			get_reg_value(reg_values, DMA_CHAN_IMG_POS),
+			buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	ret = dump_chan_img_layout_register(pb, DMA_CHAN_IMG_LAYOUT_L,
-			get_reg_value(reg_values, DMA_CHAN_IMG_LAYOUT_L),
-			get_reg_value(reg_values, DMA_CHAN_IMG_LAYOUT_H),
-			buf, &written, len);
+	ret = dump_chan_img_layout_register(pb, DMA_CHAN_IMG_LAYOUT,
+			get_reg_value(reg_values, DMA_CHAN_IMG_LAYOUT), buf,
+			&written, len);
 	if (ret < 0)
 		goto err_exit;
 
@@ -896,24 +777,21 @@ int dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
 	if (ret < 0)
 		goto err_exit;
 
-	ret = dump_chan_va_register(pb, DMA_CHAN_VA_L,
-			get_reg_value(reg_values, DMA_CHAN_VA_L),
-			get_reg_value(reg_values, DMA_CHAN_VA_H),
-			buf, &written, len);
+	ret = dump_chan_va_register(pb, DMA_CHAN_VA,
+			get_reg_value(reg_values, DMA_CHAN_VA), buf, &written,
+			len);
 	if (ret < 0)
 		goto err_exit;
 
-	ret = dump_chan_va_bdry_register(pb, DMA_CHAN_VA_BDRY_L,
-			get_reg_value(reg_values, DMA_CHAN_VA_BDRY_L),
-			get_reg_value(reg_values, DMA_CHAN_VA_BDRY_H),
-			buf, &written, len);
+	ret = dump_chan_va_bdry_register(pb, DMA_CHAN_VA_BDRY,
+			get_reg_value(reg_values, DMA_CHAN_VA_BDRY), buf,
+			&written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	ret = dump_chan_noc_transfer_register(pb, DMA_CHAN_NOC_XFER_L,
-			get_reg_value(reg_values, DMA_CHAN_NOC_XFER_L),
-			get_reg_value(reg_values, DMA_CHAN_NOC_XFER_H),
-			buf, &written, len);
+	ret = dump_chan_noc_transfer_register(pb, DMA_CHAN_NOC_XFER,
+			get_reg_value(reg_values, DMA_CHAN_NOC_XFER), buf,
+			&written, len);
 	if (ret < 0)
 		goto err_exit;
 
@@ -953,23 +831,21 @@ int dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
 	if (ret < 0)
 		goto err_exit;
 
-	ret = dump_chan_img_size_register(pb, DMA_CHAN_IMG_SIZE_L_RO,
-			get_reg_value(reg_values, DMA_CHAN_IMG_SIZE_L_RO), buf,
+	ret = dump_chan_img_size_register(pb, DMA_CHAN_IMG_SIZE_RO,
+			get_reg_value(reg_values, DMA_CHAN_IMG_SIZE_RO), buf,
 			&written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	ret = dump_chan_img_position_register(pb, DMA_CHAN_IMG_POS_L_RO,
-			get_reg_value(reg_values, DMA_CHAN_IMG_POS_L_RO),
-			get_reg_value(reg_values, DMA_CHAN_IMG_POS_H_RO),
+	ret = dump_chan_img_position_register(pb, DMA_CHAN_IMG_POS_RO,
+			get_reg_value(reg_values, DMA_CHAN_IMG_POS_RO),
 			buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	ret = dump_chan_img_layout_register(pb, DMA_CHAN_IMG_LAYOUT_L_RO,
-			get_reg_value(reg_values, DMA_CHAN_IMG_LAYOUT_L_RO),
-			get_reg_value(reg_values, DMA_CHAN_IMG_LAYOUT_H_RO),
-			buf, &written, len);
+	ret = dump_chan_img_layout_register(pb, DMA_CHAN_IMG_LAYOUT_RO,
+			get_reg_value(reg_values, DMA_CHAN_IMG_LAYOUT_RO), buf,
+			&written, len);
 	if (ret < 0)
 		goto err_exit;
 
@@ -979,24 +855,21 @@ int dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
 	if (ret < 0)
 		goto err_exit;
 
-	ret = dump_chan_va_register(pb, DMA_CHAN_VA_L,
-			get_reg_value(reg_values, DMA_CHAN_VA_L_RO),
-			get_reg_value(reg_values, DMA_CHAN_VA_H_RO),
-			buf, &written, len);
+	ret = dump_chan_va_register(pb, DMA_CHAN_VA_RO,
+			get_reg_value(reg_values, DMA_CHAN_VA_RO), buf,
+			&written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	ret = dump_chan_va_bdry_register(pb, DMA_CHAN_VA_BDRY_L_RO,
-			get_reg_value(reg_values, DMA_CHAN_VA_BDRY_L_RO),
-			get_reg_value(reg_values, DMA_CHAN_VA_BDRY_H_RO),
-			buf, &written, len);
+	ret = dump_chan_va_bdry_register(pb, DMA_CHAN_VA_BDRY_RO,
+			get_reg_value(reg_values, DMA_CHAN_VA_BDRY_RO), buf,
+			&written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	ret = dump_chan_noc_transfer_register(pb, DMA_CHAN_NOC_XFER_L_RO,
-			get_reg_value(reg_values, DMA_CHAN_NOC_XFER_L_RO),
-			get_reg_value(reg_values, DMA_CHAN_NOC_XFER_H_RO),
-			buf, &written, len);
+	ret = dump_chan_noc_transfer_register(pb, DMA_CHAN_NOC_XFER_RO,
+			get_reg_value(reg_values, DMA_CHAN_NOC_XFER_RO), buf,
+			&written, len);
 	if (ret < 0)
 		goto err_exit;
 
@@ -1020,49 +893,44 @@ void log_dma_registers(struct paintbox_data *pb,
 {
 	dev_info(&pb->pdev->dev, "%s\n", msg);
 	dump_chan_mode_register(pb, DMA_CHAN_MODE_RO,
-			readl(pb->dma.dma_base + DMA_CHAN_MODE_RO),
-			NULL, NULL, 0);
+			readq(pb->dma.dma_base + DMA_CHAN_MODE_RO), NULL, NULL,
+			0);
 
 	dump_chan_img_format_register(pb, DMA_CHAN_IMG_FORMAT_RO,
-			readl(pb->dma.dma_base + DMA_CHAN_IMG_FORMAT_RO),
-			NULL, NULL, 0);
+			readq(pb->dma.dma_base + DMA_CHAN_IMG_FORMAT_RO), NULL,
+			NULL, 0);
 
-	dump_chan_img_size_register(pb, DMA_CHAN_IMG_SIZE_L_RO,
-			readl(pb->dma.dma_base + DMA_CHAN_IMG_SIZE_L_RO),
-			NULL, NULL, 0);
+	dump_chan_img_size_register(pb, DMA_CHAN_IMG_SIZE_RO,
+			readq(pb->dma.dma_base + DMA_CHAN_IMG_SIZE_RO), NULL,
+			NULL, 0);
 
-	dump_chan_img_position_register(pb, DMA_CHAN_IMG_POS_L_RO,
-			readl(pb->dma.dma_base + DMA_CHAN_IMG_POS_L_RO),
-			readl(pb->dma.dma_base + DMA_CHAN_IMG_POS_H_RO),
-			NULL, NULL, 0);
+	dump_chan_img_position_register(pb, DMA_CHAN_IMG_POS_RO,
+			readq(pb->dma.dma_base + DMA_CHAN_IMG_POS_RO), NULL,
+			NULL, 0);
 
-	dump_chan_img_layout_register(pb, DMA_CHAN_IMG_LAYOUT_L_RO,
-			readl(pb->dma.dma_base + DMA_CHAN_IMG_LAYOUT_L_RO),
-			readl(pb->dma.dma_base + DMA_CHAN_IMG_LAYOUT_H_RO),
-			NULL, NULL, 0);
+	dump_chan_img_layout_register(pb, DMA_CHAN_IMG_LAYOUT_RO,
+			readq(pb->dma.dma_base + DMA_CHAN_IMG_LAYOUT_RO), NULL,
+			NULL, 0);
 
 	dump_chan_bif_transfer_register(pb, DMA_CHAN_BIF_XFER_RO,
-			readl(pb->dma.dma_base + DMA_CHAN_BIF_XFER_RO),
-			NULL, NULL, 0);
+			readq(pb->dma.dma_base + DMA_CHAN_BIF_XFER_RO), NULL,
+			NULL, 0);
 
-	dump_chan_va_register(pb, DMA_CHAN_VA_L,
-			readl(pb->dma.dma_base + DMA_CHAN_VA_L_RO),
-			readl(pb->dma.dma_base + DMA_CHAN_VA_H_RO),
-			NULL, NULL,  0);
+	dump_chan_va_register(pb, DMA_CHAN_VA_RO,
+			readq(pb->dma.dma_base + DMA_CHAN_VA_RO), NULL, NULL,
+			0);
 
-	dump_chan_va_bdry_register(pb, DMA_CHAN_VA_BDRY_L_RO,
-			readl(pb->dma.dma_base + DMA_CHAN_VA_BDRY_L_RO),
-			readl(pb->dma.dma_base + DMA_CHAN_VA_BDRY_H_RO),
-			NULL, NULL, 0);
+	dump_chan_va_bdry_register(pb, DMA_CHAN_VA_BDRY_RO,
+			readq(pb->dma.dma_base + DMA_CHAN_VA_BDRY_RO), NULL,
+			NULL, 0);
 
-	dump_chan_noc_transfer_register(pb, DMA_CHAN_NOC_XFER_L_RO,
-			readl(pb->dma.dma_base + DMA_CHAN_NOC_XFER_L_RO),
-			readl(pb->dma.dma_base + DMA_CHAN_NOC_XFER_H_RO),
-			NULL, NULL, 0);
+	dump_chan_noc_transfer_register(pb, DMA_CHAN_NOC_XFER_RO,
+			readq(pb->dma.dma_base + DMA_CHAN_NOC_XFER_RO), NULL,
+			NULL, 0);
 
 	dump_chan_node_register(pb, DMA_CHAN_NODE_RO,
-			readl(pb->dma.dma_base + DMA_CHAN_NODE_RO),
-			NULL, NULL, 0);
+			readq(pb->dma.dma_base + DMA_CHAN_NODE_RO), NULL, NULL,
+			0);
 }
 
 int dump_dma_channel_stats(struct paintbox_debug *debug, char *buf,
@@ -1085,8 +953,7 @@ int dump_dma_channel_stats(struct paintbox_debug *debug, char *buf,
 			channel->stats.reported_discards);
 
 	written += snprintf(buf + written, len - written,
-			"\tqueue counts: pending %u active %u completed %u "
-			"discarded %u\n",
+			"\tqueue counts: pending %u active %u completed %u discarded %u\n",
 			channel->pending_count, channel->active_count,
 			channel->completed_count, pb->dma.discard_count);
 	written += snprintf(buf + written, len - written,
@@ -1129,6 +996,7 @@ static int paintbox_dma_channel_time_stats_enable_show(struct seq_file *s,
 		void *p)
 {
 	struct paintbox_dma_channel *channel = s->private;
+
 	seq_printf(s, "%u\n", channel->stats.time_stats_enabled);
 	return 0;
 }
@@ -1172,6 +1040,7 @@ static const struct file_operations dma_channel_time_stats_enable_fops = {
 static int paintbox_dma_bif_oustanding_show(struct seq_file *s, void *p)
 {
 	struct paintbox_data *pb = s->private;
+
 	seq_printf(s, "%u\n", pb->dma.bif_outstanding);
 	return 0;
 }
@@ -1193,13 +1062,13 @@ static ssize_t paintbox_dma_bif_outstanding_write(struct file *file,
 
 	ret = kstrtouint_from_user(user_buf, count, 0, &val);
 	if (ret == 0) {
-		if (val < DMA_CHAN_OUTSTANDING_MIN ||
-				val > DMA_CHAN_OUTSTANDING_MAX) {
+		if (val < DMA_CHAN_BIF_XFER_OUTSTANDING_MIN ||
+				val > DMA_CHAN_BIF_XFER_OUTSTANDING_MAX) {
 			dev_err(&pb->pdev->dev,
-					"%s: invalid BIF outstanding value %u"
-					"(%u..%u)\n", __func__, val,
-					DMA_CHAN_OUTSTANDING_MIN,
-					DMA_CHAN_OUTSTANDING_MAX);
+					"%s: invalid BIF outstanding value %u min %u max %u\n",
+					__func__, val,
+					DMA_CHAN_BIF_XFER_OUTSTANDING_MIN,
+					DMA_CHAN_BIF_XFER_OUTSTANDING_MAX);
 			return -ERANGE;
 		}
 

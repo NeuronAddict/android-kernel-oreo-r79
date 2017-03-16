@@ -24,7 +24,6 @@
 #include "paintbox-common.h"
 #include "paintbox-debug.h"
 #include "paintbox-regs.h"
-#include "paintbox-regs-supplemental.h"
 
 /* Delay to prevent in-rush current */
 #define CORE_POWER_RAMP_TIME 10 /* us */

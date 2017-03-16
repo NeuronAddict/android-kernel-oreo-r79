@@ -141,20 +141,17 @@ struct paintbox_io {
 	unsigned int irq_activations;
 	int irq;
 	unsigned int num_interrupts;
-	unsigned int stp_start;
-	unsigned int bif_start;
-	unsigned int mmu_start;
-	unsigned int mipi_input_start;
-	unsigned int mipi_output_start;
-	uint32_t dma_mask;
-	uint32_t stp_mask;
-	uint32_t bif_mask;
-	uint32_t mmu_mask;
-	uint32_t mipi_input_mask;
-	uint32_t mipi_output_mask;
 
 	/* io_lock is used to protect the interrupt control registers */
 	spinlock_t io_lock;
+
+	struct {
+		struct dentry *time_stats_enable_dentry;
+		bool time_stats_enabled;
+		ktime_t irq_min_time;
+		ktime_t irq_max_time;
+		ktime_t irq_total_time;
+	} stats;
 };
 
 struct paintbox_mipi_interface {
@@ -313,20 +310,15 @@ struct paintbox_dma_transfer {
 	 * configuration and are written out to the hardware registers when the
 	 * transfer is started.
 	 */
+	uint64_t chan_img_pos;
+	uint64_t chan_img_layout;
+	uint64_t chan_va;
+	uint64_t chan_va_bdry;
+	uint64_t chan_noc_xfer;
 	uint32_t chan_mode;
 	uint32_t chan_img_format;
 	uint32_t chan_img_size;
-	uint32_t chan_img_pos_low;
-	uint32_t chan_img_pos_high;
 	uint32_t chan_bif_xfer;
-	uint32_t chan_img_layout_low;
-	uint32_t chan_img_layout_high;
-	uint32_t chan_va_low;
-	uint32_t chan_va_high;
-	uint32_t chan_va_bdry_low;
-	uint32_t chan_va_bdry_high;
-	uint32_t chan_noc_xfer_low;
-	uint32_t chan_noc_xfer_high;
 	uint32_t chan_node;
 
 	/* error is protected by pb->dma.dma_lock */
@@ -446,7 +438,7 @@ struct paintbox_stp {
 	/* these fields are used for program counter histogram tracking */
 	uint32_t disabled;
 	uint32_t running;
-	uint32_t* stalled;
+	uint32_t *stalled;
 };
 
 struct paintbox_stp_common {
