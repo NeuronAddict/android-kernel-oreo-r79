@@ -111,7 +111,6 @@ struct mnh_thermal_sensor {
 	struct mnh_thermal_device *dev;
 	struct thermal_zone_device *tzd;
 	uint32_t id;
-	uint32_t alarm_temp;
 };
 
 struct mnh_thermal_device {
@@ -120,6 +119,7 @@ struct mnh_thermal_device {
 	uint32_t emulation;
 	uint32_t wait_time_us;
 	uint32_t precision;
+	uint32_t trip_data;
 	uint32_t init_done;
 	struct mnh_thermal_sensor *sensors[MNH_NUM_PVT_SENSORS];
 };
@@ -131,6 +131,7 @@ enum mnh_thermal_op_mode {
 	THERMAL_OPMODE_LVT,  /* Process LVT evaluation */
 	THERMAL_OPMODE_HVT,  /* Process HVT evaluation */
 	THERMAL_OPMODE_SVT,  /* Process SVT evaluation */
+	THERMAL_OPMODE_MAX = THERMAL_OPMODE_SVT
 };
 
 struct mnh_thermal_op_param {
@@ -156,6 +157,61 @@ static uint32_t read_emulation_setting(void)
 		return val;
 	else
 		return 0;
+}
+
+static void config_pvt_clk(struct mnh_thermal_device *dev, bool clk_en)
+{
+	/* Configure 1.2MHz clock to PVT sensor and wait for 2usecs
+	 * until the clock is ticking if enabled
+	 */
+	HW_OUTf(dev->regs, SCU, PERIPH_CLK_CTRL, PVT_CLKEN, clk_en);
+	udelay(2);
+}
+
+static int config_thermal_properties(struct platform_device *pdev,
+		struct mnh_thermal_device *mnh_dev)
+{
+	struct resource *res;
+	unsigned int precision, trip_data;
+	int err;
+
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (!res) {
+		pr_err("cannot get platform resources\n");
+		return -ENOENT;
+	}
+
+	mnh_dev->regs = ioremap_nocache(res->start, resource_size(res));
+	if (!mnh_dev->regs) {
+		pr_err("unable to remap resources\n");
+		return -ENOMEM;
+	}
+
+	err = device_property_read_u32(&pdev->dev, "precision", &precision);
+	if (!err)
+		mnh_dev->precision = precision;
+	else {
+		pr_err("unable to read precision\n");
+		return -ENOMEM;
+	}
+
+	err = device_property_read_u32(&pdev->dev, "pvt-trip-data", &trip_data);
+	if (!err) {
+		mnh_dev->trip_data = trip_data;
+		mnh_debug("pvt_trip_data: %d\n", mnh_dev->trip_data);
+	} else {
+		pr_err("unable to read trip data\n");
+		mnh_dev->trip_data = 0;
+	}
+
+	/* Read target settings */
+	mnh_dev->emulation = read_emulation_setting();
+
+	/* Calculate PVT data read wait time */
+	mnh_dev->wait_time_us = PVT_WAIT_US(mnh_dev->precision);
+	mnh_debug("pvt wait time: %d us\n", mnh_dev->wait_time_us);
+
+	return 0;
 }
 
 /*
@@ -367,6 +423,15 @@ static int mnh_thermal_get_temp(void *data, int *temp_out)
 	return 0;
 }
 
+static void mnh_thermal_trip_config(struct mnh_thermal_sensor *sensor,
+	uint32_t data)
+{
+	pr_info("%s id:%d trim:%d\n", __func__, sensor->id, data);
+
+	HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id, TRIG, data);
+	HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id, ALARM_ENA, 1);
+}
+
 static const struct thermal_zone_of_device_ops mnh_of_thermal_ops = {
 	.get_temp = mnh_thermal_get_temp,
 	.get_data_out = mnh_thermal_get_data,
@@ -376,8 +441,7 @@ static const struct thermal_zone_of_device_ops mnh_of_thermal_ops = {
 static int mnh_thermal_probe(struct platform_device *pdev)
 {
 	struct mnh_thermal_device *mnh_dev;
-	struct resource *res;
-	unsigned int i, precision;
+	unsigned int i;
 	int err;
 
 	mnh_dev = devm_kzalloc(&pdev->dev, sizeof(*mnh_dev),
@@ -387,34 +451,11 @@ static int mnh_thermal_probe(struct platform_device *pdev)
 
 	mnh_dev->init_done = 0;
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!res) {
-		pr_err("cannot get platform resources\n");
-		return -ENOENT;
-	}
+	/* Read device configuration */
+	config_thermal_properties(pdev, mnh_dev);
 
-	mnh_dev->regs = ioremap_nocache(res->start, resource_size(res));
-	if (!mnh_dev->regs) {
-		pr_err("unable to remap resources\n");
-		return -ENOMEM;
-	}
-
-	err = device_property_read_u32(&pdev->dev, "precision", &precision);
-	if (!err)
-		mnh_dev->precision = precision;
-
-	/* Read target settings */
-	mnh_dev->emulation = read_emulation_setting();
-
-	/* Calculate PVT data read wait time */
-	mnh_dev->wait_time_us = PVT_WAIT_US(mnh_dev->precision);
-	mnh_debug("pvt wait time: %d us\n", mnh_dev->wait_time_us);
-
-	/* Enable 1.2MHz clock to PVT sensor and wait for 2usecs
-	 * until the clock is ticking
-	 */
-	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, PVT_CLKEN, 1);
-	udelay(2);
+	/* Enable PVT sensor clock */
+	config_pvt_clk(mnh_dev, 1);
 
 	/* Initialize thermctl sensors */
 	for (i = 0; i < ARRAY_SIZE(mnh_dev->sensors); ++i) {
@@ -440,20 +481,20 @@ static int mnh_thermal_probe(struct platform_device *pdev)
 		       TRIM, API_TRIM_CODE);
 		HW_OUTxf(mnh_dev->regs, SCU, PVT_CONTROL, sensor->id,
 		       PRECISION, mnh_dev->precision);
-	}
 
-	mnh_dev->init_done = 1;
+		/* Enable thermal alarm */
+		if (mnh_dev->trip_data)
+			mnh_thermal_trip_config(sensor, mnh_dev->trip_data);
+	}
 
 	dev_info(&pdev->dev, "init done\n");
 
-	/* TODO: configure sensors with characterized TRIM data
-	 * and dts trimmed config data from efuse.
-	 */
+	/* Read dts trim data */
 	read_efuse_trim(mnh_dev);
 
-	/* TODO: Enable Thermal alarm */
-
 	platform_set_drvdata(pdev, mnh_dev);
+
+	mnh_dev->init_done = 1;
 
 	return 0;
 
@@ -478,7 +519,7 @@ static int mnh_thermal_remove(struct platform_device *pdev)
 	}
 
 	/* Disable the clock */
-	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, PVT_CLKEN, 0);
+	config_pvt_clk(mnh_dev, 0);
 
 	iounmap(&mnh_dev->regs);
 
@@ -490,11 +531,11 @@ static int mnh_thermal_resume(struct platform_device *pdev)
 	struct mnh_thermal_device *mnh_dev = platform_get_drvdata(pdev);
 	unsigned int i;
 
-	/* Enable 1.2MHz clock to PVT sensor and wait for 2usecs
-	 * until the clock is ticking
-	 */
-	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, PVT_CLKEN, 1);
-	udelay(2);
+	if (!mnh_dev)
+		return -ENOMEM;
+
+	/* Enable PVT sensor clock */
+	config_pvt_clk(mnh_dev, 1);
 
 	/* Configure trim and precision data */
 	for (i = 0; i < ARRAY_SIZE(mnh_dev->sensors); ++i) {
@@ -515,11 +556,14 @@ static int mnh_thermal_suspend(struct platform_device *pdev, pm_message_t state)
 {
 	struct mnh_thermal_device *mnh_dev = platform_get_drvdata(pdev);
 
+	if (!mnh_dev)
+		return -ENOMEM;
+
 	mnh_dev->init_done = 0;
 
 	/* Turn off PVT clock */
-	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, PVT_CLKEN, 0);
-	dev_info(&pdev->dev, "suspend\n");
+	config_pvt_clk(mnh_dev, 0);
+
 	return 0;
 }
 
