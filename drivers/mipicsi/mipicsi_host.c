@@ -321,8 +321,8 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 		ths_setl_ns = MIN(PAD(115+6*ui_ps/1000),
 				  TRIM(145+10*ui_ps/1000));
 		pr_info("THS : RX setl=%d\n",ths_setl_ns);
-		value = ROUNDUP((ths_setl_ns-SETL_CONST_TIME),
-				(MIPI_DDR_CLOCK/(config->mbps/2)))-1;
+		value = DIVIDEUP((ths_setl_ns-SETL_CONST_TIME),
+				 (MIPI_DDR_CLOCK/(config->mbps/2)))-1;
 		mipicsi_host_dphy_write(dev, R_CSI2_DCPHY_RX_THS_SETL,
 					(1<<7) | value);
 	} else {
@@ -360,7 +360,9 @@ int mipicsi_host_start(struct mipicsi_top_cfg *config)
 		/*  Configure register 0x8 to set deskew_polarity_rw signal
 		 * (bit 5) to 1'b1
 		 */
-		mipicsi_host_dphy_write (dev, R_DPHY_RDWR_RX_SYS_7, 1<<5);
+		if (config->mbps > 1500)
+			mipicsi_host_dphy_write(dev, R_DPHY_RDWR_RX_SYS_7,
+						1<<5);
 
 		/* Set cfgclkfreqrange[7:0] = round[ (Fcfg_clk(MHz)-17)*4]
 		 * = 8'b10000100, assuming cfg_clk = 50MHz */

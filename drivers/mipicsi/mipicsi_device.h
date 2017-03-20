@@ -4,7 +4,7 @@
 
 #include "mipicsi_top.h"
 
-#define ROUNDUP(dividend, divisor) (((dividend) + ((divisor)/2))/(divisor))
+#define DIVIDEUP(dividend, divisor) (((dividend) + ((divisor-1)))/(divisor))
 #define PAD_PCT 20
 #define PAD(time) (((time)*(100+PAD_PCT))/100)
 #define TRIM(time) (((time)*(100-PAD_PCT))/100)
@@ -24,7 +24,7 @@
 /* Gen3 constants */
 /* Analog Timing Factors  - TBD */
 #define TCLK_PREP_ATF_NS    (-11)
-#define THS_PREP_ATF_NS     (-11)
+#define THS_PREP_ATF_NS     (-12)
 
 void mipicsi_device_reset(enum mipicsi_top_dev dev);
 void mipicsi_device_dphy_reset(enum mipicsi_top_dev dev);
