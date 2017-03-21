@@ -18,12 +18,14 @@
  */
 #define pr_fmt(fmt) "ion: " fmt
 
+#include <linux/dma-mapping.h>
 #include <linux/err.h>
 #include <linux/easel_ion.h>
+#include <linux/ioctl.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
-#include <linux/of.h>
-#include <linux/mm.h>
+#include <uapi/easel_ion.h>
+
 #include "../ion_priv.h"
 #include "../ion.h"
 #include "../ion_of.h"
@@ -34,6 +36,8 @@ struct easel_ion_dev {
 	struct ion_platform_data *data;
 };
 
+struct device *easel_ion_dev;
+
 static struct ion_of_heap easel_heaps[] = {
 	PLATFORM_HEAP("easel,sys_user", 0,
 		      ION_HEAP_TYPE_SYSTEM, "sys_user"),
@@ -43,6 +47,60 @@ static struct ion_of_heap easel_heaps[] = {
 		      "cma"),
 	{}
 };
+
+static int ion_do_cache_op(struct ion_client *client, struct ion_buffer *buffer,
+			unsigned int cmd)
+{
+	struct sg_table *table;
+
+	if (!ION_IS_CACHED(buffer->flags))
+		return 0;
+
+	table = buffer->sg_table;
+	if (IS_ERR_OR_NULL(table))
+		return PTR_ERR(table);
+
+	switch (cmd) {
+	case ION_IOC_DMA_BUF_FLUSH_CACHE:
+		dma_sync_sg_for_device(easel_ion_dev, table->sgl, table->nents,
+				DMA_TO_DEVICE);
+		break;
+	case ION_IOC_DMA_BUF_INVALIDATE_CACHE:
+		dma_sync_sg_for_cpu(easel_ion_dev, table->sgl, table->nents,
+				DMA_FROM_DEVICE);
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static long easel_ion_custom_ioctl(struct ion_client *client, unsigned int cmd,
+		unsigned long arg)
+{
+	struct ion_handle *handle;
+	int ret;
+
+	switch (cmd) {
+	case ION_IOC_DMA_BUF_FLUSH_CACHE:
+	case ION_IOC_DMA_BUF_INVALIDATE_CACHE:
+		handle = ion_import_dma_buf_fd(client, (int)arg);
+		if (IS_ERR(handle)) {
+			pr_info("%s: Could not import handle: %p\n", __func__,
+					handle);
+			return -EINVAL;
+		}
+
+		ret = ion_do_cache_op(client, handle->buffer, cmd);
+
+		ion_free(client, handle);
+
+		return ret;
+	default:
+		return -EINVAL;
+	};
+}
 
 static int easel_ion_probe(struct platform_device *pdev)
 {
@@ -55,7 +113,12 @@ static int easel_ion_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, ipdev);
 
-	ipdev->idev = ion_device_create(NULL);
+	/* Store a reference to the struct device object for use in the manual
+	 * cache management ioctls.
+	 */
+	easel_ion_dev = &pdev->dev;
+
+	ipdev->idev = ion_device_create(easel_ion_custom_ioctl);
 	if (IS_ERR(ipdev->idev))
 		return PTR_ERR(ipdev->idev);
 
