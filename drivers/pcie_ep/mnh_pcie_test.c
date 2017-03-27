@@ -255,7 +255,7 @@ static int __init mth_pcie_tst_drv_init(void)
 {
 	int err, major;
 
-	dev_err(pcie_ep_tst_device, "Init\n");
+	pr_info("mth_pcie_ep_test: Init\n");
 	err = alloc_chrdev_region(&mht_pcie_ep_tst_dev, 0, 1, DEVICE_NAME);
 	cdev_init(&pci_ep_tst_dev, &pcie_ep_tst_fops);
 	pci_ep_tst_dev.owner = THIS_MODULE;

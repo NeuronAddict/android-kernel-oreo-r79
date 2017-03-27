@@ -7,6 +7,13 @@ config MNH_PCIE_EP
 	help
 	  Enables the PCIe Endpoint driver
 
+config MNH_PCIE_EP_TEST
+	depends on MNH_PCIE_EP
+	tristate "MNH PCIe Endpoint Test Module"
+	default n
+	help
+	  Enables the PCIe Endpoint driver test module
+
 config MNH_PCIE_MULTIPLE_MSI
 	def_bool n
 	help
