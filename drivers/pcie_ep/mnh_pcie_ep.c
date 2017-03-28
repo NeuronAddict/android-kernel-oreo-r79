@@ -686,6 +686,15 @@ static int pcie_set_l_one(uint32_t enable, uint32_t clkpm)
 	return 0;
 }
 
+static irqreturn_t pcie_handle_wake_irq(int irq, void *dev_id)
+{
+	CSR_OUTf(PCIE_APP_STS, PCIE_WAKE_EVENT, 0x1);
+	dev_dbg(pcie_ep_dev->dev, "%s:%d\n", __func__, __LINE__);
+
+	/* return interrupt handled */
+	return IRQ_HANDLED;
+}
+
 static enum dma_data_direction mnh_to_dma_dir(enum mnh_dma_chan_dir_t mnh_dir)
 {
 	/*
@@ -1970,9 +1979,17 @@ static int mnh_pcie_ep_probe(struct platform_device *pdev)
 		clear_mem();
 		return -EINVAL;
 	}
+	pcie_ep_dev->wake_irq = platform_get_irq(pdev, 2);
+	err = request_irq(pcie_ep_dev->wake_irq, pcie_handle_wake_irq,
+			IRQF_SHARED, DEVICE_NAME, pcie_ep_dev->dev);
+	if (err) {
+		free_irq(pcie_ep_dev->cluster_irq, pcie_ep_dev->dev);
+		free_irq(pcie_ep_dev->sw_irq, pcie_ep_dev->dev);
+		clear_mem();
+		return -EINVAL;
+	}
 
 
-/* TODO: handle PCIe wake IRQ */
 
 /* declare MSI worker */
 	INIT_DELAYED_WORK(&msi_work, pcie_msi_worker);
