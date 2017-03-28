@@ -37,6 +37,7 @@
 #include <linux/string.h>
 #include <linux/log2.h>
 #include "mipicsi_top.h"
+#include "mipicsi_device.h"
 #include "mipicsi_pll.h"
 #include "mipicsi_util.h"
 
@@ -317,8 +318,8 @@ int mipicsi_pll_get_rx_osc_freq(uint16_t mbps, uint16_t *rx_osc_freq)
 
 int mipicsi_pll_calc(uint16_t mbps, struct mipicsi_pll *pll)
 {
-	uint16_t i, M, N, P, N_min, N_max, delta = 0xffff;
-	uint32_t fvco, fclkin, fout;
+	uint16_t i, M, N, P, N_min, N_max;
+	uint32_t fvco, fclkin, fout, fout_bps, delta = 0xffffffff;
 	bool found = false;
 
 	fclkin = REFCLK_MHZ;
@@ -429,6 +430,7 @@ int mipicsi_pll_calc(uint16_t mbps, struct mipicsi_pll *pll)
 		pr_info("Nmin=%d Nmax=%d\n", N_min, N_max);
 
 		bps = mbps*1000*1000;
+
 		for (i=0; i<(sizeof(pll_vco_cntrl_tbl))/
 			     (sizeof(struct pll_vco_cntrl_g3)); i++) {
 			if (bps/2 >= pll_vco_cntrl_tbl[i].vco_fmin) {
@@ -443,6 +445,45 @@ int mipicsi_pll_calc(uint16_t mbps, struct mipicsi_pll *pll)
 			return -EINVAL;
 
 
+		/* Calculate M and N */
+		for (N = N_min; N <= N_max; N++) {
+			M = (mbps/2 * N * P)/fclkin;
+			if ((M >= G3_PLL_M_MIN)
+			    && (M <= G3_PLL_M_MAX)) {
+				fout_bps = (fclkin*1000*1000*M)/(P*N);
+
+				while ((fout_bps*2 < bps) &&
+				       (M <= G3_PLL_M_MAX)) {
+					M += 1;
+					fout_bps = (fclkin*1000*1000*M)
+						/(P*N);
+				}
+				if ((fout_bps*2 >= bps) &&
+				    ((fout_bps*2 - bps) < delta) &&
+				    ((fout_bps*2-bps)%1000 == 0)) {
+					pll->loop_div = M;
+					pll->input_div = N;
+					pll->output_freq = DIVIDEUP(fout_bps,
+								    1000*1000);
+					delta = fout_bps*2 - bps;
+					if (delta == 0)
+						break;
+				}
+			}
+		}
+
+		pr_info("fclkin=%d, fout=%d\n\n", fclkin, fout);
+		pr_info("vco_cntrl                 = 0x%x\n", pll->vco_cntrl);
+		pr_info("M                         = %d\n", pll->loop_div);
+		pr_info("N                         = %d\n", pll->input_div);
+		pr_info("P                         = %d\n\n", P);
+
+		if (delta != 0) {
+			mbps = DIVIDEUP(bps+delta, 1000*1000);
+			pr_info("NOTE: Actual PLL output bitrate set to %u\n",
+				mbps);
+		}
+
 		pll->sr_osc_freq_tgt = 0;
 		pll->sr_range = 0;
 		for (i = 0; i < (sizeof(sr_tbl_g3))/(sizeof(struct sr_cntrl));
@@ -455,28 +496,6 @@ int mipicsi_pll_calc(uint16_t mbps, struct mipicsi_pll *pll)
 			}
 		}
 
-		/* Calculate M and N */
-		for (N = N_min; N <= N_max; N++) {
-			M = (mbps/2 * N * P)/fclkin;
-			if ((M >= G3_PLL_M_MIN)
-			    && (M <= G3_PLL_M_MAX)) {
-				fout = (pll->input_freq*M)/(P*N);
-				while ((fout*2 < mbps) && (M <= G3_PLL_M_MAX)) {
-					M += 1;
-					fout = (pll->input_freq*M)/(P*N);
-				}
-				if ((fout*2 >= mbps) &&
-				    (fout*2 - mbps) < delta) {
-					pll->loop_div = M;
-					pll->input_div = N;
-					pll->output_freq = fout;
-					delta = fout*2 - mbps;
-					if (delta == 0)
-						break;
-				}
-			}
-		}
-
 		if (mipicsi_pll_get_hsfreq(mbps, &(pll->hsfreq)) != 0)
 			return -EINVAL;
 
@@ -484,15 +503,6 @@ int mipicsi_pll_calc(uint16_t mbps, struct mipicsi_pll *pll)
 		    != 0)
 			return -EINVAL;
 
-		pr_info("fclkin=%d, fout=%d\n\n", fclkin, fout);
-		pr_info("vco_cntrl                 = 0x%x\n", pll->vco_cntrl);
-		pr_info("M                         = %d\n", pll->loop_div);
-		pr_info("N                         = %d\n", pll->input_div);
-		pr_info("P                         = %d\n\n", P);
-
-		if (pll->output_freq*2 != mbps)
-			pr_info("NOTE: Actual PLL output bitrate set to %u\n",
-				pll->output_freq*2);
 	}
 	return 0;
 }
