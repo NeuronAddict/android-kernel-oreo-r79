@@ -17,6 +17,8 @@
 #ifndef __MNH_CLK
 #define __MNH_CLK
 
+#include <linux/platform_device.h>
+
 enum mnh_cpu_freq_type {
 	CPU_FREQ_MIN = 0,
 	CPU_FREQ_200 = CPU_FREQ_MIN,
@@ -108,7 +110,7 @@ int mnh_lpddr_freq_change(int index);
  * @dev: device structure.
  * Return 0 on success, errcode on failures.
  */
-int mnh_clk_init(struct device *dev, void __iomem *baseadress);
+int mnh_clk_init(struct platform_device *pdev, void __iomem *baseadress);
 
 /**
  * Clean up the interface

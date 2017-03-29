@@ -37,18 +37,21 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
-#include <linux/platform_device.h>
+#include <linux/intel-hwio.h>
 #include "mnh-clk.h"
 
 
 #define DEVICE_NAME "mnh_freq_cooling"
 static void __iomem *baseaddr;
+static struct device *dev;
 
 
 static int mnh_freq_cooling_probe(struct platform_device *pdev)
 {
+	int ret = 0, err = 0;
 	struct resource *res;
 
+	dev = &pdev->dev;
 	dev_info(&pdev->dev, "mnh_freq_cooling_probe\n");
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -63,9 +66,13 @@ static int mnh_freq_cooling_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 
-	mnh_clk_init(&pdev->dev, baseaddr);
+	mnh_clk_init(pdev, baseaddr);
 
 	return 0;
+
+mnh_probe_err:
+	return ret;
+
 
 }
 

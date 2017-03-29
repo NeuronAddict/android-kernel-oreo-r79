@@ -243,7 +243,7 @@ firmware_config {
 		/* ccu_clk_ctl = <0xA1FF5C63>; */
 		peripheral_clk_ctl = <0x8000e0ce>;
 		mem_pwr_mgmnt = <0x0200c500>;
-		global_wake_en_set0 = <0x0FFE2000>;
+		global_wake_en_set0 = <0x0FFE2800>;
 		global_wake_en_set1 = <0x00020002>;
 	};
 };

@@ -21,8 +21,12 @@
 #include <linux/module.h>
 #include <linux/sysfs.h>
 #include <linux/device.h>
+#include <linux/of.h>
+#include <linux/of_address.h>
+#include <linux/interrupt.h>
 #include <linux/intel-hwio.h>
 #include <soc/mnh/mnh-hwio-scu.h>
+#include <soc/mnh/mnh-hwio-ddr-ctl.h>
 #include "mnh-clk.h"
 
 
@@ -32,6 +36,20 @@
 #define LP4_LPC_FREQ_SWITCH 0x8A
 #define REF_CLK_KHZ 19200
 #define SYS200_CLK_KHZ 200000
+
+#define DEVICE_NAME "mnh_freq_cooling"
+
+#define LP_CMD_EXIT_LP 0x81
+#define LP_CMD_SBIT 5
+
+#define MNH_DDR_CTL_IN(reg) \
+HW_IN(mnh_dev->ddraddr, DDR_CTL, reg)
+#define MNH_DDR_CTL_INf(reg, fld) \
+HW_INf(mnh_dev->ddraddr, DDR_CTL, reg, fld)
+#define MNH_DDR_CTL_OUTf(reg, fld, val) \
+HW_OUTf(mnh_dev->ddraddr, DDR_CTL, reg, fld, val)
+#define MNH_DDR_CTL_OUT(reg, val) \
+HW_OUT(mnh_dev->ddraddr, DDR_CTL, reg, val)
 
 /* If IPU clock is driven by CPU_IPU PLL
  * calculate IPU divider based on CPU clk and divider
@@ -108,6 +126,8 @@ static struct freq_reg_table ipu_reg_tables[] = {
 struct mnh_freq_cooling_device {
 	struct device *dev;
 	void __iomem *regs;
+	void __iomem *ddraddr;
+	int ddr_irq;
 	enum mnh_ipu_clk_src ipu_clk_src;
 	enum mnh_cpu_freq_type cpu_freq;
 	enum mnh_ipu_freq_type ipu_freq;
@@ -387,6 +407,7 @@ EXPORT_SYMBOL(mnh_lpddr_freq_change);
  */
 int mnh_lpddr_sys200_mode(void)
 {
+	dev_dbg(mnh_dev->dev, "%s\n", __func__);
 	/* Switch lpddr to SYS200 mode */
 	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, LP4_AXI_SYS200_MODE, 0x1);
 
@@ -470,6 +491,105 @@ int mnh_cpu_ipu_sys200_mode(void)
 	return 0;
 }
 EXPORT_SYMBOL(mnh_cpu_ipu_sys200_mode);
+
+/* read entire int_status */
+u64 mnh_ddr_int_status(void)
+{
+	u64 int_stat = ((u64)MNH_DDR_CTL_IN(228) << 32) | MNH_DDR_CTL_IN(227);
+	return int_stat;
+}
+EXPORT_SYMBOL(mnh_ddr_int_status);
+
+/* clear entire int_status */
+int mnh_ddr_clr_int_status(void)
+{
+	u64 stat = 0;
+	MNH_DDR_CTL_OUT(230, 0x0F);
+	MNH_DDR_CTL_OUT(229, 0xFFFFFFFF);
+	stat = mnh_ddr_int_status();
+	if (stat) {
+		pr_err("%s: int stat not all clear: %llx\n",
+			__func__, stat);
+		return -1;
+	}
+	return 0;
+}
+EXPORT_SYMBOL(mnh_ddr_clr_int_status);
+
+/* read single bit in int_status */
+static u32 mnh_ddr_int_status_bit(u8 sbit)
+{
+	u32 status = 0;
+	u32 upper = 0;
+	const u32 max_int_status_bit = 35;
+	const u32 first_upper_bit = 32;
+	if (sbit > max_int_status_bit)
+		return -EINVAL;
+
+	/*
+	docs refer to int status by bit numbers 0-35,
+	but we're only reading 32 bits at a time.
+	*/
+	upper = (sbit >= first_upper_bit) ? 1 : 0;
+	sbit -= (upper) ? first_upper_bit : 0;
+
+	status = (upper) ? MNH_DDR_CTL_IN(228) : MNH_DDR_CTL_IN(227);
+	status &= (1 << sbit);
+	return status;
+}
+
+/* clear single bit in int_status */
+static int mnh_ddr_clr_int_status_bit(u8 sbit)
+{
+	const u32 max_int_status_bit = 35;
+	const u32 first_upper_bit = 32;
+	if (sbit > max_int_status_bit)
+		return -EINVAL;
+
+	if (sbit >= first_upper_bit)
+		MNH_DDR_CTL_OUT(230, 1 << (sbit - first_upper_bit));
+	else
+		MNH_DDR_CTL_OUT(229, 1 << sbit);
+
+	if (mnh_ddr_int_status_bit(sbit)) {
+		pr_err("%s: bit %d is still set.\n",
+			__func__, sbit);
+		return -1;
+	}
+	return 0;
+}
+static int mnh_ddr_send_lp_cmd(u8 cmd)
+{
+	u32 timeout = 100000;
+	pr_debug("%s sending cmd: 0x%x\n", __func__, cmd);
+	MNH_DDR_CTL_OUTf(112, LP_CMD, cmd);
+
+	while (!mnh_ddr_int_status_bit(LP_CMD_SBIT) && --timeout)
+		udelay(1);
+
+	if (mnh_ddr_int_status_bit(LP_CMD_SBIT)) {
+		return mnh_ddr_clr_int_status_bit(LP_CMD_SBIT);
+	} else {
+		return -ETIMEDOUT;
+	}
+}
+
+static void mnh_ddr_enable_lp(void)
+{
+	MNH_DDR_CTL_OUTf(124, LP_AUTO_SR_MC_GATE_IDLE, 0xFF);
+	MNH_DDR_CTL_OUTf(122, LP_AUTO_MEM_GATE_EN, 0x4);
+	MNH_DDR_CTL_OUTf(122, LP_AUTO_ENTRY_EN, 0x4);
+	MNH_DDR_CTL_OUTf(122, LP_AUTO_EXIT_EN, 0xF);
+}
+
+static void mnh_ddr_disable_lp(void)
+{
+	MNH_DDR_CTL_OUTf(124, LP_AUTO_SR_MC_GATE_IDLE, 0x00);
+	MNH_DDR_CTL_OUTf(122, LP_AUTO_MEM_GATE_EN, 0x0);
+	MNH_DDR_CTL_OUTf(122, LP_AUTO_ENTRY_EN, 0x0);
+	MNH_DDR_CTL_OUTf(122, LP_AUTO_EXIT_EN, 0x0);
+	mnh_ddr_send_lp_cmd(LP_CMD_EXIT_LP);
+}
 
 /* Frequency calculation by PLL configuration
  * @cfg: struct freq_reg_table with pll config information.
@@ -715,18 +835,64 @@ static void clean_sysfs(void)
 	sysfs_remove_group(kernel_kobj, &mnh_freq_cooling_group);
 }
 
-int mnh_clk_init(struct device *dev, void __iomem *baseadress)
+/**
+ * Initial handler for ddr interrupts
+ */
+static irqreturn_t mnh_pm_handle_ddr_irq(int irq, void *dev_id)
 {
-	dev_info(dev, "mnh_freq_cooling_init\n");
+	//spin_lock(&mnh_dev->irqlock);
+	u64 status = mnh_ddr_int_status();
+	/* Clear the bits */
+	mnh_ddr_clr_int_status();
 
-	mnh_dev = devm_kzalloc(dev, sizeof(*mnh_dev),
+	//complete(&mnh_dev->ddrclk_complete);
+
+	//spin_unlock(&mnh_dev->irqlock);
+
+	dev_dbg(mnh_dev->dev, "%s status=0x%llx\n", __func__, status);
+	/* return interrupt handled */
+	return IRQ_HANDLED;
+}
+int mnh_clk_init(struct platform_device *pdev, void __iomem *baseadress)
+{
+	int ret = 0, err = 0;
+	struct resource *res;
+
+	dev_info(&pdev->dev, "mnh_freq_cooling_init\n");
+
+	mnh_dev = devm_kzalloc(&pdev->dev, sizeof(*mnh_dev),
 			GFP_KERNEL);
 	if (!mnh_dev)
 		return -ENOMEM;
 
 	/* Set baseadress for SCU */
 	mnh_dev->regs = baseadress;
-	mnh_dev->dev = dev;
+	mnh_dev->dev = &pdev->dev;
+	// init_completion(&mnh_dev->ddrclk_complete);
+	// spin_lock_init(&mnh_dev->irqlock);
+
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+	if (!res) {
+		dev_err(mnh_dev->dev, "cannot get platform resources\n");
+		ret = -ENOENT;
+		goto mnh_probe_err;
+	}
+	mnh_dev->ddraddr = ioremap_nocache(res->start, resource_size(res));
+	if (!mnh_dev->ddraddr) {
+		dev_err(mnh_dev->dev, "unable to remap resources\n");
+		ret = -ENOMEM;
+		goto mnh_probe_err;
+	}
+
+	mnh_dev->ddr_irq = platform_get_irq(pdev, 0);
+	dev_err(mnh_dev->dev, "Allocate ddr irq %d\n", mnh_dev->ddr_irq);
+	err = request_irq(mnh_dev->ddr_irq, mnh_pm_handle_ddr_irq,
+	       IRQF_SHARED, DEVICE_NAME, mnh_dev->dev);
+	if (err) {
+		dev_err(mnh_dev->dev, "Could not allocated ddr irq\n");
+		ret = -EINVAL;
+		goto mnh_probe_err;
+	}
 
 	/* Check IPU_CLK src */
 	mnh_dev->ipu_clk_src =
@@ -735,9 +901,14 @@ int mnh_clk_init(struct device *dev, void __iomem *baseadress)
 
 	/* TBD - Acquire current frequency */
 
-	init_sysfs(dev, kernel_kobj);
+	init_sysfs(mnh_dev->dev, kernel_kobj);
 
 	return 0;
+
+mnh_probe_err:
+	if (mnh_dev->ddraddr)
+		iounmap(&mnh_dev->ddraddr);
+	return ret;
 }
 
 void mnh_clk_clean(struct device *dev)
