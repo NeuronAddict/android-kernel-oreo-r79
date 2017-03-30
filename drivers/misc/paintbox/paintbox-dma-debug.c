@@ -102,9 +102,9 @@ static void paintbox_log_dma_common_transfer(struct paintbox_data *pb,
 	dev_info(&pb->pdev->dev,
 			"\tnoc outstanding %u retry interval %u\n",
 			config->noc_outstanding, config->retry_interval);
-	dev_info(&pb->pdev->dev, "\tnotify on completion %d auto load %d\n",
+	dev_info(&pb->pdev->dev, "\tnotify on completion %d auto start %d\n",
 			config->notify_on_completion,
-			config->auto_load_transfer);
+			config->auto_start_transfer);
 }
 
 /* The caller to this function must hold pb->lock */

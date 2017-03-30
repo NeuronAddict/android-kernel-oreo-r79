@@ -230,13 +230,12 @@ int dump_stp_registers(struct paintbox_debug *debug, char *buf, size_t len)
 	return written;
 }
 
-int dump_stp_stats(struct paintbox_debug *debug, char *buf,
-		size_t len)
+int dump_stp_stats(struct paintbox_debug *debug, char *buf, size_t len)
 {
 	struct paintbox_stp *stp = container_of(debug, struct paintbox_stp,
 			debug);
 
-	return snprintf(buf, len, " interrupts: %u\n", stp->interrupt_count);
+	return scnprintf(buf, len, " interrupts: %u\n", stp->interrupt_count);
 }
 #endif
 
@@ -582,8 +581,8 @@ int stop_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 {
 	unsigned int stp_id = (unsigned int)arg;
 	struct paintbox_stp *stp;
-	uint32_t ctrl;
 	unsigned long irq_flags;
+	uint32_t ctrl;
 	int ret;
 
 	mutex_lock(&pb->lock);
@@ -630,7 +629,7 @@ int resume_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 {
 	unsigned int stp_id = (unsigned int)arg;
 	dev_dbg(&pb->pdev->dev, "stp%u resume\n", stp_id);
-        /* Resume bit is self-clearing */
+	/* Resume bit is self-clearing */
 	return stp_ctrl_set(pb, session, stp_id, STP_CTRL_RESUME_MASK);
 }
 

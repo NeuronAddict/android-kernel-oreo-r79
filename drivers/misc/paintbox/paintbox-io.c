@@ -223,7 +223,7 @@ static irqreturn_t paintbox_io_interrupt(int irq, void *arg)
 	if (status & IPU_ISR_BIF_INTR_MASK)
 		paintbox_bif_interrupt(pb);
 
-	if (status & IPU_IMR_MMU_INTR_MASK)
+	if (status & IPU_ISR_MMU_INTR_MASK)
 		paintbox_mmu_interrupt(pb);
 
 	/* MIPI interrupts need to be processed before DMA interrupts so error
@@ -232,24 +232,24 @@ static irqreturn_t paintbox_io_interrupt(int irq, void *arg)
 	 * channel.  This DMA EOF interrupt needs to be reported as an error and
 	 * not as a normal completion.
 	 */
-	if (status & IPU_IMR_MPI_INTR_MASK)
+	if (status & IPU_ISR_MPI_INTR_MASK)
 		paintbox_mipi_input_interrupt(pb, (status &
-				IPU_IMR_MPI_INTR_MASK) >>
-				IPU_IMR_MPI_INTR_SHIFT, timestamp);
+				IPU_ISR_MPI_INTR_MASK) >>
+				IPU_ISR_MPI_INTR_SHIFT, timestamp);
 
-	if (status & IPU_IMR_MPO_INTR_MASK)
+	if (status & IPU_ISR_MPO_INTR_MASK)
 		paintbox_mipi_output_interrupt(pb, (status &
-				IPU_IMR_MPO_INTR_MASK) >>
-				IPU_IMR_MPO_INTR_SHIFT, timestamp);
+				IPU_ISR_MPO_INTR_MASK) >>
+				IPU_ISR_MPO_INTR_SHIFT, timestamp);
 
 	if (status & IPU_ISR_DMA_CHAN_INTR_MASK)
 		paintbox_dma_interrupt(pb, status & IPU_ISR_DMA_CHAN_INTR_MASK,
 				timestamp);
 
-	if (status & IPU_IMR_STP_INTR_MASK)
+	if (status & IPU_ISR_STP_INTR_MASK)
 		paintbox_stp_interrupt(pb, (status &
-				IPU_IMR_STP_INTR_MASK) >>
-				IPU_IMR_STP_INTR_SHIFT, timestamp);
+				IPU_ISR_STP_INTR_MASK) >>
+				IPU_ISR_STP_INTR_SHIFT, timestamp);
 
 	if (pb->io.stats.time_stats_enabled) {
 		ktime_t duration = ktime_sub(ktime_get_boottime(), timestamp);

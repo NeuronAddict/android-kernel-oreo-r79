@@ -110,6 +110,15 @@ struct paintbox_debug {
 	stats_dump_t stats_dump;
 };
 
+#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
+struct paintbox_ioctl_stat {
+	ktime_t min_time;
+	ktime_t max_time;
+	ktime_t total_time;
+	unsigned int count;
+};
+#endif
+
 struct paintbox_power {
 	struct paintbox_debug debug;
 	unsigned int active_core_count;
@@ -326,7 +335,7 @@ struct paintbox_dma_transfer {
 
 	enum dma_data_direction dir;
 	bool notify_on_completion;
-	bool auto_load_transfer;
+	bool auto_start_transfer;
 	ktime_t start_time;
 };
 
@@ -541,6 +550,15 @@ struct paintbox_data {
 	uint32_t hardware_id;
 	uint64_t perf_stp_sample_mask;
 	struct task_struct *perf_thread;
+
+#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
+	struct {
+		struct dentry *ioctl_time_stats_dentry;
+		struct mutex ioctl_lock;
+		struct paintbox_ioctl_stat *ioctl_entries;
+		bool ioctl_time_enabled;
+	} stats;
+#endif
 };
 
 static inline uint8_t lbp_id_to_noc_id(uint8_t lbp_id)

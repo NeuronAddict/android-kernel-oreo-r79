@@ -428,6 +428,196 @@ void paintbox_debug_create_reg_entries(struct paintbox_data *pb,
 	}
 }
 
+#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
+
+#define PB_IOCTL_NAME_ENTRY(c) [_IOC_NR(c)] = #c
+
+static const char *ioctl_names[PB_NUM_IOCTLS] = {
+	PB_IOCTL_NAME_ENTRY(PB_GET_IPU_CAPABILITIES),
+	PB_IOCTL_NAME_ENTRY(PB_ALLOCATE_DMA_CHANNEL),
+	PB_IOCTL_NAME_ENTRY(PB_SETUP_DMA_TRANSFER),
+	PB_IOCTL_NAME_ENTRY(PB_START_DMA_TRANSFER),
+	PB_IOCTL_NAME_ENTRY(PB_BIND_DMA_INTERRUPT),
+	PB_IOCTL_NAME_ENTRY(PB_UNBIND_DMA_INTERRUPT),
+	PB_IOCTL_NAME_ENTRY(PB_RELEASE_DMA_CHANNEL),
+	PB_IOCTL_NAME_ENTRY(PB_ALLOCATE_INTERRUPT),
+	PB_IOCTL_NAME_ENTRY(PB_WAIT_FOR_INTERRUPT),
+	PB_IOCTL_NAME_ENTRY(PB_RELEASE_INTERRUPT),
+	PB_IOCTL_NAME_ENTRY(PB_ALLOCATE_LINE_BUFFER_POOL),
+	PB_IOCTL_NAME_ENTRY(PB_SETUP_LINE_BUFFER),
+	PB_IOCTL_NAME_ENTRY(PB_RESET_LINE_BUFFER_POOL),
+	PB_IOCTL_NAME_ENTRY(PB_RESET_LINE_BUFFER),
+	PB_IOCTL_NAME_ENTRY(PB_RELEASE_LINE_BUFFER_POOL),
+	PB_IOCTL_NAME_ENTRY(PB_ALLOCATE_PROCESSOR),
+	PB_IOCTL_NAME_ENTRY(PB_SETUP_PROCESSOR),
+	PB_IOCTL_NAME_ENTRY(PB_START_PROCESSOR),
+	PB_IOCTL_NAME_ENTRY(PB_RELEASE_PROCESSOR),
+	PB_IOCTL_NAME_ENTRY(PB_GET_PROCESSOR_IDLE),
+	PB_IOCTL_NAME_ENTRY(PB_WAIT_FOR_ALL_PROCESSOR_IDLE),
+	PB_IOCTL_NAME_ENTRY(PB_WRITE_LBP_MEMORY),
+	PB_IOCTL_NAME_ENTRY(PB_READ_LBP_MEMORY),
+	PB_IOCTL_NAME_ENTRY(PB_WRITE_STP_MEMORY),
+	PB_IOCTL_NAME_ENTRY(PB_READ_STP_MEMORY),
+	PB_IOCTL_NAME_ENTRY(PB_STOP_PROCESSOR),
+	PB_IOCTL_NAME_ENTRY(PB_RESUME_PROCESSOR),
+	PB_IOCTL_NAME_ENTRY(PB_RESET_PROCESSOR),
+	PB_IOCTL_NAME_ENTRY(PB_GET_PROGRAM_STATE),
+	PB_IOCTL_NAME_ENTRY(PB_WRITE_VECTOR_SRAM_COORDINATES),
+	PB_IOCTL_NAME_ENTRY(PB_WRITE_VECTOR_SRAM_REPLICATE),
+	PB_IOCTL_NAME_ENTRY(PB_READ_VECTOR_SRAM_COORDINATES),
+	PB_IOCTL_NAME_ENTRY(PB_READ_DMA_TRANSFER),
+	PB_IOCTL_NAME_ENTRY(PB_ALLOCATE_MIPI_IN_STREAM),
+	PB_IOCTL_NAME_ENTRY(PB_RELEASE_MIPI_IN_STREAM),
+	PB_IOCTL_NAME_ENTRY(PB_SETUP_MIPI_IN_STREAM),
+	PB_IOCTL_NAME_ENTRY(PB_ENABLE_MIPI_IN_STREAM),
+	PB_IOCTL_NAME_ENTRY(PB_DISABLE_MIPI_IN_STREAM),
+	PB_IOCTL_NAME_ENTRY(PB_GET_MIPI_IN_FRAME_NUMBER),
+	PB_IOCTL_NAME_ENTRY(PB_CLEANUP_MIPI_IN_STREAM),
+	PB_IOCTL_NAME_ENTRY(PB_ALLOCATE_MIPI_OUT_STREAM),
+	PB_IOCTL_NAME_ENTRY(PB_RELEASE_MIPI_OUT_STREAM),
+	PB_IOCTL_NAME_ENTRY(PB_SETUP_MIPI_OUT_STREAM),
+	PB_IOCTL_NAME_ENTRY(PB_ENABLE_MIPI_OUT_STREAM),
+	PB_IOCTL_NAME_ENTRY(PB_DISABLE_MIPI_OUT_STREAM),
+	PB_IOCTL_NAME_ENTRY(PB_CLEANUP_MIPI_OUT_STREAM),
+	PB_IOCTL_NAME_ENTRY(PB_BIND_MIPI_IN_INTERRUPT),
+	PB_IOCTL_NAME_ENTRY(PB_UNBIND_MIPI_IN_INTERRUPT),
+	PB_IOCTL_NAME_ENTRY(PB_BIND_MIPI_OUT_INTERRUPT),
+	PB_IOCTL_NAME_ENTRY(PB_UNBIND_MIPI_OUT_INTERRUPT),
+	PB_IOCTL_NAME_ENTRY(PB_GET_COMPLETED_UNREAD_COUNT),
+	PB_IOCTL_NAME_ENTRY(PB_ENABLE_STP_INTERRUPT),
+	PB_IOCTL_NAME_ENTRY(PB_DISABLE_STP_INTERRUPT),
+	PB_IOCTL_NAME_ENTRY(PB_BIND_STP_INTERRUPT),
+	PB_IOCTL_NAME_ENTRY(PB_UNBIND_STP_INTERRUPT),
+	PB_IOCTL_NAME_ENTRY(PB_STOP_DMA_TRANSFER),
+	PB_IOCTL_NAME_ENTRY(PB_FLUSH_DMA_TRANSFERS),
+	PB_IOCTL_NAME_ENTRY(PB_STP_PC_HISTOGRAM_ENABLE),
+	PB_IOCTL_NAME_ENTRY(PB_STP_PC_HISTOGRAM_READ),
+	PB_IOCTL_NAME_ENTRY(PB_STP_PC_HISTOGRAM_CLEAR),
+	PB_IOCTL_NAME_ENTRY(PB_FLUSH_INTERRUPTS),
+	PB_IOCTL_NAME_ENTRY(PB_FLUSH_ALL_INTERRUPTS)
+};
+
+void paintbox_debug_log_ioctl_stats(struct paintbox_data *pb, unsigned int cmd,
+		ktime_t start, ktime_t end)
+{
+	struct paintbox_ioctl_stat *entry;
+	ktime_t duration;
+
+	if (_IOC_TYPE(cmd) != 'p')
+		return;
+
+	mutex_lock(&pb->stats.ioctl_lock);
+
+	duration = ktime_sub(end, start);
+
+	entry = &pb->stats.ioctl_entries[_IOC_NR(cmd)];
+
+	if (ktime_after(duration, entry->max_time))
+		entry->max_time = duration;
+
+	if (ktime_before(duration, entry->min_time))
+		entry->min_time = duration;
+
+	entry->total_time = ktime_add(entry->total_time, duration);
+
+	entry->count++;
+
+	mutex_unlock(&pb->stats.ioctl_lock);
+}
+
+static int paintbox_ioctl_time_stats_show(struct seq_file *s, void *p)
+{
+	struct paintbox_data *pb = s->private;
+	unsigned int i;
+
+	mutex_lock(&pb->stats.ioctl_lock);
+
+	for (i = 0; i < PB_NUM_IOCTLS; i++) {
+		struct paintbox_ioctl_stat *entry;
+
+		entry = &pb->stats.ioctl_entries[i];
+
+		if (entry->count == 0)
+			continue;
+
+		seq_printf(s, "%s min %lldns max %lldns avg %lldns tot %lldns cnt %u\n",
+				ioctl_names[i] ? ioctl_names[i] : "Unknown",
+				ktime_to_ns(entry->min_time),
+				ktime_to_ns(entry->max_time),
+				ktime_to_ns(entry->total_time) / entry->count,
+				ktime_to_ns(entry->total_time),
+				entry->count);
+	}
+
+	mutex_unlock(&pb->stats.ioctl_lock);
+
+	return 0;
+}
+
+static int paintbox_ioctl_time_stats_open(struct inode *inode,
+		struct file *file)
+{
+	return single_open(file, paintbox_ioctl_time_stats_show,
+			inode->i_private);
+}
+
+static ssize_t paintbox_ioctl_time_stats_write(struct file *file,
+		const char __user *user_buf, size_t count, loff_t *ppos)
+{
+	struct seq_file *s = (struct seq_file *)file->private_data;
+	struct paintbox_data *pb = s->private;
+	unsigned int val;
+	int ret;
+
+	ret = kstrtouint_from_user(user_buf, count, 0, &val);
+	if (ret == 0) {
+		mutex_lock(&pb->stats.ioctl_lock);
+
+		if (!pb->stats.ioctl_time_enabled && val == 1) {
+			unsigned int i;
+
+			WARN_ON(pb->stats.ioctl_entries);
+
+			pb->stats.ioctl_entries = kcalloc(PB_NUM_IOCTLS,
+					sizeof(struct paintbox_ioctl_stat),
+					GFP_KERNEL);
+			if (!pb->stats.ioctl_entries) {
+				mutex_unlock(&pb->stats.ioctl_lock);
+				return -ENOMEM;
+			}
+
+			for (i = 0; i < PB_NUM_IOCTLS; i++)
+				pb->stats.ioctl_entries[i].min_time =
+						ktime_set(KTIME_SEC_MAX, 0);
+			pb->stats.ioctl_time_enabled = true;
+		} else if (pb->stats.ioctl_time_enabled && val == 0) {
+			pb->stats.ioctl_time_enabled = false;
+			if (!WARN_ON(pb->stats.ioctl_entries)) {
+				kfree(pb->stats.ioctl_entries);
+				pb->stats.ioctl_entries = NULL;
+			}
+		}
+
+		mutex_unlock(&pb->stats.ioctl_lock);
+
+		return count;
+	}
+
+	dev_err(&pb->pdev->dev, "%s: invalid value, err = %d", __func__, ret);
+
+	return ret;
+}
+
+static const struct file_operations ioctl_time_stats_fops = {
+	.open = paintbox_ioctl_time_stats_open,
+	.write = paintbox_ioctl_time_stats_write,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+	.owner = THIS_MODULE,
+};
+#endif
+
 static int paintbox_reg_dump_show(struct seq_file *s, void *unused)
 {
 	struct paintbox_data *pb = s->private;
@@ -581,10 +771,28 @@ void paintbox_debug_init(struct paintbox_data *pb)
 				PTR_ERR(pb->regs_dentry));
 		return;
 	}
+
+#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
+	pb->stats.ioctl_time_stats_dentry = debugfs_create_file("ioctl_stats",
+			S_IRUSR | S_IRGRP | S_IWUSR, pb->debug_root, pb,
+			&ioctl_time_stats_fops);
+	if (IS_ERR(pb->stats.ioctl_time_stats_dentry)) {
+		dev_err(&pb->pdev->dev, "%s: err = %ld", __func__,
+				PTR_ERR(pb->stats.ioctl_time_stats_dentry ));
+		return;
+	}
+
+	mutex_init(&pb->stats.ioctl_lock);
+#endif
 }
 
 void paintbox_debug_remove(struct paintbox_data *pb)
 {
+#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
+	debugfs_remove(pb->stats.ioctl_time_stats_dentry);
+	mutex_destroy(&pb->stats.ioctl_lock);
+#endif
+
 	debugfs_remove(pb->regs_dentry);
 	debugfs_remove(pb->debug_root);
 }

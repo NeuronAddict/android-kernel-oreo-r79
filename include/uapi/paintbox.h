@@ -156,11 +156,16 @@ struct dma_transfer_config {
 	 */
 	bool notify_on_completion;
 
-	/* Set to true when the transfer should be auto-loaded once the
-	 * preceding transfer has completed without invoking the
-	 * PB_START_DMA_TRANSFER ioctl.
+	/* When auto_start_transfer is set to true the transfer will begin
+	 * immediately if there are no pending transfers ahead of it and there
+	 * is space in the active queue.  If the transfer is unable to start
+	 * then it is placed on the pending queue.
+	 *
+	 * When auto_start_transfer is set to false the transfer will be placed
+	 * on the pending queue and PB_START_DMA_TRANSFER will need to be
+	 * called to start the transfer.
 	 */
-	bool auto_load_transfer;
+	bool auto_start_transfer;
 };
 
 /* TODO(ahampson):  We can remove this when the IOMMU based transfers are
@@ -522,6 +527,8 @@ struct mipi_interrupt_config {
 
 /* Flush pending interrupts for all irqs in the session. */
 #define PB_FLUSH_ALL_INTERRUPTS        _IO('p', 70)
+
+#define PB_NUM_IOCTLS 71
 
 /* Test ioctls
  * The following ioctls are for testing and are not to be used for normal

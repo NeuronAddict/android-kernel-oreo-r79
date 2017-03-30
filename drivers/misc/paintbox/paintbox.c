@@ -181,167 +181,248 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 {
 	struct paintbox_session *session = fp->private_data;
 	struct paintbox_data *pb = session->dev;
+	int ret;
+#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
+	ktime_t start_time;
+
+	if (pb->stats.ioctl_time_enabled)
+		start_time = ktime_get_boottime();
+#endif
 
 	switch (cmd) {
 	case PB_GET_IPU_CAPABILITIES:
-		return paintbox_get_caps_ioctl(pb, session, arg);
+		ret = paintbox_get_caps_ioctl(pb, session, arg);
+		break;
 	case PB_ALLOCATE_INTERRUPT:
-		return allocate_interrupt_ioctl(pb, session, arg);
+		ret = allocate_interrupt_ioctl(pb, session, arg);
+		break;
 	case PB_WAIT_FOR_INTERRUPT:
-		return wait_for_interrupt_ioctl(pb, session, arg);
+		ret = wait_for_interrupt_ioctl(pb, session, arg);
+		break;
 	case PB_RELEASE_INTERRUPT:
-		return release_interrupt_ioctl(pb, session, arg);
+		ret = release_interrupt_ioctl(pb, session, arg);
+		break;
 	case PB_FLUSH_INTERRUPTS:
-		return paintbox_flush_interrupt_ioctl(pb, session, arg);
+		ret = paintbox_flush_interrupt_ioctl(pb, session, arg);
+		break;
 	case PB_FLUSH_ALL_INTERRUPTS:
-		return paintbox_flush_all_interrupts_ioctl(pb, session, arg);
+		ret = paintbox_flush_all_interrupts_ioctl(pb, session, arg);
+		break;
 	case PB_ALLOCATE_DMA_CHANNEL:
-		return allocate_dma_channel_ioctl(pb, session, arg);
+		ret = allocate_dma_channel_ioctl(pb, session, arg);
+		break;
 	case PB_BIND_DMA_INTERRUPT:
-		return bind_dma_interrupt_ioctl(pb, session, arg);
+		ret = bind_dma_interrupt_ioctl(pb, session, arg);
+		break;
 	case PB_UNBIND_DMA_INTERRUPT:
-		return unbind_dma_interrupt_ioctl(pb, session, arg);
+		ret = unbind_dma_interrupt_ioctl(pb, session, arg);
+		break;
 	case PB_START_DMA_TRANSFER:
-		return start_dma_transfer_ioctl(pb, session, arg);
+		ret = start_dma_transfer_ioctl(pb, session, arg);
+		break;
 	case PB_STOP_DMA_TRANSFER:
-		return stop_dma_transfer_ioctl(pb, session, arg);
+		ret = stop_dma_transfer_ioctl(pb, session, arg);
+		break;
 	case PB_RELEASE_DMA_CHANNEL:
-		return release_dma_channel_ioctl(pb, session, arg);
+		ret = release_dma_channel_ioctl(pb, session, arg);
+		break;
 	case PB_GET_COMPLETED_UNREAD_COUNT:
-		return get_completed_transfer_count_ioctl(pb, session, arg);
+		ret = get_completed_transfer_count_ioctl(pb, session, arg);
+		break;
 	case PB_FLUSH_DMA_TRANSFERS:
-		return flush_dma_transfers_ioctl(pb, session, arg);
+		ret = flush_dma_transfers_ioctl(pb, session, arg);
+		break;
 	case PB_ALLOCATE_LINE_BUFFER_POOL:
-		return allocate_lbp_ioctl(pb, session, arg);
+		ret = allocate_lbp_ioctl(pb, session, arg);
+		break;
 	case PB_SETUP_LINE_BUFFER:
-		return setup_lb_ioctl(pb, session, arg);
+		ret = setup_lb_ioctl(pb, session, arg);
+		break;
 	case PB_RELEASE_LINE_BUFFER_POOL:
-		return release_lbp_ioctl(pb, session, arg);
+		ret = release_lbp_ioctl(pb, session, arg);
+		break;
 	case PB_RESET_LINE_BUFFER_POOL:
-		return reset_lbp_ioctl(pb, session, arg);
+		ret = reset_lbp_ioctl(pb, session, arg);
+		break;
 	case PB_RESET_LINE_BUFFER:
-		return reset_lb_ioctl(pb, session, arg);
+		ret = reset_lb_ioctl(pb, session, arg);
+		break;
 	case PB_WRITE_LBP_MEMORY:
-		return write_lbp_memory_ioctl(pb, session, arg);
+		ret = write_lbp_memory_ioctl(pb, session, arg);
+		break;
 	case PB_READ_LBP_MEMORY:
-		return read_lbp_memory_ioctl(pb, session, arg);
+		ret = read_lbp_memory_ioctl(pb, session, arg);
+		break;
 	case PB_ALLOCATE_PROCESSOR:
-		return allocate_stp_ioctl(pb, session, arg);
+		ret = allocate_stp_ioctl(pb, session, arg);
+		break;
 	case PB_SETUP_PROCESSOR:
-		return setup_stp_ioctl(pb, session, arg);
+		ret = setup_stp_ioctl(pb, session, arg);
+		break;
 	case PB_WRITE_STP_MEMORY:
-		return write_stp_scalar_sram_ioctl(pb, session, arg);
+		ret = write_stp_scalar_sram_ioctl(pb, session, arg);
+		break;
 	case PB_READ_STP_MEMORY:
-		return read_stp_scalar_sram_ioctl(pb, session, arg);
+		ret = read_stp_scalar_sram_ioctl(pb, session, arg);
+		break;
 	case PB_WRITE_VECTOR_SRAM_COORDINATES:
-		return write_stp_vector_sram_coordinates_ioctl(pb, session,
-				arg);
+		ret = write_stp_vector_sram_coordinates_ioctl(pb, session, arg);
+		break;
 	case PB_WRITE_VECTOR_SRAM_REPLICATE:
-		return write_stp_vector_sram_replicate_ioctl(pb, session, arg);
+		ret = write_stp_vector_sram_replicate_ioctl(pb, session, arg);
+		break;
 	case PB_READ_VECTOR_SRAM_COORDINATES:
-		return read_stp_vector_sram_coordinates_ioctl(pb, session, arg);
+		ret = read_stp_vector_sram_coordinates_ioctl(pb, session, arg);
+		break;
 	case PB_START_PROCESSOR:
-		return start_stp_ioctl(pb, session, arg);
+		ret = start_stp_ioctl(pb, session, arg);
+		break;
 	case PB_STOP_PROCESSOR:
-		return stop_stp_ioctl(pb, session, arg);
+		ret = stop_stp_ioctl(pb, session, arg);
+		break;
 	case PB_RESUME_PROCESSOR:
-		return resume_stp_ioctl(pb, session, arg);
+		ret = resume_stp_ioctl(pb, session, arg);
+		break;
 	case PB_RESET_PROCESSOR:
-		return reset_stp_ioctl(pb, session, arg);
+		ret = reset_stp_ioctl(pb, session, arg);
+		break;
 	case PB_GET_PROGRAM_STATE:
-		return get_program_state_ioctl(pb, session, arg);
+		ret = get_program_state_ioctl(pb, session, arg);
+		break;
 	case PB_RELEASE_PROCESSOR:
-		return release_stp_ioctl(pb, session, arg);
+		ret = release_stp_ioctl(pb, session, arg);
+		break;
 	case PB_WAIT_FOR_ALL_PROCESSOR_IDLE:
 #ifdef CONFIG_PAINTBOX_SIMULATOR_SUPPORT
-		return sim_wait_for_idle_ioctl(pb, session, arg);
+		ret = sim_wait_for_idle_ioctl(pb, session, arg);
 #else
 		/* The simulator requires additional processing after the DMA
 		 * interrupt before the processor goes idle.  This processing
 		 * is fast enough on the actual hardware that we do not need
 		 * to poll for idle.
 		 */
-		return 0;
+		ret = 0;
 #endif
+		break;
 	case PB_GET_PROCESSOR_IDLE:
 #ifdef CONFIG_PAINTBOX_SIMULATOR_SUPPORT
-		return sim_get_stp_idle_ioctl(pb, session, arg);
+		ret = sim_get_stp_idle_ioctl(pb, session, arg);
 #else
-		return -EINVAL;
+		ret = -EINVAL;
 #endif
+		break;
 	case PB_ENABLE_STP_INTERRUPT:
-		return enable_stp_interrupt_ioctl(pb, session, arg);
+		ret = enable_stp_interrupt_ioctl(pb, session, arg);
+		break;
 	case PB_DISABLE_STP_INTERRUPT:
-		return disable_stp_interrupt_ioctl(pb, session, arg);
+		ret = disable_stp_interrupt_ioctl(pb, session, arg);
+		break;
 	case PB_BIND_STP_INTERRUPT:
-		return bind_stp_interrupt_ioctl(pb, session, arg);
+		ret = bind_stp_interrupt_ioctl(pb, session, arg);
+		break;
 	case PB_UNBIND_STP_INTERRUPT:
-		return unbind_stp_interrupt_ioctl(pb, session, arg);
+		ret = unbind_stp_interrupt_ioctl(pb, session, arg);
+		break;
 	case PB_STP_PC_HISTOGRAM_CLEAR:
-		return stp_pc_histogram_clear_ioctl(pb, session, arg);
+		ret = stp_pc_histogram_clear_ioctl(pb, session, arg);
+		break;
 	case PB_STP_PC_HISTOGRAM_ENABLE:
-		return stp_pc_histogram_enable_ioctl(pb, session, arg);
+		ret = stp_pc_histogram_enable_ioctl(pb, session, arg);
+		break;
 	case PB_STP_PC_HISTOGRAM_READ:
-		return stp_pc_histogram_read_ioctl(pb, session, arg);
+		ret = stp_pc_histogram_read_ioctl(pb, session, arg);
+		break;
 	case PB_SETUP_DMA_TRANSFER:
-		return setup_dma_transfer_ioctl(pb, session, arg);
+		ret = setup_dma_transfer_ioctl(pb, session, arg);
+		break;
 	case PB_READ_DMA_TRANSFER:
-		return read_dma_transfer_ioctl(pb, session, arg);
+		ret = read_dma_transfer_ioctl(pb, session, arg);
+		break;
 	case PB_ALLOCATE_MIPI_IN_STREAM:
-		return allocate_mipi_input_stream_ioctl(pb, session, arg);
+		ret = allocate_mipi_input_stream_ioctl(pb, session, arg);
+		break;
 	case PB_RELEASE_MIPI_IN_STREAM:
-		return release_mipi_stream_ioctl(pb, session, arg, true);
+		ret = release_mipi_stream_ioctl(pb, session, arg, true);
+		break;
 	case PB_SETUP_MIPI_IN_STREAM:
-		return setup_mipi_stream_ioctl(pb, session, arg, true);
+		ret = setup_mipi_stream_ioctl(pb, session, arg, true);
+		break;
 	case PB_ENABLE_MIPI_IN_STREAM:
-		return enable_mipi_stream_ioctl(pb, session, arg, true);
+		ret = enable_mipi_stream_ioctl(pb, session, arg, true);
+		break;
 	case PB_DISABLE_MIPI_IN_STREAM:
-		return disable_mipi_stream_ioctl(pb, session, arg, true);
+		ret = disable_mipi_stream_ioctl(pb, session, arg, true);
+		break;
 	case PB_GET_MIPI_IN_FRAME_NUMBER:
-		return get_mipi_frame_number_ioctl(pb, session, arg);
+		ret = get_mipi_frame_number_ioctl(pb, session, arg);
+		break;
 	case PB_CLEANUP_MIPI_IN_STREAM:
-		return cleanup_mipi_stream_ioctl(pb, session, arg, true);
+		ret = cleanup_mipi_stream_ioctl(pb, session, arg, true);
+		break;
 	case PB_ALLOCATE_MIPI_OUT_STREAM:
-		return allocate_mipi_output_stream_ioctl(pb, session, arg);
+		ret = allocate_mipi_output_stream_ioctl(pb, session, arg);
+		break;
 	case PB_RELEASE_MIPI_OUT_STREAM:
-		return release_mipi_stream_ioctl(pb, session, arg, false);
+		ret = release_mipi_stream_ioctl(pb, session, arg, false);
+		break;
 	case PB_SETUP_MIPI_OUT_STREAM:
-		return setup_mipi_stream_ioctl(pb, session, arg, false);
+		ret = setup_mipi_stream_ioctl(pb, session, arg, false);
+		break;
 	case PB_ENABLE_MIPI_OUT_STREAM:
-		return enable_mipi_stream_ioctl(pb, session, arg, false);
+		ret = enable_mipi_stream_ioctl(pb, session, arg, false);
+		break;
 	case PB_DISABLE_MIPI_OUT_STREAM:
-		return disable_mipi_stream_ioctl(pb, session, arg, false);
+		ret = disable_mipi_stream_ioctl(pb, session, arg, false);
+		break;
 	case PB_CLEANUP_MIPI_OUT_STREAM:
-		return cleanup_mipi_stream_ioctl(pb, session, arg, false);
+		ret = cleanup_mipi_stream_ioctl(pb, session, arg, false);
+		break;
 	case PB_BIND_MIPI_IN_INTERRUPT:
-		return bind_mipi_interrupt_ioctl(pb, session, arg, true);
+		ret = bind_mipi_interrupt_ioctl(pb, session, arg, true);
+		break;
 	case PB_UNBIND_MIPI_IN_INTERRUPT:
-		return unbind_mipi_interrupt_ioctl(pb, session, arg, true);
+		ret = unbind_mipi_interrupt_ioctl(pb, session, arg, true);
+		break;
 	case PB_BIND_MIPI_OUT_INTERRUPT:
-		return bind_mipi_interrupt_ioctl(pb, session, arg, false);
+		ret = bind_mipi_interrupt_ioctl(pb, session, arg, false);
+		break;
 	case PB_UNBIND_MIPI_OUT_INTERRUPT:
-		return unbind_mipi_interrupt_ioctl(pb, session, arg, false);
+		ret = unbind_mipi_interrupt_ioctl(pb, session, arg, false);
+		break;
 #ifdef CONFIG_PAINTBOX_TEST_SUPPORT
 	case PB_TEST_DMA_RESET:
-		return dma_test_reset_ioctl(pb, session, arg);
+		ret = dma_test_reset_ioctl(pb, session, arg);
+		break;
 	case PB_TEST_DMA_CHANNEL_RESET:
-		return dma_test_channel_reset_ioctl(pb, session, arg);
+		ret = dma_test_channel_reset_ioctl(pb, session, arg);
+		break;
 	case PB_TEST_MIPI_IN_RESET_STREAM:
-		return mipi_test_stream_reset_ioctl(pb, session, arg, true);
+		ret = mipi_test_stream_reset_ioctl(pb, session, arg, true);
+		break;
 	case PB_TEST_MIPI_OUT_RESET_STREAM:
-		return mipi_test_stream_reset_ioctl(pb, session, arg, false);
+		ret = mipi_test_stream_reset_ioctl(pb, session, arg, false);
+		break;
 #else
 	case PB_TEST_DMA_RESET:
 	case PB_TEST_DMA_CHANNEL_RESET:
 	case PB_TEST_MIPI_IN_RESET_STREAM:
 	case PB_TEST_MIPI_OUT_RESET_STREAM:
-		return -EINVAL;
+		ret = -EINVAL;
+		break;
 #endif
 	default:
 		dev_err(&pb->pdev->dev, "%s: unknown ioctl 0x%0x\n", __func__,
 				cmd);
 		return -EINVAL;
 	}
+
+#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
+	if (pb->stats.ioctl_time_enabled)
+		paintbox_debug_log_ioctl_stats(pb, cmd, start_time,
+				ktime_get_boottime());
+#endif
+
+	return ret;
 }
 
 void paintbox_alloc_debug_buffer(struct paintbox_data *pb, size_t len)

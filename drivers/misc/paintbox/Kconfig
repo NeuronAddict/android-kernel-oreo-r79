@@ -38,7 +38,7 @@ config PAINTBOX_TEST_SUPPORT
 	depends on PAINTBOX
 	default n
 	---help---
-	This option enables support for Paintbox test only ioctls.
+	This option enables support for Paintbox test only ioctls and debugging.
 	If you are unsure, say N.
 
 config PAINTBOX_IOMMU_ENABLED

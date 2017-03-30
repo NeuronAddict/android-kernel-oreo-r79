@@ -46,6 +46,11 @@ int dump_ipu_register_with_value64(struct paintbox_data *pb,
 		uint64_t reg_value, const char *reg_name, char *buf,
 		int *written, size_t len);
 
+#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
+void paintbox_debug_log_ioctl_stats(struct paintbox_data *pb, unsigned int cmd,
+		ktime_t start, ktime_t end);
+#endif
+
 #ifdef CONFIG_DEBUG_FS
 void paintbox_debug_create_entry(struct paintbox_data *pb,
 		struct paintbox_debug *debug, struct dentry *debug_root,

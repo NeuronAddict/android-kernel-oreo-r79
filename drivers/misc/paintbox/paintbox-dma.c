@@ -170,6 +170,15 @@ static void paintbox_dma_enqueue_pending_read(struct paintbox_data *pb,
 }
 
 /* The caller to this function must hold pb->dma.dma_lock. */
+static void paintbox_dma_enqueue_pending_transfer(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel,
+		struct paintbox_dma_transfer *transfer)
+{
+	list_add_tail(&transfer->entry, &channel->pending_list);
+	channel->pending_count++;
+}
+
+/* The caller to this function must hold pb->dma.dma_lock. */
 static void dma_report_completion(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel,
 		struct paintbox_dma_transfer *transfer, ktime_t timestamp,
@@ -673,6 +682,47 @@ int allocate_dma_channel_ioctl(struct paintbox_data *pb,
 	return 0;
 }
 
+/* The caller to this function must hold pb->dma.dma_lock. */
+static void commit_transfer_to_hardware(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel,
+		struct paintbox_dma_transfer *transfer)
+{
+	struct paintbox_dma *dma = &pb->dma;
+
+	list_add_tail(&transfer->entry, &channel->active_list);
+	channel->active_count++;
+
+	dma_select_channel(pb, channel->channel_id);
+
+	/* Load the transfer into the DMA channel registers */
+	writel(transfer->chan_img_format, dma->dma_base + DMA_CHAN_IMG_FORMAT);
+	writel(transfer->chan_img_size, dma->dma_base + DMA_CHAN_IMG_SIZE);
+	writeq(transfer->chan_img_pos, dma->dma_base + DMA_CHAN_IMG_POS);
+	writeq(transfer->chan_img_layout, dma->dma_base + DMA_CHAN_IMG_LAYOUT);
+	writel(transfer->chan_bif_xfer, dma->dma_base + DMA_CHAN_BIF_XFER);
+	writeq(transfer->chan_va, dma->dma_base + DMA_CHAN_VA);
+	writeq(transfer->chan_va_bdry, dma->dma_base + DMA_CHAN_VA_BDRY);
+	writeq(transfer->chan_noc_xfer, dma->dma_base + DMA_CHAN_NOC_XFER);
+	writel(transfer->chan_node, dma->dma_base + DMA_CHAN_NODE);
+
+	/* Enable interrupts for the channel */
+	writel(DMA_CHAN_IMR_EOF_MASK | DMA_CHAN_IMR_VA_ERR_MASK, dma->dma_base +
+			DMA_CHAN_IMR);
+
+	/* Enable the DMA channel interrupt in the top-level IPU_IMR */
+	io_enable_dma_channel_interrupt(pb, channel->channel_id);
+
+	if (channel->stats.time_stats_enabled)
+		transfer->start_time = ktime_get_boottime();
+
+	/* Write the channel mode register last as this will enqueue the
+	 * transfer into the hardware.
+	 */
+	writel(transfer->chan_mode, dma->dma_base + DMA_CHAN_MODE);
+
+	LOG_DMA_REGISTERS(pb, channel);
+}
+
 int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg)
 {
@@ -744,13 +794,23 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 	}
 
 	transfer->notify_on_completion = config.notify_on_completion;
-	transfer->auto_load_transfer = config.auto_load_transfer;
+	transfer->auto_start_transfer = config.auto_start_transfer;
 
-	/* Add the transfer to the pending queue */
 	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
 
-	list_add_tail(&transfer->entry, &channel->pending_list);
-	channel->pending_count++;
+	/* If the transfer is marked for auto start then check to see if there
+	 * are any transfers in the pending queue and that there is space in the
+	 * active queue before.  If these are conditions are met then the
+	 * transfer can be enqueued in the active queue, otherwise it goes to
+	 * the pending queue.
+	 */
+	if (transfer->auto_start_transfer && channel->pending_count == 0 &&
+			channel->active_count < MAX_ACTIVE_TRANSFERS) {
+		paintbox_pm_enable_dma_channel(pb, channel);
+		commit_transfer_to_hardware(pb, channel, transfer);
+	} else {
+		paintbox_dma_enqueue_pending_transfer(pb, channel, transfer);
+	}
 
 	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 
@@ -819,55 +879,6 @@ int read_dma_transfer_ioctl(struct paintbox_data *pb,
 	return ret;
 }
 
-/* The caller to this function must hold pb->dma.dma_lock. */
-static void commit_transfer_to_hardware(struct paintbox_data *pb,
-		struct paintbox_dma_channel *channel)
-{
-	struct paintbox_dma_transfer *transfer;
-	struct paintbox_dma *dma = &pb->dma;
-
-	transfer = list_entry(channel->pending_list.next,
-			struct paintbox_dma_transfer, entry);
-	list_del(&transfer->entry);
-
-	list_add_tail(&transfer->entry, &channel->active_list);
-
-	channel->pending_count--;
-	WARN_ON(channel->pending_count < 0);
-
-	channel->active_count++;
-
-	dma_select_channel(pb, channel->channel_id);
-
-	/* Load the transfer into the DMA channel registers */
-	writel(transfer->chan_img_format, dma->dma_base + DMA_CHAN_IMG_FORMAT);
-	writel(transfer->chan_img_size, dma->dma_base + DMA_CHAN_IMG_SIZE);
-	writeq(transfer->chan_img_pos, dma->dma_base + DMA_CHAN_IMG_POS);
-	writeq(transfer->chan_img_layout, dma->dma_base + DMA_CHAN_IMG_LAYOUT);
-	writel(transfer->chan_bif_xfer, dma->dma_base + DMA_CHAN_BIF_XFER);
-	writeq(transfer->chan_va, dma->dma_base + DMA_CHAN_VA);
-	writeq(transfer->chan_va_bdry, dma->dma_base + DMA_CHAN_VA_BDRY);
-	writeq(transfer->chan_noc_xfer, dma->dma_base + DMA_CHAN_NOC_XFER);
-	writel(transfer->chan_node, dma->dma_base + DMA_CHAN_NODE);
-
-	/* Enable interrupts for the channel */
-	writel(DMA_CHAN_IMR_EOF_MASK | DMA_CHAN_IMR_VA_ERR_MASK, dma->dma_base +
-			DMA_CHAN_IMR);
-
-	/* Enable the DMA channel interrupt in the top-level IPU_IMR */
-	io_enable_dma_channel_interrupt(pb, channel->channel_id);
-
-	if (channel->stats.time_stats_enabled)
-		transfer->start_time = ktime_get_boottime();
-
-	/* Write the channel mode register last as this will enqueue the
-	 * transfer into the hardware.
-	 */
-	writel(transfer->chan_mode, dma->dma_base + DMA_CHAN_MODE);
-
-	LOG_DMA_REGISTERS(pb, channel);
-}
-
 int stop_dma_transfer_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg)
 {
@@ -893,6 +904,7 @@ int start_dma_transfer_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg)
 {
 	unsigned int channel_id = (unsigned int)arg;
+	struct paintbox_dma_transfer *transfer;
 	struct paintbox_dma_channel *channel;
 	unsigned long irq_flags;
 	int ret = 0;
@@ -922,9 +934,15 @@ int start_dma_transfer_ioctl(struct paintbox_data *pb,
 		goto err_exit;
 	}
 
+	transfer = list_entry(channel->pending_list.next,
+			struct paintbox_dma_transfer, entry);
+	list_del(&transfer->entry);
+	channel->pending_count--;
+	WARN_ON(channel->pending_count < 0);
+
 	paintbox_pm_enable_dma_channel(pb, channel);
 
-	commit_transfer_to_hardware(pb, channel);
+	commit_transfer_to_hardware(pb, channel, transfer);
 
 err_exit:
 	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
@@ -1183,8 +1201,13 @@ void paintbox_dma_eof_interrupt(struct paintbox_data *pb,
 	next_transfer = list_entry(channel->pending_list.next,
 			struct paintbox_dma_transfer, entry);
 
-	if (next_transfer->auto_load_transfer)
-		commit_transfer_to_hardware(pb, channel);
+	if (next_transfer->auto_start_transfer) {
+		list_del(&next_transfer->entry);
+		channel->pending_count--;
+		WARN_ON(channel->pending_count < 0);
+
+		commit_transfer_to_hardware(pb, channel, next_transfer);
+	}
 }
 
 /* This function must be called in an interrupt context and the caller must
