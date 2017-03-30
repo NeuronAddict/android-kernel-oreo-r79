@@ -411,6 +411,7 @@ int mnh_lpddr_sys200_mode(void)
 	/* Switch lpddr to SYS200 mode */
 	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, LP4_AXI_SYS200_MODE, 0x1);
 
+	udelay(100);
 	/* Unlock PLL access */
 	HW_OUTf(mnh_dev->regs, SCU, PLL_PASSCODE, PASSCODE, PLL_UNLOCK);
 
@@ -576,6 +577,7 @@ static int mnh_ddr_send_lp_cmd(u8 cmd)
 
 static void mnh_ddr_enable_lp(void)
 {
+	dev_info(mnh_dev->dev, "%s\n", __func__);
 	MNH_DDR_CTL_OUTf(124, LP_AUTO_SR_MC_GATE_IDLE, 0xFF);
 	MNH_DDR_CTL_OUTf(122, LP_AUTO_MEM_GATE_EN, 0x4);
 	MNH_DDR_CTL_OUTf(122, LP_AUTO_ENTRY_EN, 0x4);
@@ -584,6 +586,7 @@ static void mnh_ddr_enable_lp(void)
 
 static void mnh_ddr_disable_lp(void)
 {
+	dev_info(mnh_dev->dev, "%s\n", __func__);
 	MNH_DDR_CTL_OUTf(124, LP_AUTO_SR_MC_GATE_IDLE, 0x00);
 	MNH_DDR_CTL_OUTf(122, LP_AUTO_MEM_GATE_EN, 0x0);
 	MNH_DDR_CTL_OUTf(122, LP_AUTO_ENTRY_EN, 0x0);
@@ -591,7 +594,41 @@ static void mnh_ddr_disable_lp(void)
 	mnh_ddr_send_lp_cmd(LP_CMD_EXIT_LP);
 }
 
-	/* HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_LP4CG_EN, enabled); */
+/**
+ * Set the SCU clock gating mode
+ * Return: 0 on success, an error code otherwise.
+ *
+ * enable == 1 sets the SCU to enable clock gating in general when CPU enters
+ * L2 WFI state.
+ */
+int mnh_clock_gating_mode(int enabled)
+{
+	dev_dbg(mnh_dev->dev, "%s\n", __func__);
+
+	if (enabled != 1 && enabled != 0)
+		return -EINVAL;
+
+	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_CPUMEM_PD_EN, enabled);
+	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_LP4CMEM_PD_EN, enabled);
+	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_BTROM_PD_EN, enabled);
+	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_BTSRAM_PD_EN, enabled);
+	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, BTROM_SLP, enabled);
+	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, IPU_MEM_DS, enabled);
+
+	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_AXICG_EN, enabled);
+	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_CPUCG_EN, enabled);
+	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_BTSRAMCG_EN, enabled);
+	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_BTROMCG_EN, enabled);
+	/* HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_LP4CG_EN, 1); */
+	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_LP4_PLL_BYPCLK_CG_EN,
+		enabled);
+	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, LP4PHY_PLL_BYPASS_CLKEN,
+		enabled);
+	return 0;
+}
+EXPORT_SYMBOL(mnh_clock_gating_mode);
+
+
 /* Frequency calculation by PLL configuration
  * @cfg: struct freq_reg_table with pll config information.
  * Return: freq MHz.
@@ -791,6 +828,102 @@ static ssize_t sys200_freq_set(struct device *dev,
 	return -EIO;
 }
 
+static ssize_t clock_gating_get(struct device *dev,
+				struct device_attribute *attr,
+				char *buf)
+{
+	int clk_gated;
+
+	clk_gated = HW_INf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_CPUCG_EN);
+
+	return sprintf(buf, "%d\n", clk_gated);
+}
+
+static ssize_t clock_gating_set(struct device *dev,
+				  struct device_attribute *attr,
+				  const char *buf,
+				  size_t count)
+{
+	int var = 0;
+	int ret;
+
+	ret = kstrtoint(buf, 10, &var);
+	if (ret < 0)
+		return ret;
+
+	if (var == 1 || var == 0) {
+		dev_dbg(mnh_dev->dev, "%s: %d\n", __func__, var);
+		if (!mnh_clock_gating_mode(var))
+			return count;
+	}
+	return -EIO;
+}
+
+static ssize_t lpddr_lp_get(struct device *dev,
+				struct device_attribute *attr,
+				char *buf)
+{
+	return sprintf(buf, "%d\n",
+		MNH_DDR_CTL_INf(122, LP_AUTO_ENTRY_EN));
+}
+
+static ssize_t lpddr_lp_set(struct device *dev,
+				  struct device_attribute *attr,
+				  const char *buf,
+				  size_t count)
+{
+	int var = 0;
+	int ret;
+
+	ret = kstrtoint(buf, 10, &var);
+	if (ret < 0)
+		return ret;
+
+	dev_dbg(mnh_dev->dev, "%s: %d\n", __func__, var);
+	if (var == 1)
+		mnh_ddr_enable_lp();
+	else if (var == 0)
+		mnh_ddr_disable_lp();
+	else
+		return -EIO;
+
+	return count;
+}
+
+static ssize_t lpddr_sys200_get(struct device *dev,
+				struct device_attribute *attr,
+				char *buf)
+{
+	return sprintf(buf, "%d\n",
+		HW_INf(mnh_dev->regs, SCU, CCU_CLK_CTL, LP4_AXI_SYS200_MODE));
+}
+
+static ssize_t lpddr_sys200_set(struct device *dev,
+				  struct device_attribute *attr,
+				  const char *buf,
+				  size_t count)
+{
+	int var = 0;
+	int ret;
+
+	ret = kstrtoint(buf, 10, &var);
+	if (ret < 0)
+		return ret;
+
+	dev_dbg(mnh_dev->dev, "%s: %d\n", __func__, var);
+	if (var == 1)
+		mnh_lpddr_sys200_mode();
+	else if (var == 0)
+		mnh_lpddr_freq_change(0);
+	else {
+
+		dev_err(mnh_dev->dev, "Cannot disable sys200 mode. Use lpddr_freq.");
+		return -EIO;
+	}
+
+	return count;
+}
+
 static DEVICE_ATTR(cpu_freq, S_IWUSR | S_IRUGO,
 		cpu_freq_get, cpu_freq_set);
 static DEVICE_ATTR(ipu_freq, S_IWUSR | S_IRUGO,
@@ -801,6 +934,13 @@ static DEVICE_ATTR(ipu_clk_src, S_IRUGO,
 		ipu_clk_src_get, NULL);
 static DEVICE_ATTR(sys200, S_IWUSR | S_IRUGO,
 		sys200_freq_get, sys200_freq_set);
+static DEVICE_ATTR(clock_gating, S_IWUSR | S_IRUGO,
+		clock_gating_get, clock_gating_set);
+static DEVICE_ATTR(lpddr_lp, S_IWUSR | S_IRUGO,
+		lpddr_lp_get, lpddr_lp_set);
+static DEVICE_ATTR(lpddr_sys200, S_IWUSR | S_IRUGO,
+		lpddr_sys200_get, lpddr_sys200_set);
+
 
 static struct attribute *freq_dev_attributes[] = {
 	&dev_attr_cpu_freq.attr,
@@ -808,6 +948,9 @@ static struct attribute *freq_dev_attributes[] = {
 	&dev_attr_lpddr_freq.attr,
 	&dev_attr_ipu_clk_src.attr,
 	&dev_attr_sys200.attr,
+	&dev_attr_clock_gating.attr,
+	&dev_attr_lpddr_lp.attr,
+	&dev_attr_lpddr_sys200.attr,
 	NULL
 };
 
@@ -904,6 +1047,7 @@ int mnh_clk_init(struct platform_device *pdev, void __iomem *baseadress)
 
 	init_sysfs(mnh_dev->dev, kernel_kobj);
 
+	mnh_clock_gating_mode(1);
 	return 0;
 
 mnh_probe_err:

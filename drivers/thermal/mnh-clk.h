@@ -112,6 +112,14 @@ int mnh_lpddr_freq_change(int index);
 
 
 /**
+ * @enabled: 0 or 1, to enable clock gating via SCU
+ * Return: 0 on success, an error code otherwise.
+ *
+ */
+int mnh_clock_gating_mode(int enabled);
+
+
+/**
  * Setup interface for controlling clocks
  * @dev: device structure.
  * Return 0 on success, errcode on failures.

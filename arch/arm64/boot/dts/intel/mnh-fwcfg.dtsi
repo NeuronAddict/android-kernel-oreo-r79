@@ -235,13 +235,10 @@ firmware_config {
 	/* scu configuration for power optimization */
 	scu_config {
 		compatible = "intel,mnh_cfg_scu";
-		/* don't put IPU related things in reset or clk gated mode
-		   also e-fuse uses timers so can't put those in reset,
-		   at least until efuse is done */
-		rstc = <0x0F311000>;
+		rstc = <0x0FB71000>;
 		/* remove now to enable full speed clk */
 		/* ccu_clk_ctl = <0xA1FF5C63>; */
-		peripheral_clk_ctl = <0x8000e0ce>;
+		peripheral_clk_ctl = <0x0000604A>;
 		mem_pwr_mgmnt = <0x0200c500>;
 
 		global_wake_en_set0 = <0x0FFE2800>;
