@@ -49,7 +49,7 @@ static int mnh_freq_cooling_probe(struct platform_device *pdev)
 {
 	struct resource *res;
 
-	dev_err(&pdev->dev, "mnh_freq_cooling_probe\n");
+	dev_info(&pdev->dev, "mnh_freq_cooling_probe\n");
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {

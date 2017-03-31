@@ -763,7 +763,7 @@ int mipicsi_sysfs_init(struct device *mipicsi_top_device)
 {
 	int ret;
 
-	pr_err("MIPI TOP: init_sysfs\n");
+	pr_debug("MIPI TOP: init_sysfs\n");
 	ret = device_create_file(mipicsi_top_device,
 				 &dev_attr_start_dev);
 	if (ret) {

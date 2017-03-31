@@ -99,7 +99,7 @@ void __iomem *get_timer_base(struct kobject *kobj)
 {
 	const char *name = kobject_name(kobj);
 
-        pr_alert("%s : name = %s\n",__func__, name);
+        pr_debug("%s : name = %s\n",__func__, name);
 
         if(strstr(name, "timer0"))
 		return mnh_timer_base0;
@@ -121,10 +121,10 @@ static ssize_t mode_show(struct kobject *kobj, struct kobj_attribute *attr, char
         void __iomem *base = get_timer_base(kobj);
 	if(!base) return -EIO;
 
-	pr_alert("%s\n",__func__);
+	pr_debug("%s\n",__func__);
         ctrl = mnh_timer_readl(base, MNH_TIMER_CONTROLREG_OFFSET);
 
-        pr_alert("ctrl = %u\n",ctrl);
+        pr_debug("ctrl = %u\n",ctrl);
  
         if(MNH_TIMER_MODE_USER_DEFINED & ctrl)
 	{
@@ -145,7 +145,7 @@ static ssize_t mode_store(struct kobject *kobj, struct kobj_attribute *attr, con
 	void __iomem *base = get_timer_base(kobj);
 	if(!base) return -EIO;
 
-        pr_alert("%s\n",__func__);
+        pr_debug("%s\n",__func__);
         if(!strncmp(buf, cmode0, strlen(cmode0)))
 		mode = MNH_TIMER_MODE_FREE_RUNNING;
         else if(!strncmp(buf, cmode1, strlen(cmode1)))
@@ -157,7 +157,7 @@ static ssize_t mode_store(struct kobject *kobj, struct kobj_attribute *attr, con
                 mode = MNH_TIMER_MODE_FREE_RUNNING;
 	}
 
-        pr_alert("mode = %d\n",mode);
+        pr_debug("mode = %d\n",mode);
 	ctrl = mnh_timer_readl(base, MNH_TIMER_CONTROLREG_OFFSET);        
         if (mode)
 		ctrl |= MNH_TIMER_MODE_USER_DEFINED;
@@ -175,7 +175,7 @@ static ssize_t loadcounter_show(struct kobject *kobj, struct kobj_attribute *att
         void __iomem *base = get_timer_base(kobj);
 	if(!base) return -EIO;
 
-        pr_alert("%s\n",__func__);
+        pr_debug("%s\n",__func__);
 	return sprintf(buf, "%lu\n", mnh_timer_get_loadcount(base) );
 }
 
@@ -186,13 +186,13 @@ static ssize_t loadcounter_store(struct kobject *kobj, struct kobj_attribute *at
 	void __iomem *base = get_timer_base(kobj);
 	if(!base) return -EIO;
 
-        pr_alert("%s\n",__func__);
+        pr_debug("%s\n",__func__);
 
 	ret = kstrtoint(buf, 10, &var);
 	if(ret < 0)
 		return ret;
         
-        pr_alert("%s Setting clock  period = %u   %d \n",__func__, var, var);
+        pr_debug("%s Setting clock  period = %u   %d \n",__func__, var, var);
 	
 	mnh_timer_writel(base, var, MNH_TIMER_LOADCOUNT_OFFSET);
 	 
@@ -204,7 +204,7 @@ static ssize_t currentvalue_show(struct kobject *kobj, struct kobj_attribute *at
         void __iomem *base = get_timer_base(kobj);
 	if(!base) return -EIO;
 
-        pr_alert("%s\n",__func__);
+        pr_debug("%s\n",__func__);
 	return sprintf(buf, "%lu\n", mnh_timer_get_currentvalue(base));
 }
 
@@ -216,9 +216,9 @@ static ssize_t status_show(struct kobject *kobj, struct kobj_attribute *attr, ch
         void __iomem *base = get_timer_base(kobj);
 	if(!base) return -EIO;
 
-	pr_alert("%s\n",__func__);
+	pr_debug("%s\n",__func__);
         ctrl = mnh_timer_readl(base, MNH_TIMER_CONTROLREG_OFFSET);
-        pr_alert("ctrl = %u\n",ctrl);
+        pr_debug("ctrl = %u\n",ctrl);
 	if(MNH_TIMER_ENABLE & ctrl)
 	{
 		ret = strlen(enable_str); 
@@ -241,7 +241,7 @@ static ssize_t status_store(struct kobject *kobj, struct kobj_attribute *attr, c
         void __iomem *base = get_timer_base(kobj);
 	if(!base) return -EIO;
 
-        pr_alert("%s\n",__func__);
+        pr_debug("%s\n",__func__);
 
 	ret = kstrtoint(buf, 10, &var);
 	if(ret < 0)
@@ -252,12 +252,12 @@ static ssize_t status_store(struct kobject *kobj, struct kobj_attribute *attr, c
 
 	if(var & MNH_TIMER_ENABLE)
 	{
-		pr_alert("timer enable\n");
+		pr_debug("timer enable\n");
 		ctrl |= MNH_TIMER_ENABLE;
 	}
 	else 
         {
-		pr_alert("timer disable\n");	
+		pr_debug("timer disable\n");	
 		ctrl &= ~MNH_TIMER_ENABLE;
 	}
 
@@ -290,7 +290,7 @@ static struct attribute_group attr_group = {
 int mnh_timer_sysfs_init(void)
 {
         int ret =0 ;
-	pr_alert("%s ....\n",__func__);
+	pr_debug("%s ....\n",__func__);
 
         mnh_timer_kobject = kobject_create_and_add("mnh-timer",NULL);
 	if(!mnh_timer_kobject)
@@ -392,7 +392,7 @@ int mnh_timer_sysfs_init(void)
                 return ret;
 	}
 
-	pr_err("%s created mnh-timer groups successfully",__func__);
+	pr_debug("%s created mnh-timer groups successfully",__func__);
 
         return ret;
  	
@@ -414,7 +414,7 @@ void mnh_timer_sysfs_clean(void)
 
 static void mnh_timer_init()
 {
-	pr_alert("mnh_timer_init\n");
+	pr_debug("mnh_timer_init\n");
         
         if(!mnh_timer_sysfs_init()) 
 	{
@@ -431,7 +431,7 @@ static int mnh_timer_probe(struct platform_device *pdev)
         int error = 0;
 	struct resource *mem = NULL;
 
-        pr_alert("%s .....\n",__func__);
+	pr_debug("%s .....\n",__func__);
 
 	/* Device tree information: Base addresses & mapping */
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -444,25 +444,27 @@ static int mnh_timer_probe(struct platform_device *pdev)
 	mnh_timer_base0 = ioremap(mem->start, resource_size(mem));
 	if (!mnh_timer_base0) {
 		error = -ENOMEM;
-                iounmap(mnh_timer_base0); 
+		iounmap(mnh_timer_base0); 
 		return error;
 	}
 
-        // ioremap the base address for timers (1,2,3,4)
+	// ioremap the base address for timers (1,2,3,4)
 	/*	mnh_timer_base0 = ioremap(MNH_TIMER1_REG, 0x1000);
-        if (!mnh_timer_base0) {
-                pr_alert("failed to ioremap mnh_timer_base0\n");
+	if (!mnh_timer_base0) {
+		pr_err("failed to ioremap mnh_timer_base0\n");
 		error = -ENOMEM;
 		goto free_mem;
 	}
 	*/
 
-        pr_alert("ioremap mnh_timer_base0 successfully\n");
-        mnh_timer_base1 = mnh_timer_base0 + MNH_TIMER_REG_LENGTH;
-        mnh_timer_base2 = mnh_timer_base1 + MNH_TIMER_REG_LENGTH;
-        mnh_timer_base3 = mnh_timer_base2 + MNH_TIMER_REG_LENGTH;
-         
+	pr_debug("ioremap mnh_timer_base0 successfully\n");
+	mnh_timer_base1 = mnh_timer_base0 + MNH_TIMER_REG_LENGTH;
+	mnh_timer_base2 = mnh_timer_base1 + MNH_TIMER_REG_LENGTH;
+	mnh_timer_base3 = mnh_timer_base2 + MNH_TIMER_REG_LENGTH;
+
 	mnh_timer_init();
+
+	pr_info("mnh_timer: probe\n");
 
 	return error;
 }

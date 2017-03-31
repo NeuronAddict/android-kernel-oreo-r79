@@ -54,7 +54,7 @@ void mipicsi_util_read_emulation(void)
 			mipi_emulation = false;
 	}
 
-	pr_err("%s: DT Value %d\n", __func__, val);
+	pr_debug("%s: DT Value %d\n", __func__, val);
 }
 
 bool mipicsi_util_is_emulation(void)
@@ -74,7 +74,8 @@ uint16_t mipicsi_util_get_max_bitrate(void)
 
 void mipicsi_util_save_virt_addr(struct mipi_dev *dev)
 {
-	pr_err("Device %d Base Addr 0x%x\n", dev->device_id, dev->base_address);
+	pr_debug("%s: Device %d Base Addr 0x%x\n", __func__, dev->device_id,
+	       dev->base_address);
 	dev_addr_map[dev->device_id] = dev->base_address;
 }
 
