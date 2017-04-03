@@ -45,6 +45,8 @@ static struct ion_of_heap easel_heaps[] = {
 		      ION_HEAP_TYPE_SYSTEM_CONTIG, "sys_contig"),
 	PLATFORM_HEAP("easel,cma", ION_HEAP_TYPE_DMA, ION_HEAP_TYPE_DMA,
 		      "cma"),
+	PLATFORM_HEAP("easel,carveout", ION_HEAP_TYPE_CARVEOUT,
+		      ION_HEAP_TYPE_CARVEOUT, "carveout"),
 	{}
 };
 
