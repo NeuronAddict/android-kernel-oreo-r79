@@ -152,7 +152,7 @@ static int rmem_ion_device_init(struct reserved_mem *rmem, struct device *dev)
 	struct ion_platform_heap *heap = pdev->dev.platform_data;
 
 	heap->base = rmem->base;
-	heap->base = rmem->size;
+	heap->size = rmem->size;
 	pr_debug("%s: heap %s base %pa size %pa dev %p\n", __func__,
 		 heap->name, &rmem->base, &rmem->size, dev);
 	return 0;
