@@ -591,6 +591,7 @@ static void mnh_ddr_disable_lp(void)
 	mnh_ddr_send_lp_cmd(LP_CMD_EXIT_LP);
 }
 
+	/* HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_LP4CG_EN, enabled); */
 /* Frequency calculation by PLL configuration
  * @cfg: struct freq_reg_table with pll config information.
  * Return: freq MHz.
