@@ -245,6 +245,13 @@
 
 #define PCIECAP_MASK(reg, fld)		HWIO_PCIE_EP_##reg##_##fld##_FLDMASK
 
+#define PCIE_L1SUB (pcie_ep_dev->conf_mem + HWIO_PCIE_EP_L1SUB_CAP_BASE_ADDR)
+
+#define PCIECAP_L1SUB_IN(reg)			HW_IN(PCIE_L1SUB, PCIE_EP, reg)
+#define PCIECAP_L1SUB_INf(reg, fld)		HW_INf(PCIE_L1SUB, PCIE_EP, reg, fld)
+#define PCIECAP_L1SUB_OUT(reg, val)		HW_OUT(PCIE_L1SUB, PCIE_EP, reg, val)
+#define PCIECAP_L1SUB_OUTf(reg, fld, val)	HW_OUTf(PCIE_L1SUB, PCIE_EP, reg, fld, val)
+
 #define PORT_AD (pcie_ep_dev->conf_mem + HWIO_PCIE_EP_PORT_LOGIC_BASE_ADDR)
 
 #define PORT_IN(reg)			HW_IN(PORT_AD, PCIE_EP, reg)

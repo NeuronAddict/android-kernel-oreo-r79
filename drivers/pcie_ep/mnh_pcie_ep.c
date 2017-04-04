@@ -179,6 +179,10 @@ static int pcie_link_init(void)
 
 	PCIECAP_OUTf(PCIE_CAP_LINK_CONTROL_LINK_STATUS,
 			PCIE_CAP_ACTIVE_STATE_LINK_PM_CONTROL, 0x2);
+	PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CONTROL1,
+			L1_1_ASPM_EN, 0x1);
+	PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CONTROL1,
+			L1_2_ASPM_EN, 0x1);
 
 	/* Enable interupts */
 	CSR_OUT(PCIE_SS_INTR_EN, PCIE_SS_IRQ_MASK);
@@ -678,6 +682,8 @@ static int pcie_set_l_one(uint32_t enable, uint32_t clkpm)
 		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_CLK_PM_EN, 0);
 	}
 	if (enable == 1) {
+		PCIECAP_OUTf(PCIE_CAP_LINK_CONTROL_LINK_STATUS,
+				PCIE_CAP_ACTIVE_STATE_LINK_PM_CONTROL, 0x2);
 		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_REQ_ENTRY_L1, 1);
 	} else {
 		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_REQ_EXIT_L1, 1);
@@ -2021,6 +2027,7 @@ static int mnh_pcie_ep_probe(struct platform_device *pdev)
 		return err;
 	}
 
+
 	return 0;
 }
 
@@ -2050,6 +2057,10 @@ static int mnh_pcie_ep_resume(struct platform_device *pdev)
 
 	PCIECAP_OUTf(PCIE_CAP_LINK_CONTROL_LINK_STATUS,
 			PCIE_CAP_ACTIVE_STATE_LINK_PM_CONTROL, 0x2);
+	PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CONTROL1,
+			L1_1_ASPM_EN, 0x1);
+	PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CONTROL1,
+			L1_2_ASPM_EN, 0x1);
 
 	/* Enable interupts */
 	CSR_OUT(PCIE_SS_INTR_EN, PCIE_SS_IRQ_MASK);
