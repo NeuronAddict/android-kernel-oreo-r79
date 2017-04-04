@@ -1163,7 +1163,7 @@ int ion_query_heaps(struct ion_client *client, struct ion_heap_query *query)
 {
 	struct ion_device *dev = client->dev;
 	struct ion_heap_data __user *buffer = u64_to_user_ptr(query->heaps);
-	int ret = -EINVAL, cnt = 0, max_cnt;
+	int ret = 0, cnt = 0, max_cnt;
 	struct ion_heap *heap;
 	struct ion_heap_data hdata;
 
@@ -1176,8 +1176,10 @@ int ion_query_heaps(struct ion_client *client, struct ion_heap_query *query)
 		goto out;
 	}
 
-	if (query->cnt <= 0)
+	if (query->cnt <= 0) {
+		ret = -EINVAL;
 		goto out;
+	}
 
 	max_cnt = query->cnt;
 
