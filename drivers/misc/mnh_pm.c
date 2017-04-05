@@ -41,7 +41,7 @@
 #include <linux/pm.h>
 #include <linux/arm-smccc.h>
 #include <asm/suspend.h>
-
+#include "../thermal/mnh-clk.h"
 /*
  * Driver definitions
  */
@@ -113,11 +113,15 @@ static void mnh_pm_intr_proc(struct work_struct *work)
 
 	mnh_debug("%s mnh_suspend_start\n", __func__);
 
+	mnh_clock_gating_mode(CLOCK_GATING_DISABLED);
+
 	error = pm_suspend(PM_SUSPEND_MEM);
 	if (error)
 		pr_err("%s: suspend error. err=%d\n", __func__, error);
 
 	mnh_debug("%s mnh_resume_complete\n", __func__);
+
+	mnh_clock_gating_mode(CLOCK_GATING_ENABLED);
 }
 
 static irqreturn_t mnh_pm_handle_irq(int irq, void *dev_id)

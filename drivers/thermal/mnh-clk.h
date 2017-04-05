@@ -49,6 +49,12 @@ enum mnh_lpddr_freq_type {
 	LPDDR_FREQ_SW = 7
 };
 
+enum mnh_clock_gating_mode {
+	CLOCK_GATING_DISABLED = 0,
+	CLOCK_GATING_ENABLED = 1
+};
+
+
 /**
  * CPU clock controller
  * @index: int with frquency table index info.
