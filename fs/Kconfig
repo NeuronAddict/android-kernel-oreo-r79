@@ -139,6 +139,19 @@ config TMPFS
 
 	  See <file:Documentation/filesystems/tmpfs.txt> for details.
 
+config TMPFS_DEFAULT_SIZE_PERCENT_NR
+	int "Default percentage of pages that are used for tmpfs"
+	range 1 99
+	default "50"
+	depends on TMPFS
+	help
+	  By default, when "size=" option not specified, tmpfs sets a size
+	  limit of 50% of total RAM pages.  Kernel use tmpfs as its internal
+	  filesystem, known as rootfs.  When rootfs is mounted, no options
+	  were specified.
+
+	  Use this config to update the maximum size limit of rootfs.
+
 config TMPFS_POSIX_ACL
 	bool "Tmpfs POSIX Access Control Lists"
 	depends on TMPFS

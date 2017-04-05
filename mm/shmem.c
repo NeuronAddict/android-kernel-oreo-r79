@@ -108,12 +108,13 @@ enum sgp_type {
 #ifdef CONFIG_TMPFS
 static unsigned long shmem_default_max_blocks(void)
 {
-	return totalram_pages / 2;
+	return totalram_pages * CONFIG_TMPFS_DEFAULT_SIZE_PERCENT_NR / 100;
 }
 
 static unsigned long shmem_default_max_inodes(void)
 {
-	return min(totalram_pages - totalhigh_pages, totalram_pages / 2);
+	return min(totalram_pages - totalhigh_pages,
+		totalram_pages * CONFIG_TMPFS_DEFAULT_SIZE_PERCENT_NR / 100);
 }
 #endif
 
