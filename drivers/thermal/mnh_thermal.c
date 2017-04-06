@@ -111,14 +111,15 @@ struct mnh_thermal_sensor {
 	struct mnh_thermal_device *dev;
 	struct thermal_zone_device *tzd;
 	uint32_t id;
+	uint32_t wait_time_us;
+	uint32_t precision;
 };
 
 struct mnh_thermal_device {
 	struct reset_control *reset;
 	void __iomem *regs;
 	uint32_t emulation;
-	uint32_t wait_time_us;
-	uint32_t precision;
+	uint32_t dt_precision;
 	uint32_t trip_data;
 	uint32_t init_done;
 	struct mnh_thermal_sensor *sensors[MNH_NUM_PVT_SENSORS];
@@ -189,7 +190,7 @@ static int config_thermal_properties(struct platform_device *pdev,
 
 	err = device_property_read_u32(&pdev->dev, "precision", &precision);
 	if (!err)
-		mnh_dev->precision = precision;
+		mnh_dev->dt_precision = precision;
 	else {
 		pr_err("unable to read precision\n");
 		return -ENOMEM;
@@ -206,10 +207,6 @@ static int config_thermal_properties(struct platform_device *pdev,
 
 	/* Read target settings */
 	mnh_dev->emulation = read_emulation_setting();
-
-	/* Calculate PVT data read wait time */
-	mnh_dev->wait_time_us = PVT_WAIT_US(mnh_dev->precision);
-	mnh_debug("pvt wait time: %d us\n", mnh_dev->wait_time_us);
 
 	return 0;
 }
@@ -278,7 +275,7 @@ static int calculate_temp(int code, int slope, int offset)
 	int temp_md;
 
 
-	mnh_debug("pvt data:%d\n", code);
+	mnh_debug("pvt data:%d slope:%d offset:%d\n", code, slope, offset);
 
 	/* Make sure code is 10bit */
 	code = code & 0x3FF;
@@ -361,6 +358,9 @@ static int mnh_thermal_get_data(void *data, int *data_out)
 		psample = mnh_op_mode_table[op_mode].psample;
 		vsample = mnh_op_mode_table[op_mode].vsample;
 
+		mnh_debug("pvt mode:%d waittime:%d us\n",
+			op_mode, sensor->wait_time_us);
+
 		/* Program VSAMPLE/PSAMPLE for temperature evaulation */
 		HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id,
 			PSAMPLE, psample);
@@ -380,7 +380,7 @@ static int mnh_thermal_get_data(void *data, int *data_out)
 				sensor->id, DATAVALID);
 			if(val == 1)
 				break;
-			udelay(sensor->dev->wait_time_us);
+			udelay(sensor->wait_time_us);
 		} while (time_before(jiffies, timeout));
 
 		/* Read DATA_OUT from sensor */
@@ -406,7 +406,7 @@ static int mnh_thermal_get_data(void *data, int *data_out)
  */
 static int mnh_thermal_get_temp(void *data, int *temp_out)
 {
-	struct mnh_thermal_sensor *sensor = (struct mnh_thermal_sensor*)data;
+	struct mnh_thermal_sensor *sensor = (struct mnh_thermal_sensor *)data;
 	int temp_raw = 0;
 
 	if (!sensor->dev->init_done)
@@ -426,15 +426,51 @@ static int mnh_thermal_get_temp(void *data, int *temp_out)
 static void mnh_thermal_trip_config(struct mnh_thermal_sensor *sensor,
 	uint32_t data)
 {
-	pr_info("%s id:%d trim:%d\n", __func__, sensor->id, data);
+	pr_info("%s id:%d trip:%d\n", __func__, sensor->id, data);
 
 	HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id, TRIG, data);
 	HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id, ALARM_ENA, 1);
 }
 
+static int mnh_thermal_get_precision(void *data, int *precision)
+{
+	struct mnh_thermal_sensor *sensor = (struct mnh_thermal_sensor *)data;
+
+	if (!sensor)
+		return -EINVAL;
+
+	*precision = sensor->precision;
+	mnh_debug("%s:%d\n", __func__, *precision);
+
+	return 0;
+}
+
+static int mnh_thermal_set_precision(void *data, int precision)
+{
+	struct mnh_thermal_sensor *sensor = (struct mnh_thermal_sensor *)data;
+
+	if (!sensor)
+		return -EINVAL;
+
+	mnh_debug("%s:%d\n", __func__, precision);
+
+	sensor->precision = precision;
+	HW_OUTxf(sensor->dev->regs, SCU, PVT_CONTROL, sensor->id,
+		       PRECISION, sensor->precision);
+
+	/* Calculate PVT data read wait time */
+	sensor->wait_time_us = PVT_WAIT_US(sensor->precision);
+
+	mnh_debug("pvt precision:%d waittime:%d us\n",
+		sensor->precision, sensor->wait_time_us);
+	return 0;
+}
+
 static const struct thermal_zone_of_device_ops mnh_of_thermal_ops = {
 	.get_temp = mnh_thermal_get_temp,
 	.get_data_out = mnh_thermal_get_data,
+	.get_precision = mnh_thermal_get_precision,
+	.set_precision = mnh_thermal_set_precision,
 };
 
 
@@ -476,11 +512,10 @@ static int mnh_thermal_probe(struct platform_device *pdev)
 
 		mnh_dev->sensors[i] = sensor;
 
-		/* Configure trim and precision data */
+		/* Configure pre-characterized trim and precision data */
 		HW_OUTxf(mnh_dev->regs, SCU, PVT_CONTROL, sensor->id,
-		       TRIM, API_TRIM_CODE);
-		HW_OUTxf(mnh_dev->regs, SCU, PVT_CONTROL, sensor->id,
-		       PRECISION, mnh_dev->precision);
+			TRIM, API_TRIM_CODE);
+		mnh_thermal_set_precision(sensor, mnh_dev->dt_precision);
 
 		/* Enable thermal alarm */
 		if (mnh_dev->trip_data)
@@ -542,7 +577,8 @@ static int mnh_thermal_resume(struct platform_device *pdev)
 		HW_OUTxf(mnh_dev->regs, SCU, PVT_CONTROL,
 			mnh_dev->sensors[i]->id, TRIM, API_TRIM_CODE);
 		HW_OUTxf(mnh_dev->regs, SCU, PVT_CONTROL,
-			mnh_dev->sensors[i]->id, PRECISION, mnh_dev->precision);
+			mnh_dev->sensors[i]->id, PRECISION,
+			mnh_dev->sensors[i]->precision);
 	}
 
 	mnh_dev->init_done = 1;

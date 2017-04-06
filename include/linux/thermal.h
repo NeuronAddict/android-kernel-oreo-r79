@@ -115,6 +115,8 @@ struct thermal_zone_device_ops {
 	int (*notify) (struct thermal_zone_device *, int,
 		       enum thermal_trip_type);
 	int (*get_data_out)(struct thermal_zone_device *, int *);
+	int (*get_precision)(struct thermal_zone_device *, int *);
+	int (*set_precision)(struct thermal_zone_device *, int);
 };
 
 struct thermal_cooling_device_ops {
@@ -351,6 +353,8 @@ struct thermal_zone_of_device_ops {
 	int (*set_emul_temp)(void *, int);
 	int (*set_trip_temp)(void *, int, int);
 	int (*get_data_out)(void *, int *);
+	int (*get_precision)(void *, int *);
+	int (*set_precision)(void *, int);
 };
 
 /**

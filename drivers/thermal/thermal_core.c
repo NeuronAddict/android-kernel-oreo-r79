@@ -916,6 +916,45 @@ exit:
 }
 
 static ssize_t
+precision_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct thermal_zone_device *tz = to_thermal_zone(dev);
+	int data;
+	int ret = -EPERM;
+
+	if (!tz || IS_ERR(tz) || !tz->ops->get_precision)
+		goto exit;
+
+	mutex_lock(&tz->lock);
+
+	ret = tz->ops->get_precision(tz, &data);
+
+	mutex_unlock(&tz->lock);
+
+	return sprintf(buf, "%d\n", data);
+
+exit:
+	return ret;
+}
+
+static ssize_t
+precision_store(struct device *dev, struct device_attribute *attr,
+		     const char *buf, size_t count)
+{
+	struct thermal_zone_device *tz = to_thermal_zone(dev);
+	int ret = 0;
+	int precision;
+
+	if (kstrtoint(buf, 10, &precision))
+		return -EINVAL;
+
+	if (tz->ops->set_precision)
+		ret = tz->ops->set_precision(tz, precision);
+
+	return ret ? ret : count;
+}
+
+static ssize_t
 emul_temp_store(struct device *dev, struct device_attribute *attr,
 		     const char *buf, size_t count)
 {
@@ -1130,6 +1169,8 @@ static DEVICE_ATTR(passive, S_IRUGO | S_IWUSR, passive_show, passive_store);
 static DEVICE_ATTR(policy, S_IRUGO | S_IWUSR, policy_show, policy_store);
 static DEVICE_ATTR(available_policies, S_IRUGO, available_policies_show, NULL);
 static DEVICE_ATTR(data_out, S_IRUGO, data_out_show, NULL);
+static DEVICE_ATTR(precision, S_IRUGO | S_IWUSR,
+	precision_show, precision_store);
 
 /* sys I/F for cooling device */
 #define to_cooling_device(_dev)	\
@@ -1944,6 +1985,11 @@ struct thermal_zone_device *thermal_zone_device_register(const char *type,
 	if (result)
 		goto unregister;
 
+	/* Create precision attribute */
+	result = device_create_file(&tz->device, &dev_attr_precision);
+	if (result)
+		goto unregister;
+
 	/* Update 'this' zone's governor information */
 	mutex_lock(&thermal_governor_lock);
 
@@ -2046,6 +2092,7 @@ void thermal_zone_device_unregister(struct thermal_zone_device *tz)
 	device_remove_file(&tz->device, &dev_attr_policy);
 	device_remove_file(&tz->device, &dev_attr_available_policies);
 	device_remove_file(&tz->device, &dev_attr_data_out);
+	device_remove_file(&tz->device, &dev_attr_precision);
 	remove_trip_attrs(tz);
 	thermal_set_governor(tz, NULL);
 

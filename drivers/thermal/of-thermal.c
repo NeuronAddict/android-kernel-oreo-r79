@@ -234,6 +234,39 @@ static int of_thermal_get_data_out(struct thermal_zone_device *tz,
 	return data->ops->get_data_out(data->sensor_data, data_out);
 }
 
+/**
+ * of_thermal_get_precision - function to get precision value
+ *
+ * @tz:	pointer to a thermal zone
+ * @data_out:	precision value
+ *
+ * This function gives the ability to read current precision value,
+ * which is handy for debugging
+ *
+ * Return: zero on success, error code otherwise
+ */
+static int of_thermal_get_precision(struct thermal_zone_device *tz,
+				    int *precision)
+{
+	struct __thermal_zone *data = tz->devdata;
+
+	if (!data->ops || !data->ops->get_precision)
+		return -EINVAL;
+
+	return data->ops->get_precision(data->sensor_data, precision);
+}
+
+static int of_thermal_set_precision(struct thermal_zone_device *tz,
+				    int precision)
+{
+	struct __thermal_zone *data = tz->devdata;
+
+	if (!data->ops || !data->ops->set_precision)
+		return -EINVAL;
+
+	return data->ops->set_precision(data->sensor_data, precision);
+}
+
 static int of_thermal_bind(struct thermal_zone_device *thermal,
 			   struct thermal_cooling_device *cdev)
 {
@@ -451,6 +484,8 @@ thermal_zone_of_add_sensor(struct device_node *zone,
 	tzd->ops->get_trend = of_thermal_get_trend;
 	tzd->ops->set_emul_temp = of_thermal_set_emul_temp;
 	tzd->ops->get_data_out = of_thermal_get_data_out;
+	tzd->ops->get_precision = of_thermal_get_precision;
+	tzd->ops->set_precision = of_thermal_set_precision;
 	mutex_unlock(&tzd->lock);
 
 	return tzd;
