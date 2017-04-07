@@ -1,7 +1,5 @@
 /*
- * Copyright (c) 2016, Intel Corporation. All rights reserved.
- *
- * Author: Harish Subramony <harish.subramony@intel.com>
+ * Copyright (c) 2016-2017, Intel Corporation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -36,11 +34,14 @@
 #include <linux/io.h>
 #include <linux/platform_device.h>
 #include <linux/delay.h>
+#include <linux/intel-hwio.h>
+#include <soc/mnh/mnh-hwio-scu.h>
 #include "mnh_timer.h"
 
-/* 
+/*
  * Global variables are declared as static, so are global within the file. 
  */
+static void __iomem *scu;
 static void __iomem *mnh_timer_base0;
 static void __iomem *mnh_timer_base1;
 static void __iomem *mnh_timer_base2;
@@ -78,38 +79,38 @@ static inline void mnh_timer_writel_relaxed(void __iomem *base, u32 val, unsigne
 
 cycle_t mnh_timer_get_currentvalue(void __iomem *base)
 {
-        return (cycle_t)mnh_timer_readl(base, MNH_TIMER_CURRENTVALUE_OFFSET);
+	return (cycle_t)mnh_timer_readl(base, MNH_TIMER_CURRENTVALUE_OFFSET);
  }
 
 cycle_t mnh_timer_get_loadcount(void __iomem *base)
 {
-        return (cycle_t)mnh_timer_readl(base,  MNH_TIMER_LOADCOUNT_OFFSET);
+	return (cycle_t)mnh_timer_readl(base,  MNH_TIMER_LOADCOUNT_OFFSET);
  }
 
 static void mnh_timer_disable_int(void __iomem *base)
 {
-         u32 ctrl = mnh_timer_readl(base, MNH_TIMER_CONTROLREG_OFFSET);
+	u32 ctrl = mnh_timer_readl(base, MNH_TIMER_CONTROLREG_OFFSET);
 
-         /* set 1 - disable interrupts, 0 - enable interrupts (reverse of synopsis spec  */
-         ctrl |= MNH_TIMER_INTERRUPT_MASK;
-         mnh_timer_writel(base, ctrl, MNH_TIMER_CONTROLREG_OFFSET);
+	/* set 1 - disable interrupts, 0 - enable interrupts (reverse of synopsis spec  */
+	ctrl |= MNH_TIMER_INTERRUPT_MASK;
+	mnh_timer_writel(base, ctrl, MNH_TIMER_CONTROLREG_OFFSET);
 }
 
 void __iomem *get_timer_base(struct kobject *kobj)
 {
 	const char *name = kobject_name(kobj);
 
-        pr_debug("%s : name = %s\n",__func__, name);
+	pr_debug("%s : name = %s\n", __func__, name);
 
-        if(strstr(name, "timer0"))
+	if (strstr(name, "timer0"))
 		return mnh_timer_base0;
-        else if(strstr(name, "timer1"))
+	else if (strstr(name, "timer1"))
 		return mnh_timer_base1;
-        else if(strstr(name, "timer2"))
+	else if (strstr(name, "timer2"))
 		return mnh_timer_base2;
-        else if(strstr(name, "timer3"))
+	else if (strstr(name, "timer3"))
 		return mnh_timer_base3;
-        else
+	else
 		return NULL;
 }
 
@@ -119,46 +120,44 @@ static ssize_t mode_show(struct kobject *kobj, struct kobj_attribute *attr, char
         int ret = 0;
 
         void __iomem *base = get_timer_base(kobj);
-	if(!base) return -EIO;
+	if (!base)
+		return -EIO;
 
-	pr_debug("%s\n",__func__);
-        ctrl = mnh_timer_readl(base, MNH_TIMER_CONTROLREG_OFFSET);
+	pr_debug("%s\n", __func__);
+	ctrl = mnh_timer_readl(base, MNH_TIMER_CONTROLREG_OFFSET);
 
-        pr_debug("ctrl = %u\n",ctrl);
- 
-        if(MNH_TIMER_MODE_USER_DEFINED & ctrl)
-	{
+	pr_debug("ctrl = %u\n",ctrl);
+
+	if (MNH_TIMER_MODE_USER_DEFINED & ctrl)	{
 		ret =strlen(cmode1);
 		strncpy(buf, cmode1, ret);
-	}
-        else 
-	{
+	} else {
 		ret = strlen(cmode0);
 		strncpy(buf, cmode0, ret);
 	}
-        return ret;
+	return ret;
 }
 
 static ssize_t mode_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
 {
         u32 ctrl, mode;
 	void __iomem *base = get_timer_base(kobj);
-	if(!base) return -EIO;
+	if (!base)
+		return -EIO;
 
-        pr_debug("%s\n",__func__);
-        if(!strncmp(buf, cmode0, strlen(cmode0)))
+	pr_debug("%s\n", __func__);
+	if (!strncmp(buf, cmode0, strlen(cmode0)))
 		mode = MNH_TIMER_MODE_FREE_RUNNING;
-        else if(!strncmp(buf, cmode1, strlen(cmode1)))
+	else if (!strncmp(buf, cmode1, strlen(cmode1)))
 		mode = MNH_TIMER_MODE_USER_DEFINED;
-        else
-	{
+	else {
 		pr_err("only supported values = free-running, user-defined\n");
                 pr_err("defaulting to free-running");
                 mode = MNH_TIMER_MODE_FREE_RUNNING;
 	}
 
-        pr_debug("mode = %d\n",mode);
-	ctrl = mnh_timer_readl(base, MNH_TIMER_CONTROLREG_OFFSET);        
+        pr_debug("mode = %d\n", mode);
+	ctrl = mnh_timer_readl(base, MNH_TIMER_CONTROLREG_OFFSET);
         if (mode)
 		ctrl |= MNH_TIMER_MODE_USER_DEFINED;
 	else
@@ -166,16 +165,17 @@ static ssize_t mode_store(struct kobject *kobj, struct kobj_attribute *attr, con
 
 	mnh_timer_writel(base, ctrl, MNH_TIMER_CONTROLREG_OFFSET);
 	mnh_timer_writel(base, ctrl, MNH_TIMER_CONTROLREG_OFFSET);
-	
+
 	return count;
 }
 
 static ssize_t loadcounter_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-        void __iomem *base = get_timer_base(kobj);
-	if(!base) return -EIO;
+	void __iomem *base = get_timer_base(kobj);
+	if (!base)
+		return -EIO;
 
-        pr_debug("%s\n",__func__);
+	pr_debug("%s\n", __func__);
 	return sprintf(buf, "%lu\n", mnh_timer_get_loadcount(base) );
 }
 
@@ -184,45 +184,48 @@ static ssize_t loadcounter_store(struct kobject *kobj, struct kobj_attribute *at
 	int ret;
 	unsigned long var;
 	void __iomem *base = get_timer_base(kobj);
-	if(!base) return -EIO;
+	if (!base)
+		return -EIO;
 
-        pr_debug("%s\n",__func__);
+	pr_debug("%s\n", __func__);
 
 	ret = kstrtoint(buf, 10, &var);
-	if(ret < 0)
+	if (ret < 0)
 		return ret;
-        
-        pr_debug("%s Setting clock  period = %u   %d \n",__func__, var, var);
-	
+
+	pr_debug("%s Setting clock  period = %u   %d \n", __func__, var, var);
+
 	mnh_timer_writel(base, var, MNH_TIMER_LOADCOUNT_OFFSET);
-	 
+
 	return count;
 }
 
 static ssize_t currentvalue_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-        void __iomem *base = get_timer_base(kobj);
-	if(!base) return -EIO;
+	void __iomem *base = get_timer_base(kobj);
+	if (!base)
+		return -EIO;
 
-        pr_debug("%s\n",__func__);
+        pr_debug("%s\n", __func__);
 	return sprintf(buf, "%lu\n", mnh_timer_get_currentvalue(base));
 }
 
 
 static ssize_t status_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-        u32 ctrl;
-        int ret;
-        void __iomem *base = get_timer_base(kobj);
-	if(!base) return -EIO;
+	u32 ctrl;
+	int ret;
+	void __iomem *base = get_timer_base(kobj);
+	if (!base)
+		return -EIO;
 
-	pr_debug("%s\n",__func__);
-        ctrl = mnh_timer_readl(base, MNH_TIMER_CONTROLREG_OFFSET);
-        pr_debug("ctrl = %u\n",ctrl);
-	if(MNH_TIMER_ENABLE & ctrl)
+	pr_debug("%s\n", __func__);
+	ctrl = mnh_timer_readl(base, MNH_TIMER_CONTROLREG_OFFSET);
+	pr_debug("ctrl = %u\n", ctrl);
+	if (MNH_TIMER_ENABLE & ctrl)
 	{
-		ret = strlen(enable_str); 
-		strncpy(buf, enable_str, ret); 
+		ret = strlen(enable_str);
+		strncpy(buf, enable_str, ret);
 	}
 	else
 	{
@@ -230,7 +233,7 @@ static ssize_t status_show(struct kobject *kobj, struct kobj_attribute *attr, ch
 		strncpy(buf, disable_str, ret);
 	}
 
-        return ret;
+	return ret;
 }
 
 static ssize_t status_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
@@ -239,18 +242,19 @@ static ssize_t status_store(struct kobject *kobj, struct kobj_attribute *attr, c
         u32 ctrl;
 	unsigned long var;
         void __iomem *base = get_timer_base(kobj);
-	if(!base) return -EIO;
+	if (!base)
+		return -EIO;
 
-        pr_debug("%s\n",__func__);
+	pr_debug("%s\n", __func__);
 
 	ret = kstrtoint(buf, 10, &var);
-	if(ret < 0)
+	if (ret < 0)
 		return ret;
 
 
-	ctrl = mnh_timer_readl(base, MNH_TIMER_CONTROLREG_OFFSET);        
+	ctrl = mnh_timer_readl(base, MNH_TIMER_CONTROLREG_OFFSET);
 
-	if(var & MNH_TIMER_ENABLE)
+	if (var & MNH_TIMER_ENABLE)
 	{
 		pr_debug("timer enable\n");
 		ctrl |= MNH_TIMER_ENABLE;
@@ -289,84 +293,84 @@ static struct attribute_group attr_group = {
 
 int mnh_timer_sysfs_init(void)
 {
-        int ret =0 ;
-	pr_debug("%s ....\n",__func__);
+	int ret =0 ;
+	pr_debug("%s ....\n", __func__);
 
-        mnh_timer_kobject = kobject_create_and_add("mnh-timer",NULL);
-	if(!mnh_timer_kobject)
+	mnh_timer_kobject = kobject_create_and_add("mnh-timer",NULL);
+	if (!mnh_timer_kobject)
 	{
-                pr_err("%s failed to create mnh_timer kobj\n",__func__);        
-                return -ENOMEM; 
+		pr_err("%s failed to create mnh_timer kobj\n", __func__);
+		return -ENOMEM;
 	}
 
-        timer0_kobject = kobject_create_and_add("timer0",mnh_timer_kobject);
-	if(!timer0_kobject)
+	timer0_kobject = kobject_create_and_add("timer0", mnh_timer_kobject);
+	if (!timer0_kobject)
 	{
-                pr_err("%s failed to create timer0 kobj\n",__func__);
-                kobject_put(mnh_timer_kobject);
-                return -ENOMEM; 
+		pr_err("%s failed to create timer0 kobj\n", __func__);
+		kobject_put(mnh_timer_kobject);
+		return -ENOMEM;
 	}
 
-        timer1_kobject = kobject_create_and_add("timer1",mnh_timer_kobject);
-	if(!timer1_kobject)
+	timer1_kobject = kobject_create_and_add("timer1", mnh_timer_kobject);
+	if (!timer1_kobject)
 	{
-                pr_err("%s failed to create timer1 kobj\n",__func__);        
+		pr_err("%s failed to create timer1 kobj\n", __func__);
 		kobject_put(timer0_kobject);
 		kobject_put(mnh_timer_kobject);
-                return -ENOMEM; 
+		return -ENOMEM;
 	}
 
-        timer2_kobject = kobject_create_and_add("timer2",mnh_timer_kobject);
-	if(!timer2_kobject)
+	timer2_kobject = kobject_create_and_add("timer2", mnh_timer_kobject);
+	if (!timer2_kobject)
 	{
-                pr_err("%s failed to create timer2 kobj\n",__func__);        
+		pr_err("%s failed to create timer2 kobj\n", __func__);
 		kobject_put(timer0_kobject);
 		kobject_put(timer1_kobject);
 		kobject_put(mnh_timer_kobject);
-                return -ENOMEM; 
+		return -ENOMEM;
 	}
 
-        timer3_kobject = kobject_create_and_add("timer3",mnh_timer_kobject);
-	if(!timer3_kobject)
+	timer3_kobject = kobject_create_and_add("timer3", mnh_timer_kobject);
+	if (!timer3_kobject)
 	{
-                pr_err("%s failed to create timer3 kobj\n",__func__);        
+		pr_err("%s failed to create timer3 kobj\n", __func__);
 		kobject_put(timer0_kobject);
 		kobject_put(timer1_kobject);
 		kobject_put(timer2_kobject);
 		kobject_put(mnh_timer_kobject);
-                return -ENOMEM; 
+		return -ENOMEM;
 	}
 
-        /* Create the files associated with this kobject */
+	/* Create the files associated with this kobject */
 	ret = sysfs_create_group(timer0_kobject, &attr_group);
 	if (ret)
 	{
-                pr_err("%s failed to create attributes for timer0",__func__);
+		pr_err("%s failed to create attributes for timer0", __func__);
 		kobject_put(timer0_kobject);
 		kobject_put(timer1_kobject);
 		kobject_put(timer2_kobject);
 		kobject_put(timer3_kobject);
 		kobject_put(mnh_timer_kobject);
-                return ret;
+		return ret;
 	}
 
 	ret = sysfs_create_group(timer1_kobject, &attr_group);
 	if (ret)
 	{
-                pr_err("%s failed to create attributes for timer1",__func__);
+		pr_err("%s failed to create attributes for timer1", __func__);
 		sysfs_remove_group(timer0_kobject, &attr_group);
 		kobject_put(timer0_kobject);
 		kobject_put(timer1_kobject);
 		kobject_put(timer2_kobject);
 		kobject_put(timer3_kobject);
 		kobject_put(mnh_timer_kobject);
-                return ret;
+		return ret;
 	}
 
 	ret = sysfs_create_group(timer2_kobject, &attr_group);
 	if (ret)
 	{
-                pr_err("%s failed to create attributes for timer2",__func__);
+		pr_err("%s failed to create attributes for timer2", __func__);
 		sysfs_remove_group(timer0_kobject, &attr_group);
 		sysfs_remove_group(timer1_kobject, &attr_group);
 		kobject_put(timer0_kobject);
@@ -374,13 +378,13 @@ int mnh_timer_sysfs_init(void)
 		kobject_put(timer2_kobject);
 		kobject_put(timer3_kobject);
 		kobject_put(mnh_timer_kobject);
-                return ret;
+		return ret;
 	}
 
 	ret = sysfs_create_group(timer3_kobject, &attr_group);
 	if (ret)
 	{
-                pr_err("%s failed to create attributes for timer3",__func__);
+		pr_err("%s failed to create attributes for timer3", __func__);
 		sysfs_remove_group(timer0_kobject, &attr_group);
 		sysfs_remove_group(timer1_kobject, &attr_group);
 		sysfs_remove_group(timer2_kobject, &attr_group);
@@ -389,51 +393,78 @@ int mnh_timer_sysfs_init(void)
 		kobject_put(timer2_kobject);
 		kobject_put(timer3_kobject);
 		kobject_put(mnh_timer_kobject);
-                return ret;
+		return ret;
 	}
 
-	pr_debug("%s created mnh-timer groups successfully",__func__);
+	pr_debug("%s created mnh-timer groups successfully", __func__);
 
-        return ret;
- 	
+	return ret;
 }
 
 
 void mnh_timer_sysfs_clean(void)
 {
-        sysfs_remove_group(timer0_kobject, &attr_group);
-        sysfs_remove_group(timer1_kobject, &attr_group);
-        sysfs_remove_group(timer2_kobject, &attr_group);
-        sysfs_remove_group(timer3_kobject, &attr_group);
-        kobject_put(timer0_kobject);
+	sysfs_remove_group(timer0_kobject, &attr_group);
+	sysfs_remove_group(timer1_kobject, &attr_group);
+	sysfs_remove_group(timer2_kobject, &attr_group);
+	sysfs_remove_group(timer3_kobject, &attr_group);
+	kobject_put(timer0_kobject);
 	kobject_put(timer1_kobject);
 	kobject_put(timer2_kobject);
 	kobject_put(timer3_kobject);
-        kobject_put(mnh_timer_kobject);     
+	kobject_put(mnh_timer_kobject);
 }
 
 static void mnh_timer_init()
 {
 	pr_debug("mnh_timer_init\n");
-        
-        if(!mnh_timer_sysfs_init()) 
+	HW_OUTf(scu, SCU, PERIPH_CLK_CTRL, TIMER_CLKEN_SW, 1);
+	HW_OUTf(scu, SCU, RSTC, TIMER_RST, 0);
+	if (!mnh_timer_sysfs_init())
 	{
 		//disable interrupts
 		mnh_timer_disable_int(mnh_timer_base0);
 		mnh_timer_disable_int(mnh_timer_base1);
 		mnh_timer_disable_int(mnh_timer_base2);
-		mnh_timer_disable_int(mnh_timer_base3);	
+		mnh_timer_disable_int(mnh_timer_base3);
 	}
+}
+
+static int mnh_timer_suspend(struct platform_device *pdev)
+{
+#if 0
+	HW_OUTf(scu, SCU, RSTC, TIMER_RST, 1);
+	HW_OUTf(scu, SCU, PERIPH_CLK_CTRL, TIMER_CLKEN_SW, 0);
+#endif
+	return 0;
+}
+
+static int mnh_timer_resume(struct platform_device *pdev)
+{
+	HW_OUTf(scu, SCU, PERIPH_CLK_CTRL, TIMER_CLKEN_SW, 1);
+	HW_OUTf(scu, SCU, RSTC, TIMER_RST, 0);
+	return 0;
 }
 
 static int mnh_timer_probe(struct platform_device *pdev)
 {
-        int error = 0;
+	int error = 0;
+	struct resource *scu_temp = NULL;
 	struct resource *mem = NULL;
 
-	pr_debug("%s .....\n",__func__);
-
 	/* Device tree information: Base addresses & mapping */
+	scu_temp = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+	if (scu_temp == NULL) {
+		pr_err("Base address of scu is not set.\n");
+		error = -ENXIO;
+		return error;
+	}
+	scu = ioremap_nocache(scu_temp->start, resource_size(scu_temp));
+	if (!scu) {
+		pr_err("%s scu ioremap failure.\n", __func__);
+		return -ENOMEM;
+	}
+
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (mem == NULL) {
 		pr_err("Base address of the device is not set.\nSee device tree.\n");
@@ -441,21 +472,12 @@ static int mnh_timer_probe(struct platform_device *pdev)
 		return error;
 	}
 
-	mnh_timer_base0 = ioremap(mem->start, resource_size(mem));
+	mnh_timer_base0 = ioremap_nocache(mem->start, resource_size(mem));
 	if (!mnh_timer_base0) {
+		iounmap(scu);
 		error = -ENOMEM;
-		iounmap(mnh_timer_base0); 
 		return error;
 	}
-
-	// ioremap the base address for timers (1,2,3,4)
-	/*	mnh_timer_base0 = ioremap(MNH_TIMER1_REG, 0x1000);
-	if (!mnh_timer_base0) {
-		pr_err("failed to ioremap mnh_timer_base0\n");
-		error = -ENOMEM;
-		goto free_mem;
-	}
-	*/
 
 	pr_debug("ioremap mnh_timer_base0 successfully\n");
 	mnh_timer_base1 = mnh_timer_base0 + MNH_TIMER_REG_LENGTH;
@@ -471,8 +493,9 @@ static int mnh_timer_probe(struct platform_device *pdev)
 
 static int mnh_timer_remove(struct platform_device *pdev)
 {
-        mnh_timer_sysfs_clean();        
-        iounmap(mnh_timer_base0);
+	mnh_timer_sysfs_clean();
+	iounmap(scu);
+	iounmap(mnh_timer_base0);
 	return 0;
 }
 
@@ -483,17 +506,19 @@ static const struct of_device_id mnh_timer_dev[] = {
 MODULE_DEVICE_TABLE(of, mnh_timer_dev);
 
 static struct platform_driver mnh_timer_pldriver = {
-    .probe          = mnh_timer_probe,
-    .remove         = mnh_timer_remove,
-    .driver = {
-            .name  = "mnh-timer",
-            .owner = THIS_MODULE,
-            .of_match_table = mnh_timer_dev,
-    },
+	.probe		= mnh_timer_probe,
+	.remove		= mnh_timer_remove,
+	.suspend	= mnh_timer_suspend,
+	.resume		= mnh_timer_resume,
+	.driver		= {
+		.name  = "mnh-timer",
+		.owner = THIS_MODULE,
+		.of_match_table = mnh_timer_dev,
+	},
 };
 
 module_platform_driver(mnh_timer_pldriver);
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Device driver for Timer");
-MODULE_AUTHOR("Harish Subramony <harish.subramony@intel.com>");
+MODULE_AUTHOR("Intel");

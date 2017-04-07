@@ -14,7 +14,8 @@
 
         mnh-timer {
 		  compatible = "mnh-timer";
-                  reg = <0x0 0x04041000 0x0 0x1000>;
+                  reg = <0x0 0x04041000 0x0 0x1000>,
+			<0x0 0x04003000 0x0 0x1000>;
 	};
 
 	dma0: dma@04000000 {
