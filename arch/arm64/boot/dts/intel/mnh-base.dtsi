@@ -38,15 +38,36 @@
 		clocks = <&soc_refclk100mhz>;
 	};
 
+	memory@40000000 {
+		device_type = "memory";
+		reg = <0x00000000 0x40080000 0x0 0x1FF80000>;
+	};
+
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		carveout_reserved: carveout_heap@4E800000 {
+			compatible = "ion-region";
+			reg = <0x0 0x4E800000 0x0 0x11800000>;
+		};
+	};
+
 	paintbox@0400C000 {
-                compatible = "uio_pdrv_genirq", "google,paintbox";
-                reg = <0x0 0x0400C000 0x0 0xFFFF>;
-                interrupts = <GIC_SPI 1 IRQ_TYPE_LEVEL_HIGH>;
-                hardware-id = <0x0 0x6>;
-        };
+		compatible = "uio_pdrv_genirq", "google,paintbox";
+		reg = <0x0 0x0400C000 0x0 0xFFFF>;
+		interrupts = <GIC_SPI 1 IRQ_TYPE_LEVEL_HIGH>;
+		hardware-id = <0x0 0x6>;
+	};
 
 	easel-ion@0 {
 		compatible = "easel,ion";
+
+		ion-carveout {
+			compatible = "easel,carveout";
+			memory-region = <&carveout_reserved>;
+		};
 
 		ion-system-heap {
 			compatible = "easel,sys_user";
@@ -242,11 +263,6 @@
 		interrupts = <GIC_SPI 25 IRQ_TYPE_LEVEL_HIGH>,
 				<GIC_SPI 26 IRQ_TYPE_LEVEL_HIGH>,
 				<GIC_SPI 27 IRQ_TYPE_LEVEL_HIGH>;
-	};
-
-	memory@40000000 {
-		device_type = "memory";
-		reg = <0x00000000 0x40080000 0x0 0x1FF80000>;
 	};
 
 	thermal-zones {
