@@ -24,6 +24,7 @@
 #include <linux/ioctl.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
+#include <linux/uaccess.h>
 #include <uapi/easel_ion.h>
 
 #include "../ion_priv.h"
@@ -63,12 +64,21 @@ static int ion_do_cache_op(struct ion_client *client, struct ion_buffer *buffer,
 		return PTR_ERR(table);
 
 	switch (cmd) {
+	case ION_IOC_HANDLE_FLUSH_CACHE:
 	case ION_IOC_DMA_BUF_FLUSH_CACHE:
 		dma_sync_sg_for_device(easel_ion_dev, table->sgl, table->nents,
 				DMA_TO_DEVICE);
 		break;
+	case ION_IOC_HANDLE_INVALIDATE_CACHE:
 	case ION_IOC_DMA_BUF_INVALIDATE_CACHE:
 		dma_sync_sg_for_cpu(easel_ion_dev, table->sgl, table->nents,
+				DMA_FROM_DEVICE);
+		break;
+	case ION_IOC_HANDLE_FLUSH_INVALIDATE_CACHE:
+	case ION_IOC_DMA_BUF_FLUSH_INVALIDATE_CACHE:
+		dma_sync_sg_for_device(easel_ion_dev, table->sgl, table->nents,
+				DMA_TO_DEVICE);
+		dma_sync_sg_for_device(easel_ion_dev, table->sgl, table->nents,
 				DMA_FROM_DEVICE);
 		break;
 	default:
@@ -81,13 +91,34 @@ static int ion_do_cache_op(struct ion_client *client, struct ion_buffer *buffer,
 static long easel_ion_custom_ioctl(struct ion_client *client, unsigned int cmd,
 		unsigned long arg)
 {
+	struct ion_fd_data data;
 	struct ion_handle *handle;
 	int ret;
 
+	if (_IOC_SIZE(cmd) > sizeof(data))
+		return -EINVAL;
+
+	if (_IOC_DIR(cmd) & _IOC_WRITE)
+		if (copy_from_user(&data, (void __user *)arg, _IOC_SIZE(cmd)))
+			return -EFAULT;
+
 	switch (cmd) {
+	case ION_IOC_HANDLE_FLUSH_CACHE:
+	case ION_IOC_HANDLE_INVALIDATE_CACHE:
+	case ION_IOC_HANDLE_FLUSH_INVALIDATE_CACHE:
+		handle = ion_handle_get_by_id(client, data.handle);
+		if (IS_ERR(handle))
+			return PTR_ERR(handle);
+
+		ret = ion_do_cache_op(client, handle->buffer, cmd);
+
+		ion_handle_put(handle);
+
+		return ret;
 	case ION_IOC_DMA_BUF_FLUSH_CACHE:
 	case ION_IOC_DMA_BUF_INVALIDATE_CACHE:
-		handle = ion_import_dma_buf_fd(client, (int)arg);
+	case ION_IOC_DMA_BUF_FLUSH_INVALIDATE_CACHE:
+		handle = ion_import_dma_buf_fd(client, data.fd);
 		if (IS_ERR(handle)) {
 			pr_info("%s: Could not import handle: %p\n", __func__,
 					handle);
