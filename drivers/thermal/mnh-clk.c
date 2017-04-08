@@ -632,6 +632,17 @@ int mnh_clock_gating_mode(int enabled)
 	if (enabled != 1 && enabled != 0)
 		return -EINVAL;
 
+	/* Add periph clk gates */
+	HW_OUTf(mnh_dev->regs, SCU, RSTC, TIMER_RST, enabled);
+	HW_OUTf(mnh_dev->regs, SCU, RSTC, PERI_DMA_RST, enabled);
+	HW_OUTf(mnh_dev->regs, SCU, RSTC, IPU_RST, enabled);
+	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, PVT_CLKEN,
+		!enabled);
+	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, PERI_DMA_CLKEN_SW,
+		!enabled);
+	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, TIMER_CLKEN_SW,
+		!enabled);
+
 	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_CPUMEM_PD_EN, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_LP4CMEM_PD_EN, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_BTROM_PD_EN, enabled);
