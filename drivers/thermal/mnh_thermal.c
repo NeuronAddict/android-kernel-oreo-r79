@@ -52,9 +52,14 @@
 #define API_TRIM_CODE		0xF
 
 /* Thermal efuse data */
-#define NUM_BITS_EFUSE	10
-#define API_BITS_SLOPE	5
-#define API_BITS_OFFSET	(NUM_BITS_EFUSE-API_BITS_SLOPE)
+#define NUM_BITS_EFUSE		10
+#define API_BITS_SLOPE		5
+#define API_BITS_OFFSET		(NUM_BITS_EFUSE-API_BITS_SLOPE)
+#define API_BITS_SLOPE_MASK	0x1F
+#define API_BITS_OFFSET_MASK	0x1F
+#define TRIM_SIGNED_MASK	0x10
+#define IS_TRIM_SIGNED(x)	(x & TRIM_SIGNED_MASK)
+#define GET_SIGNED_TRIM(x)	(~(x & 0xF) + 1)
 
 /* Temperature calculation algorithm parameters */
 #define API_POLY_N4 (-16743)  /* -1.6743e-11 : 15bits excluding sign */
@@ -73,9 +78,6 @@
 
 #define RES_SLOPE_DIVIDER 10000000 /* 1e7 */
 #define RES_OFFSET_E15_MULTIPLIER 100000000000000 /* 1e14 */
-
-#define API_BITS_SLOPE_MASK    0x1F
-#define API_BITS_OFFSET_MASK   0x1F
 
 #define N12_DIVIDER  1000000000000	/* 1e12 */
 #define N12_ROUNDING_NUM 500000000000	/* 5e11 */
@@ -237,10 +239,12 @@ static void read_efuse_trim(struct mnh_thermal_device *dev)
 			/* Calculate slope and offset */
 			slope =  ((unsigned)val >> API_BITS_OFFSET) &
 				API_BITS_SLOPE_MASK;
-			if (slope >= 16) slope = slope - 32;
+			if (IS_TRIM_SIGNED(slope))
+				slope = GET_SIGNED_TRIM(slope);
 
 			offset = val & API_BITS_OFFSET_MASK;
-			if (offset >= 16) offset = offset - 32;
+			if (IS_TRIM_SIGNED(offset))
+				offset = GET_SIGNED_TRIM(offset);
 
 			mnh_debug("pvt%d efuse:0x%x, s:%d, o:%d\n",
 				i, val, slope, offset);
