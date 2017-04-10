@@ -1029,7 +1029,7 @@ int mnh_clk_init(struct platform_device *pdev, void __iomem *baseadress)
 	}
 
 	mnh_dev->ddr_irq = platform_get_irq(pdev, 0);
-	dev_err(mnh_dev->dev, "Allocate ddr irq %d\n", mnh_dev->ddr_irq);
+	dev_dbg(mnh_dev->dev, "Allocate ddr irq %d\n", mnh_dev->ddr_irq);
 	err = request_irq(mnh_dev->ddr_irq, mnh_pm_handle_ddr_irq,
 	       IRQF_SHARED, DEVICE_NAME, mnh_dev->dev);
 	if (err) {
@@ -1047,7 +1047,7 @@ int mnh_clk_init(struct platform_device *pdev, void __iomem *baseadress)
 
 	init_sysfs(mnh_dev->dev, kernel_kobj);
 
-	mnh_clock_gating_mode(1);
+	mnh_clock_gating_mode(0);
 	return 0;
 
 mnh_probe_err:
