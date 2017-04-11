@@ -311,12 +311,6 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 		ret = -EINVAL;
 #endif
 		break;
-	case PB_ENABLE_STP_INTERRUPT:
-		ret = enable_stp_interrupt_ioctl(pb, session, arg);
-		break;
-	case PB_DISABLE_STP_INTERRUPT:
-		ret = disable_stp_interrupt_ioctl(pb, session, arg);
-		break;
 	case PB_BIND_STP_INTERRUPT:
 		ret = bind_stp_interrupt_ioctl(pb, session, arg);
 		break;
@@ -562,6 +556,16 @@ static int paintbox_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, pb);
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	pb->io.aon_base = pb->reg_base + IPU_CSR_AON_OFFSET;
+#else
+	/* Easel doesn't have an AON group. But instead of ifdef'ing accesses
+	 * to all of the registers which have moved from the APB group to the
+	 * AON group in Canvas, we use the AON base across the board and point
+	 * it to the APB base for Easel.
+	 */
+	pb->io.aon_base = pb->reg_base + IPU_CSR_APB_OFFSET;
+#endif
 	pb->io.apb_base = pb->reg_base + IPU_CSR_APB_OFFSET;
 	pb->io.axi_base = pb->reg_base + IPU_CSR_AXI_OFFSET;
 	pb->io_ipu.ipu_base = pb->reg_base + IPU_CSR_IO_OFFSET;

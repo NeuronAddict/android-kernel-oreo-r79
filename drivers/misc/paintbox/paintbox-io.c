@@ -62,11 +62,8 @@ static void io_apb_reg_entry_write(struct paintbox_debug_reg_entry *reg_entry,
 
 #if defined(CONFIG_DEBUG_FS) || defined(VERBOSE_DEBUG)
 static const char *io_apb_reg_names[IO_APB_NUM_REGS] = {
-	REG_NAME_ENTRY(IPU_VERSION),
-	REG_NAME_ENTRY(IPU_CHECKSUM),
 	REG_NAME_ENTRY(IPU_ISR),
 	REG_NAME_ENTRY(IPU_IMR),
-	REG_NAME_ENTRY(IPU_CAP)
 };
 
 static inline int dump_io_apb_reg(struct paintbox_data *pb, uint32_t reg_offset,
@@ -82,23 +79,11 @@ int dump_io_apb_registers(struct paintbox_debug *debug, char *buf, size_t len)
 	struct paintbox_data *pb = debug->pb;
 	int ret, written = 0;
 
-	ret = dump_io_apb_reg(pb, IPU_VERSION, buf, &written, len);
-	if (ret < 0)
-		goto err_exit;
-
-	ret = dump_io_apb_reg(pb, IPU_CHECKSUM, buf, &written, len);
-	if (ret < 0)
-		goto err_exit;
-
 	ret = dump_io_apb_reg(pb, IPU_ISR, buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
 
 	ret = dump_io_apb_reg(pb, IPU_IMR, buf, &written, len);
-	if (ret < 0)
-		goto err_exit;
-
-	ret = dump_io_apb_reg(pb, IPU_CAP, buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
 

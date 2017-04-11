@@ -25,11 +25,13 @@
 #include "paintbox-debug.h"
 #include "paintbox-regs.h"
 
+#define IO_POWER_RAMP_TIME 10 /* us */
+
 /* Delay to prevent in-rush current */
 #define CORE_POWER_RAMP_TIME 10 /* us */
 
 /* Delay for rams to wake up */
-#define CORE_RAM_POWER_RAIL_RAMP_TIME 1 /* us */
+#define RAM_POWER_RAIL_RAMP_TIME 1 /* us */
 
 /* Delay for system to stabilize before sending real traffic */
 #define CORE_SYSTEM_STABLIZE_TIME 100 /* us */
@@ -41,7 +43,7 @@ static uint64_t paintbox_pm_reg_entry_read(
 	struct paintbox_debug *debug = reg_entry->debug;
 	struct paintbox_data *pb = debug->pb;
 
-	return readq(pb->io.apb_base + reg_entry->reg_offset);
+	return readq(pb->io.aon_base + reg_entry->reg_offset);
 }
 
 static void paintbox_pm_reg_entry_write
@@ -50,10 +52,13 @@ static void paintbox_pm_reg_entry_write
 	struct paintbox_debug *debug = reg_entry->debug;
 	struct paintbox_data *pb = debug->pb;
 
-	writeq(val, pb->io.apb_base + reg_entry->reg_offset);
+	writeq(val, pb->io.aon_base + reg_entry->reg_offset);
 }
 
-static const char *io_pm_reg_names[IO_APB_NUM_REGS] = {
+static const char *io_pm_reg_names[IO_AON_NUM_REGS] = {
+	REG_NAME_ENTRY(IPU_VERSION),
+	REG_NAME_ENTRY(IPU_CHECKSUM),
+	REG_NAME_ENTRY(IPU_CAP),
 	REG_NAME_ENTRY(CLK_GATE_CONTROL_STP_IDLE_GATE_DIS),
 	REG_NAME_ENTRY(CLK_GATE_CONTROL_LBP_IDLE_GATE_DIS),
 	REG_NAME_ENTRY(CLK_GATE_CONTROL),
@@ -69,7 +74,7 @@ static inline int paintbox_pm_dump_reg(struct paintbox_data *pb,
 {
 	const char *reg_name = io_pm_reg_names[REG_INDEX(reg_offset)];
 
-	return dump_ipu_register64(pb, pb->io.apb_base, reg_offset, reg_name,
+	return dump_ipu_register64(pb, pb->io.aon_base, reg_offset, reg_name,
 			buf, written, len);
 }
 
@@ -78,6 +83,18 @@ int paintbox_pm_dump_registers(struct paintbox_debug *debug, char *buf,
 {
 	struct paintbox_data *pb = debug->pb;
 	int ret, written = 0;
+
+	ret = paintbox_pm_dump_reg(pb, IPU_VERSION, buf, &written, len);
+	if (ret < 0)
+		goto err_exit;
+
+	ret = paintbox_pm_dump_reg(pb, IPU_CHECKSUM, buf, &written, len);
+	if (ret < 0)
+		goto err_exit;
+
+	ret = paintbox_pm_dump_reg(pb, IPU_CAP, buf, &written, len);
+	if (ret < 0)
+		goto err_exit;
 
 	ret = paintbox_pm_dump_reg(pb, CLK_GATE_CONTROL_STP_IDLE_GATE_DIS, buf,
 			&written, len);
@@ -128,9 +145,9 @@ void paintbox_pm_enable_dma_channel(struct paintbox_data *pb,
 {
 	uint32_t val;
 
-	val = readl(pb->io.apb_base + IPU_DMA_CHAN_EN);
+	val = readl(pb->io.aon_base + IPU_DMA_CHAN_EN);
 	val |= 1 << channel->channel_id;
-	writel(val, pb->io.apb_base + IPU_DMA_CHAN_EN);
+	writel(val, pb->io.aon_base + IPU_DMA_CHAN_EN);
 
 	channel->pm_enabled = true;
 }
@@ -141,9 +158,9 @@ void paintbox_pm_disable_dma_channel(struct paintbox_data *pb,
 {
 	uint32_t val;
 
-	val = readl(pb->io.apb_base + IPU_DMA_CHAN_EN);
+	val = readl(pb->io.aon_base + IPU_DMA_CHAN_EN);
 	val &= ~(1 << channel->channel_id);
-	writel(val, pb->io.apb_base + IPU_DMA_CHAN_EN);
+	writel(val, pb->io.aon_base + IPU_DMA_CHAN_EN);
 
 	channel->pm_enabled = false;
 }
@@ -161,9 +178,14 @@ void paintbox_enable_mmu_bif_idle_clock_gating(struct paintbox_data *pb)
 	if (pb->power.bif_mmu_clock_idle_disable_ref_count == 0) {
 		uint32_t val;
 
-		val = readl(pb->io.apb_base + CLK_GATE_CONTROL);
+		val = readl(pb->io.aon_base + CLK_GATE_CONTROL);
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+		val &= ~(CLK_GATE_CONTROL_MMU_IDLE_GATE_DIS_MASK |
+				CLK_GATE_CONTROL_BIF_IDLE_GATE_DIS_MASK);
+#else
 		val &= ~CLK_GATE_CONTROL_MMU_BIF_IDLE_GATE_DIS_MASK;
-		writel(val, pb->io.apb_base + CLK_GATE_CONTROL);
+#endif
+		writel(val, pb->io.aon_base + CLK_GATE_CONTROL);
 	}
 
 	spin_unlock_irqrestore(&pb->power.power_lock, irq_flags);
@@ -180,9 +202,14 @@ void paintbox_disable_mmu_bif_idle_clock_gating(struct paintbox_data *pb)
 	if (pb->power.bif_mmu_clock_idle_disable_ref_count == 0) {
 		uint32_t val;
 
-		val = readl(pb->io.apb_base + CLK_GATE_CONTROL);
+		val = readl(pb->io.aon_base + CLK_GATE_CONTROL);
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+		val |= CLK_GATE_CONTROL_MMU_IDLE_GATE_DIS_MASK |
+			CLK_GATE_CONTROL_BIF_IDLE_GATE_DIS_MASK;
+#else
 		val |= CLK_GATE_CONTROL_MMU_BIF_IDLE_GATE_DIS_MASK;
-		writel(val, pb->io.apb_base + CLK_GATE_CONTROL);
+#endif
+		writel(val, pb->io.aon_base + CLK_GATE_CONTROL);
 	}
 
 	pb->power.bif_mmu_clock_idle_disable_ref_count++;
@@ -210,14 +237,27 @@ static void paintbox_core_power_enable(struct paintbox_data *pb,
 	active_core_mask = (1 << requested_cores) - 1;
 
 	/* Disable STP idle clock gating */
-	writel(active_core_mask, pb->io.apb_base +
+	writel(active_core_mask, pb->io.aon_base +
 			CLK_GATE_CONTROL_STP_IDLE_GATE_DIS);
 
 	/* Disable LBP idle clock gating */
-	writel((active_core_mask << 1) | 0x1, pb->io.apb_base +
+	writel((active_core_mask << 1) | 0x1, pb->io.aon_base +
 			CLK_GATE_CONTROL_LBP_IDLE_GATE_DIS);
 
 	paintbox_disable_mmu_bif_idle_clock_gating(pb);
+
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	/* Power on I/O block */
+	writel(0, pb->io.aon_base + IO_POWER_ON_N);
+	udelay(IO_POWER_RAMP_TIME);
+
+	/* Power on RAMs for I/O block */
+	writel(0, pb->io.aon_base + IO_RAM_ON_N);
+	udelay(RAM_POWER_RAIL_RAMP_TIME);
+
+	/* Turn off isolation for I/O block */
+	writel(0, pb->io.aon_base + IO_ISO_ON);
+#endif
 
 	/* IPU cores need to be enabled in sequence in pairs */
 	for (active_cores = pb->power.active_core_count;
@@ -227,14 +267,14 @@ static void paintbox_core_power_enable(struct paintbox_data *pb,
 		uint32_t new_core_pairs = (active_cores + 2) / 2;
 
 		/* Power on the odd core first */
-		writel(new_core_mask_n, pb->io.apb_base + CORE_POWER_ON_N);
+		writel(new_core_mask_n, pb->io.aon_base + CORE_POWER_ON_N);
 		udelay(CORE_POWER_RAMP_TIME);
 
 		new_core_mask_n = (max_core_mask << (active_cores + 2)) &
 				max_core_mask;
 
 		/* Power on the even core next */
-		writel(new_core_mask_n, pb->io.apb_base + CORE_POWER_ON_N);
+		writel(new_core_mask_n, pb->io.aon_base + CORE_POWER_ON_N);
 		udelay(CORE_POWER_RAMP_TIME);
 
 		/* We need to run the clock to the core pair that's being
@@ -245,20 +285,20 @@ static void paintbox_core_power_enable(struct paintbox_data *pb,
 		 * on the RAM's SD pin is significantly longer that 1 clock
 		 * cycle.
 		 */
-		writel(new_core_pairs, pb->io.apb_base + IPU_CORE_PAIRS_EN);
+		writel(new_core_pairs, pb->io.aon_base + IPU_CORE_PAIRS_EN);
 
 		/* Turn clocks off on all active cores */
-		writel(0, pb->io.apb_base + IPU_CORE_PAIRS_EN);
+		writel(0, pb->io.aon_base + IPU_CORE_PAIRS_EN);
 
 		/* Turn on RAMs for the core */
-		writel(new_core_mask_n, pb->io.apb_base + CORE_RAM_ON_N);
-		udelay(CORE_RAM_POWER_RAIL_RAMP_TIME);
+		writel(new_core_mask_n, pb->io.aon_base + CORE_RAM_ON_N);
+		udelay(RAM_POWER_RAIL_RAMP_TIME);
 
 		/* Restore clocks to all active core pairs. */
-		writel(new_core_pairs, pb->io.apb_base + IPU_CORE_PAIRS_EN);
+		writel(new_core_pairs, pb->io.aon_base + IPU_CORE_PAIRS_EN);
 
 		/* Disable core isolation for the requested core */
-		writel(new_core_mask_n, pb->io.apb_base + CORE_ISO_ON);
+		writel(new_core_mask_n, pb->io.aon_base + CORE_ISO_ON);
 	}
 
 	udelay(CORE_SYSTEM_STABLIZE_TIME);
@@ -293,28 +333,39 @@ static void paintbox_core_power_disable(struct paintbox_data *pb,
 		uint32_t new_core_pairs = (active_cores - 2) / 2;
 
 		/* Enable core isolation for the disabled cores */
-		writel(new_core_mask_n, pb->io.apb_base + CORE_ISO_ON);
+		writel(new_core_mask_n, pb->io.aon_base + CORE_ISO_ON);
 
 		/* Turn off clocks to all cores during the RAM power transition.
 		 */
-		writel(0, pb->io.apb_base + IPU_CORE_PAIRS_EN);
+		writel(0, pb->io.aon_base + IPU_CORE_PAIRS_EN);
 
 		/* Turn off RAMs for the disabled core pairs */
-		writel(new_core_mask_n, pb->io.apb_base + CORE_RAM_ON_N);
+		writel(new_core_mask_n, pb->io.aon_base + CORE_RAM_ON_N);
 
 		/* Need to briefly turn on the clocks to the cores being turned
 		 * off to propagate the RAM SD pin change into the RAM, then
 		 * need to turn the clocks off again, since the cores are being
 		 * turned off.
 		 */
-		writel(new_core_pairs + 1, pb->io.apb_base + IPU_CORE_PAIRS_EN);
+		writel(new_core_pairs + 1, pb->io.aon_base + IPU_CORE_PAIRS_EN);
 
 		/* Turn off clocks to the disabled core pairs. */
-		writel(new_core_pairs, pb->io.apb_base + IPU_CORE_PAIRS_EN);
+		writel(new_core_pairs, pb->io.aon_base + IPU_CORE_PAIRS_EN);
 
 		/* Turn off the core pair */
-		writel(new_core_mask_n, pb->io.apb_base + CORE_POWER_ON_N);
+		writel(new_core_mask_n, pb->io.aon_base + CORE_POWER_ON_N);
 	}
+
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	/* Turn off isolation for I/O block */
+	writel(1, pb->io.aon_base + IO_ISO_ON);
+
+	/* Power on RAMs for I/O block */
+	writel(1, pb->io.aon_base + IO_RAM_ON_N);
+
+	/* Power off I/O block */
+	writel(1, pb->io.aon_base + IO_POWER_ON_N);
+#endif
 
 	udelay(CORE_SYSTEM_STABLIZE_TIME);
 
@@ -398,7 +449,7 @@ int paintbox_pm_init(struct paintbox_data *pb)
 			&pb->power);
 
 	paintbox_debug_create_reg_entries(pb, &pb->power.debug, io_pm_reg_names,
-			IO_APB_NUM_REGS, paintbox_pm_reg_entry_write,
+			IO_AON_NUM_REGS, paintbox_pm_reg_entry_write,
 			paintbox_pm_reg_entry_read);
 
 	spin_lock_init(&pb->power.power_lock);
@@ -407,6 +458,9 @@ int paintbox_pm_init(struct paintbox_data *pb)
 	 * force a certain number of active cores.
 	 */
 	/* TODO(ahampson):  Add support for force leave enable */
+
+	dev_dbg(&pb->pdev->dev, "io_aon: base %p len %lu\n", pb->io.aon_base,
+			IO_AON_BLOCK_LEN);
 
 	return 0;
 }

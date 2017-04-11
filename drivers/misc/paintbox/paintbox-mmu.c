@@ -318,7 +318,9 @@ static void paintbox_mmu_tlb_sync(void *priv)
 
 	dev_dbg(&pb->pdev->dev, "%s\n", __func__);
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 	paintbox_disable_mmu_bif_idle_clock_gating(pb);
+#endif
 
 	/* TODO(ahampson):  There is no field bit defined for MMU_SYNC so we
 	 * just write a 1 into the register in the interim.
@@ -338,7 +340,9 @@ static void paintbox_mmu_tlb_sync(void *priv)
 		udelay(MMU_SYNC_DELAY);
 	}
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 	paintbox_enable_mmu_bif_idle_clock_gating(pb);
+#endif
 }
 
 /* Called with page table spinlock held. */
@@ -350,7 +354,9 @@ static void paintbox_mmu_tlb_flush_all(void *priv)
 
 	dev_dbg(&pb->pdev->dev, "%s\n", __func__);
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 	paintbox_disable_mmu_bif_idle_clock_gating(pb);
+#endif
 
 	for (channel_id = 0; channel_id < pb->dma.num_channels; channel_id++) {
 		while (readl(pb->io.axi_base + MMU_FLUSH_FIFO_FULL)) {
@@ -371,7 +377,9 @@ static void paintbox_mmu_tlb_flush_all(void *priv)
 	}
 
 err_exit:
+#if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 	paintbox_enable_mmu_bif_idle_clock_gating(pb);
+#endif
 }
 
 /* Called with page table spinlock held. */
@@ -385,7 +393,9 @@ static void paintbox_mmu_tlb_invalidate_range_nosync(void *priv,
 	dev_dbg(&pb->pdev->dev, "%s:iova 0x%016lx sz %zu leaf %d\n", __func__,
 			iova, size, leaf);
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 	paintbox_disable_mmu_bif_idle_clock_gating(pb);
+#endif
 
 	for (offset = 0; offset < size; offset += PAGE_SIZE) {
 		while (readl(pb->io.axi_base + MMU_FLUSH_FIFO_FULL)) {
@@ -408,14 +418,18 @@ static void paintbox_mmu_tlb_invalidate_range_nosync(void *priv,
 	}
 
 err_exit:
+#if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 	paintbox_enable_mmu_bif_idle_clock_gating(pb);
+#endif
 }
 
 static void paintbox_mmu_enable(void *priv, uint64_t table_base_paddr)
 {
 	struct paintbox_data *pb = (struct paintbox_data *)priv;
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 	paintbox_disable_mmu_bif_idle_clock_gating(pb);
+#endif
 
 	writel((uint32_t)(PAINTBOX_ERROR_BASE >> MMU_ERROR_BASE_RSHIFT),
 			pb->io.axi_base + MMU_ERR_BASE);
@@ -426,7 +440,9 @@ static void paintbox_mmu_enable(void *priv, uint64_t table_base_paddr)
 	writel(MMU_CTRL_MMU_ENABLE_MASK | MMU_CTRL_PREFETCH_ENABLE_MASK,
 			pb->io.axi_base + MMU_CTRL);
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 	paintbox_enable_mmu_bif_idle_clock_gating(pb);
+#endif
 }
 
 static void paintbox_mmu_disable(void *priv)

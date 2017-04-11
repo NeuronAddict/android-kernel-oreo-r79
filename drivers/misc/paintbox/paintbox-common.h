@@ -144,6 +144,7 @@ struct paintbox_mmu {
 struct paintbox_io {
 	struct paintbox_debug axi_debug;
 	struct paintbox_debug apb_debug;
+	void __iomem *aon_base;
 	void __iomem *axi_base;
 	void __iomem *apb_base;
 	unsigned int ipu_interrupts;

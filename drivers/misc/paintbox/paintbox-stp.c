@@ -810,46 +810,6 @@ int get_program_state_ioctl(struct paintbox_data *pb,
 	return 0;
 }
 
-int enable_stp_interrupt_ioctl(struct paintbox_data *pb,
-		struct paintbox_session *session, unsigned long arg)
-{
-	unsigned int stp_id = (unsigned int)arg;
-	int ret;
-
-	mutex_lock(&pb->lock);
-	ret = validate_stp(pb, session, stp_id);
-	if (ret < 0) {
-		mutex_unlock(&pb->lock);
-		return ret;
-	}
-
-	io_enable_stp_interrupt(pb, stp_id);
-
-	mutex_unlock(&pb->lock);
-
-	return 0;
-}
-
-int disable_stp_interrupt_ioctl(struct paintbox_data *pb,
-		struct paintbox_session *session, unsigned long arg)
-{
-	unsigned int stp_id = (unsigned int)arg;
-	int ret;
-
-	mutex_lock(&pb->lock);
-	ret = validate_stp(pb, session, stp_id);
-	if (ret < 0) {
-		mutex_unlock(&pb->lock);
-		return ret;
-	}
-
-	io_disable_stp_interrupt(pb, stp_id);
-
-	mutex_unlock(&pb->lock);
-
-	return 0;
-}
-
 int bind_stp_interrupt_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg)
 {
@@ -873,6 +833,12 @@ int bind_stp_interrupt_ioctl(struct paintbox_data *pb,
 			req.interrupt_id);
 
 	ret = bind_stp_interrupt(pb, session, stp, req.interrupt_id);
+	if (ret < 0) {
+		mutex_unlock(&pb->lock);
+		return ret;
+	}
+
+	io_enable_stp_interrupt(pb, stp->stp_id);
 
 	mutex_unlock(&pb->lock);
 
@@ -892,6 +858,8 @@ int unbind_stp_interrupt_ioctl(struct paintbox_data *pb,
 		mutex_unlock(&pb->lock);
 		return ret;
 	}
+
+	io_disable_stp_interrupt(pb, stp_id);
 
 	ret = unbind_stp_interrupt(pb, session, stp);
 	if (ret < 0) {

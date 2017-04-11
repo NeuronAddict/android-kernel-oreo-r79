@@ -45,10 +45,6 @@ int setup_stp_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 int get_program_state_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
-int enable_stp_interrupt_ioctl(struct paintbox_data *pb,
-		struct paintbox_session *session, unsigned long arg);
-int disable_stp_interrupt_ioctl(struct paintbox_data *pb,
-		struct paintbox_session *session, unsigned long arg);
 int bind_stp_interrupt_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 int unbind_stp_interrupt_ioctl(struct paintbox_data *pb,

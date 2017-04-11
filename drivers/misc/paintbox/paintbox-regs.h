@@ -67,6 +67,17 @@
 #define IPU_ISR_MPO_INTR_SHIFT	(IPU_ISR_MPI_INTR_SHIFT + 3)
 #define IPU_ISR_MPO_INTR_MASK	(IPU_ISR_MPO_INTR_M << IPU_ISR_MPO_INTR_SHIFT)
 
+/* TODO(showarth): Switch these to IPU_REG_WIDTH_BYTES when the trace code is
+ * fully switched over.
+ */
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+#define IO_AON_BLOCK_LEN     (AON_SPARE + IPU_REG_WIDTH)
+#define IO_AON_NUM_REGS      (IO_AON_BLOCK_LEN / IPU_REG_WIDTH)
+#else
+#define IO_AON_BLOCK_LEN     (APB_SPARE + IPU_REG_WIDTH)
+#define IO_AON_NUM_REGS      (IO_APB_BLOCK_LEN / IPU_REG_WIDTH)
+#endif
+
 /* TODO(ahampson): Switch these to IPU_REG_WIDTH_BYTES when the trace code is
  * fully switched over.
  */
