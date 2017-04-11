@@ -253,6 +253,7 @@
 		reg = 	<0x0 0x4003000 0x0 0x1000>,
 			<0x0 0x04008000 0x0 0x1000>;
 		interrupts = <GIC_SPI 33 IRQ_TYPE_LEVEL_HIGH>;
+		refclk-gpio = <0x1f3>;
 	};
 
 	pcie@041C2000 {
