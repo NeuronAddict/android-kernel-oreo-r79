@@ -40,7 +40,7 @@ void paintbox_pm_lbp_disable(struct paintbox_data *pb,
 int paintbox_pm_init(struct paintbox_data *pb);
 void paintbox_pm_remove(struct paintbox_data *pb);
 
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_PAINTBOX_DEBUG
 int paintbox_pm_dump_registers(struct paintbox_debug *debug, char *buf,
 		size_t len);
 #else

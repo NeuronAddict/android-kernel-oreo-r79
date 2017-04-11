@@ -14,7 +14,6 @@
  */
 
 #include <linux/completion.h>
-#include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
 #include <linux/err.h>
@@ -37,6 +36,7 @@
 
 #include "paintbox-bif.h"
 #include "paintbox-common.h"
+#include "paintbox-debug.h"
 #include "paintbox-dma.h"
 #include "paintbox-fpga.h"
 #include "paintbox-io.h"
@@ -182,7 +182,7 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 	struct paintbox_session *session = fp->private_data;
 	struct paintbox_data *pb = session->dev;
 	int ret;
-#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
+#ifdef CONFIG_PAINTBOX_DEBUG
 	ktime_t start_time;
 
 	if (pb->stats.ioctl_time_enabled)
@@ -416,26 +416,13 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 		return -EINVAL;
 	}
 
-#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
+#ifdef CONFIG_PAINTBOX_DEBUG
 	if (pb->stats.ioctl_time_enabled)
 		paintbox_debug_log_ioctl_stats(pb, cmd, start_time,
 				ktime_get_boottime());
 #endif
 
 	return ret;
-}
-
-void paintbox_alloc_debug_buffer(struct paintbox_data *pb, size_t len)
-{
-	if (pb->vdbg_log_len < len) {
-		char *buf = pb->vdbg_log;
-
-		buf = krealloc(pb->vdbg_log, len, GFP_KERNEL);
-		if (buf) {
-			pb->vdbg_log_len = len;
-			pb->vdbg_log = buf;
-		}
-	}
 }
 
 static const struct file_operations paintbox_fops = {
@@ -456,7 +443,6 @@ static void paintbox_deinit(struct paintbox_data *pb)
 	paintbox_stp_deinit(pb);
 
 	kfree(pb->dma.channels);
-	kfree(pb->vdbg_log);
 }
 
 static int paintbox_get_capabilities(struct paintbox_data *pb)
@@ -503,16 +489,16 @@ static int paintbox_get_capabilities(struct paintbox_data *pb)
 	pb->hardware_id = (uint32_t)hardware_id;
 
 #if defined(CONFIG_PAINTBOX_SIMULATOR_SUPPORT)
-	dev_info(&pb->pdev->dev,
+	dev_dbg(&pb->pdev->dev,
 			"Paintbox IPU Version %u.%u.%u Simulator Hardware ID %u\n",
 			major, minor, build, pb->hardware_id);
 #else
-	dev_info(&pb->pdev->dev,
+	dev_dbg(&pb->pdev->dev,
 			"Paintbox IPU Version %u.%u.%u %s Hardware ID %u\n",
 			major, minor, build, is_fpga ? "FPGA" : "",
 			pb->hardware_id);
 #endif
-	dev_info(&pb->pdev->dev,
+	dev_dbg(&pb->pdev->dev,
 			"STPs %u LBPs %u DMA Channels %u MIPI Input Streams %u MIPI Output Streams %u\n",
 			pb->stp.num_stps, pb->lbp.num_lbps,
 			pb->dma.num_channels, pb->io_ipu.num_mipi_input_streams,
@@ -525,6 +511,9 @@ static int paintbox_probe(struct platform_device *pdev)
 	int ret;
 	struct resource *r;
 	struct paintbox_data *pb;
+#ifdef CONFIG_PAINTBOX_DEBUG
+	ktime_t start_time = ktime_get_boottime();
+#endif
 
 	pb = devm_kzalloc(&pdev->dev, sizeof(*pb), GFP_KERNEL);
 	if (pb == NULL)
@@ -640,6 +629,10 @@ static int paintbox_probe(struct platform_device *pdev)
 		pr_err("Failed to register misc device node (ret = %d)", ret);
 		return ret;
 	}
+
+#ifdef CONFIG_PAINTBOX_DEBUG
+	pb->stats.probe_time = ktime_sub(ktime_get_boottime(), start_time);
+#endif
 
 	return 0;
 }

@@ -37,6 +37,10 @@ int dma_setup_mipi_to_dram_transfer(struct paintbox_data *pb,
 {
 	int ret;
 
+/* TODO(ahampson):  Temporarily make MIPI DMA configuration validation a debug
+ * only operation.
+ */
+#ifdef DEBUG
 	if (config->dst.dram.len_bytes > DMA_CHAN_VA_BDRY_LEN_MAX) {
 		dev_err(&pb->pdev->dev,
 				"%s: dma channel%u transfer too large, %llu max %llu bytes",
@@ -59,7 +63,7 @@ int dma_setup_mipi_to_dram_transfer(struct paintbox_data *pb,
 				__func__, channel->channel_id);
 		return -EINVAL;
 	}
-
+#endif
 	ret = ipu_dma_attach_buffer(pb, channel, transfer, &config->dst.dram,
 			DMA_FROM_DEVICE);
 	if (ret < 0)

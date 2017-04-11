@@ -43,6 +43,10 @@ static int set_dma_lbp_parameters(struct paintbox_data *pb,
 		struct paintbox_dma_transfer *transfer,
 		struct dma_lbp_config *config)
 {
+	/* TODO(ahampson):  Temporarily make LBP DMA configuration validation a
+	 * debug only operation.
+	 */
+#ifdef DEBUG
 	struct paintbox_lb *lb;
 	int ret;
 
@@ -81,6 +85,7 @@ static int set_dma_lbp_parameters(struct paintbox_data *pb,
 				DMA_CHAN_IMG_POS_LB_START_MAX);
 		return -ERANGE;
 	}
+#endif
 
 	/* Set the LBP node configuration */
 	transfer->chan_node = config->lbp_id;
@@ -104,6 +109,10 @@ int dma_setup_dram_to_lbp_transfer(struct paintbox_data *pb,
 {
 	int ret;
 
+	/* TODO(ahampson):  Temporarily make LBP DMA configuration validation a
+	 * debug only operation.
+	 */
+#ifdef DEBUG
 	if (config->src.dram.len_bytes > DMA_CHAN_VA_BDRY_LEN_MAX) {
 		dev_err(&pb->pdev->dev,
 				"%s: dma channel%u transfer too large, %llu max %llu bytes",
@@ -112,6 +121,7 @@ int dma_setup_dram_to_lbp_transfer(struct paintbox_data *pb,
 				DMA_CHAN_VA_BDRY_LEN_MAX);
 		return -ERANGE;
 	}
+#endif
 
 	ret = ipu_dma_attach_buffer(pb, channel, transfer, &config->src.dram,
 			DMA_TO_DEVICE);
@@ -160,6 +170,10 @@ int dma_setup_lbp_to_dram_transfer(struct paintbox_data *pb,
 {
 	int ret;
 
+	/* TODO(ahampson):  Temporarily make LBP DMA configuration validation a
+	 * debug only operation.
+	 */
+#ifdef DEBUG
 	if (config->dst.dram.len_bytes > DMA_CHAN_VA_BDRY_LEN_MAX) {
 		dev_err(&pb->pdev->dev,
 				"%s: dma channel%u transfer too large, %llu max %llu bytes",
@@ -168,6 +182,7 @@ int dma_setup_lbp_to_dram_transfer(struct paintbox_data *pb,
 				DMA_CHAN_VA_BDRY_LEN_MAX);
 		return -ERANGE;
 	}
+#endif
 
 	ret = ipu_dma_attach_buffer(pb, channel, transfer, &config->dst.dram,
 			DMA_FROM_DEVICE);
@@ -219,6 +234,10 @@ int dma_setup_mipi_to_lbp_transfer(struct paintbox_data *pb,
 	if (channel->stats.time_stats_enabled)
 		channel->stats.non_dram_setup_start_time = ktime_get_boottime();
 
+	/* TODO(ahampson):  Temporarily make LBP DMA configuration validation a
+	 * debug only operation.
+	 */
+#ifdef DEBUG
 	if (config->dst.lbp.gather) {
 		dev_err(&pb->pdev->dev,
 				"%s: dma channel%u gather mode not supported for MIPI transfers",
@@ -235,6 +254,7 @@ int dma_setup_mipi_to_lbp_transfer(struct paintbox_data *pb,
 				__func__, channel->channel_id);
 		return -EINVAL;
 	}
+#endif
 
 	paintbox_dma_set_channel_mode(transfer, DMA_CHAN_MODE_SRC_MIPI_IN,
 			DMA_CHAN_MODE_DST_LBP, false);
@@ -273,6 +293,10 @@ int dma_setup_lbp_to_mipi_transfer(struct paintbox_data *pb,
 	if (channel->stats.time_stats_enabled)
 		channel->stats.non_dram_setup_start_time = ktime_get_boottime();
 
+	/* TODO(ahampson):  Temporarily make LBP DMA configuration validation a
+	 * debug only operation.
+	 */
+#ifdef DEBUG
 	if (config->src.lbp.gather) {
 		dev_err(&pb->pdev->dev,
 				"%s: dma channel%u gather mode not supported for MIPI transfers",
@@ -289,6 +313,7 @@ int dma_setup_lbp_to_mipi_transfer(struct paintbox_data *pb,
 				__func__, channel->channel_id);
 		return -EINVAL;
 	}
+#endif
 
 	paintbox_dma_set_channel_mode(transfer, DMA_CHAN_MODE_SRC_LBP,
 			DMA_CHAN_MODE_DST_MIPI_OUT, false);

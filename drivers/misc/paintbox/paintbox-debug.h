@@ -21,7 +21,6 @@
 
 #include "paintbox-common.h"
 
-
 int dump_ipu_vprintf(struct paintbox_data *pb, char *buf, int *written,
 		size_t len, const char *format, va_list args);
 
@@ -46,12 +45,18 @@ int dump_ipu_register_with_value64(struct paintbox_data *pb,
 		uint64_t reg_value, const char *reg_name, char *buf,
 		int *written, size_t len);
 
-#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
+#ifdef CONFIG_PAINTBOX_DEBUG
 void paintbox_debug_log_ioctl_stats(struct paintbox_data *pb, unsigned int cmd,
 		ktime_t start, ktime_t end);
-#endif
+void paintbox_debug_log_cache_stats(struct paintbox_data *pb, ktime_t start,
+		ktime_t end);
+void paintbox_debug_log_dma_enq_stats(struct paintbox_data *pb, ktime_t start,
+		ktime_t end);
+void paintbox_debug_log_dma_setup_stats(struct paintbox_data *pb, ktime_t start,
+		ktime_t end);
+void paintbox_debug_log_dma_malloc_stats(struct paintbox_data *pb, ktime_t start,
+		ktime_t end, size_t transfer_len);
 
-#ifdef CONFIG_DEBUG_FS
 void paintbox_debug_create_entry(struct paintbox_data *pb,
 		struct paintbox_debug *debug, struct dentry *debug_root,
 		const char *name, unsigned int resource_id,

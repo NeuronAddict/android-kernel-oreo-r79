@@ -9,6 +9,14 @@ config PAINTBOX
 	help
 	  Say Y here if you want to support the Paintbox programmable ISP
 
+config PAINTBOX_DEBUG
+	bool  "Paintbox Debug Support"
+	depends on PAINTBOX && DEBUG_FS
+	default n
+	---help---
+	This option enables support for Paintbox debug support.
+	If you are unsure, say N.
+
 config PAINTBOX_FPGA_SUPPORT
 	bool  "Paintbox FPGA Support"
 	depends on PAINTBOX

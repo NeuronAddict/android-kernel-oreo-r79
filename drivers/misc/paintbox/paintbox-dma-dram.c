@@ -19,13 +19,22 @@
 #include <linux/types.h>
 #include <linux/uaccess.h>
 
+#include "paintbox-debug.h"
 #include "paintbox-dma-dram.h"
 
 static int ipu_copy_user_to_dma_buffer(struct paintbox_data *pb,
 		struct paintbox_dma_transfer *transfer,
 		struct dma_dram_config *config)
 {
+#ifdef CONFIG_PAINTBOX_DEBUG
+	ktime_t start_time;
+#endif
 	WARN_ON(transfer->buf_vaddr);
+
+#ifdef CONFIG_PAINTBOX_DEBUG
+	if (pb->stats.ioctl_time_enabled)
+		start_time = ktime_get_boottime();
+#endif
 
 	transfer->buf_vaddr = dma_alloc_coherent(&pb->pdev->dev,
 			config->len_bytes, &transfer->dma_addr, GFP_KERNEL);
@@ -46,6 +55,12 @@ static int ipu_copy_user_to_dma_buffer(struct paintbox_data *pb,
 		return -EFAULT;
 	}
 
+#ifdef CONFIG_PAINTBOX_DEBUG
+	if (pb->stats.ioctl_time_enabled)
+		paintbox_debug_log_dma_malloc_stats(pb, start_time,
+				ktime_get_boottime(), (size_t)config->len_bytes);
+#endif
+
 	return 0;
 }
 
@@ -65,11 +80,15 @@ static int ipu_import_dma_buf(struct paintbox_data *pb,
 		struct paintbox_dma_transfer *transfer,
 		struct dma_dram_config *config)
 {
+#ifdef CONFIG_PAINTBOX_DEBUG
+	ktime_t start_time;
+#endif
 	int ret;
 
-	if (channel->stats.time_stats_enabled)
-		channel->stats.dma_buf_map_start_time = ktime_get_boottime();
-
+#ifdef CONFIG_PAINTBOX_DEBUG
+	if (channel->stats.time_stats_enabled || pb->stats.ioctl_time_enabled)
+		start_time = ktime_get_boottime();
+#endif
 	transfer->dma_buf = dma_buf_get(config->dma_buf.fd);
 	if (IS_ERR(transfer->dma_buf))
 		return PTR_ERR(transfer->dma_buf);
@@ -93,8 +112,19 @@ static int ipu_import_dma_buf(struct paintbox_data *pb,
 		goto err_detach;
 	}
 
-	if (channel->stats.time_stats_enabled)
-		channel->stats.dma_buf_map_finish_time = ktime_get_boottime();
+#ifdef CONFIG_PAINTBOX_DEBUG
+	if (channel->stats.time_stats_enabled || pb->stats.ioctl_time_enabled) {
+		ktime_t end_time = ktime_get_boottime();
+		if (channel->stats.time_stats_enabled) {
+			channel->stats.dma_buf_map_start_time = start_time;
+			channel->stats.dma_buf_map_finish_time = end_time;
+		}
+
+		if (pb->stats.ioctl_time_enabled)
+			paintbox_debug_log_cache_stats(pb, start_time,
+					end_time);
+	}
+#endif
 
 	/* TODO(ahampson):  dma_buf_offset_bytes + config->len_bytes should be
 	 * less than or equal sg_dma_len(transfer->sg_table->sgl).  Currently
@@ -109,9 +139,11 @@ static int ipu_import_dma_buf(struct paintbox_data *pb,
 
 		dma_set_attr(DMA_ATTR_SKIP_CPU_SYNC, &attrs);
 
+#ifdef CONFIG_PAINTBOX_DEBUG
 		if (channel->stats.time_stats_enabled)
 			channel->stats.iommu_map_start_time =
 					ktime_get_boottime();
+#endif
 
 		ret = dma_map_sg_attrs(&pb->pdev->dev, transfer->sg_table->sgl,
 				transfer->sg_table->nents, transfer->dir,
@@ -124,9 +156,11 @@ static int ipu_import_dma_buf(struct paintbox_data *pb,
 			goto err_unmap;
 		}
 
+#ifdef CONFIG_PAINTBOX_DEBUG
 		if (channel->stats.time_stats_enabled)
 			channel->stats.iommu_map_finish_time =
 					ktime_get_boottime();
+#endif
 	}
 #endif
 

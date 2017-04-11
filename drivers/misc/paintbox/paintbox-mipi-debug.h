@@ -20,19 +20,6 @@
 
 #include "paintbox-common.h"
 
-
-/* Size of the debug buffer used for debugfs or verbose logging.  This value
- * should be reevaluated whenever the dump_stp_registers function is changed.
- */
-#define MIPI_DEBUG_BUFFER_SIZE (IO_IPU_NUM_REGS * REG_DEBUG_BUFFER_SIZE)
-
-int dump_mipi_common_registers(struct paintbox_debug *debug, char *buf,
-		size_t len);
-int dump_mipi_input_stream_registers(struct paintbox_debug *debug, char *buf,
-		size_t len);
-int dump_mipi_output_stream_registers(struct paintbox_debug *debug, char *buf,
-		size_t len);
-
 #ifdef DEBUG
 void paintbox_log_mipi_input_setup(struct paintbox_data *pb,
 		struct mipi_stream_setup *setup);
@@ -51,21 +38,40 @@ do { } while (0)
 #endif
 
 #ifdef VERBOSE_DEBUG
-void log_mipi_registers(struct paintbox_data *pb,
+void paintbox_log_mipi_registers(struct paintbox_data *pb,
 		struct paintbox_mipi_stream *stream, const char *msg);
 
 #define LOG_MIPI_REGISTERS(pb, stream)		\
-	log_mipi_registers(pb, stream, __func__)
+	paintbox_log_mipi_registers(pb, stream, __func__)
 
 #else
 #define LOG_MIPI_REGISTERS(pb, stream)		\
 do { } while (0)
 #endif
 
+#ifdef CONFIG_PAINTBOX_DEBUG
+int paintbox_dump_mipi_common_registers(struct paintbox_debug *debug, char *buf,
+		size_t len);
+int paintbox_dump_mipi_input_stream_registers(struct paintbox_debug *debug,
+		char *buf, size_t len);
+int paintbox_dump_mipi_output_stream_registers(struct paintbox_debug *debug,
+		char *buf, size_t len);
+
 void paintbox_mipi_input_stream_debug_init(struct paintbox_data *pb,
 		struct paintbox_mipi_stream *stream);
 void paintbox_mipi_output_stream_debug_init(struct paintbox_data *pb,
 		struct paintbox_mipi_stream *stream);
 void paintbox_mipi_debug_init(struct paintbox_data *pb);
+#else
+static inline void paintbox_mipi_input_stream_debug_init(
+		struct paintbox_data *pb, struct paintbox_mipi_stream *stream)
+{ }
+
+static inline void paintbox_mipi_output_stream_debug_init(
+		struct paintbox_data *pb, struct paintbox_mipi_stream *stream)
+{ }
+
+static inline void paintbox_mipi_debug_init(struct paintbox_data *pb) { }
+#endif
 
 #endif  /* __PAINTBOX_MIPI_DEBUG_H__ */

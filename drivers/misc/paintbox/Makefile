@@ -24,6 +24,7 @@ obj-$(CONFIG_PAINTBOX)				+= paintbox-mmu.o
 obj-$(CONFIG_PAINTBOX)				+= paintbox-power.o
 obj-$(CONFIG_PAINTBOX)				+= paintbox-sram.o
 obj-$(CONFIG_PAINTBOX)				+= paintbox-stp.o
+obj-$(CONFIG_PAINTBOX_DEBUG)			+= paintbox-stp-debug.o
 obj-$(CONFIG_PAINTBOX)				+= paintbox-stp-pc-histogram.o
 obj-$(CONFIG_PAINTBOX_SIMULATOR_SUPPORT)	+= paintbox-stp-sim.o
 obj-$(CONFIG_PAINTBOX)				+= paintbox-stp-sram.o

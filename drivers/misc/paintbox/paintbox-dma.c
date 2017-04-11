@@ -27,6 +27,7 @@
 
 #include <uapi/paintbox.h>
 
+#include "paintbox-debug.h"
 #include "paintbox-dma.h"
 #include "paintbox-dma-debug.h"
 #include "paintbox-dma-dram.h"
@@ -731,7 +732,16 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 	struct paintbox_dma_channel *channel;
 	struct paintbox_dma_transfer *transfer;
 	unsigned long irq_flags;
+#ifdef CONFIG_PAINTBOX_DEBUG
+	ktime_t enq_start;
+	ktime_t setup_start;
+#endif
 	int ret = 0;
+
+#ifdef CONFIG_PAINTBOX_DEBUG
+	if (pb->stats.ioctl_time_enabled)
+		setup_start = ktime_get_boottime();
+#endif
 
 	user_config = (struct dma_transfer_config __user *)arg;
 	if (copy_from_user(&config, user_config, sizeof(config)))
@@ -796,6 +806,13 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 	transfer->notify_on_completion = config.notify_on_completion;
 	transfer->auto_start_transfer = config.auto_start_transfer;
 
+#ifdef CONFIG_PAINTBOX_DEBUG
+	if (pb->stats.ioctl_time_enabled) {
+		enq_start = ktime_get_boottime();
+		paintbox_debug_log_dma_setup_stats(pb, setup_start, enq_start);
+	}
+#endif
+
 	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
 
 	/* If the transfer is marked for auto start then check to see if there
@@ -813,6 +830,13 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 	}
 
 	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
+
+#ifdef CONFIG_PAINTBOX_DEBUG
+	if (pb->stats.ioctl_time_enabled) {
+		paintbox_debug_log_dma_enq_stats(pb, enq_start,
+				ktime_get_boottime());
+	}
+#endif
 
 	if (channel->stats.time_stats_enabled)
 		channel->stats.setup_finish_time = ktime_get_boottime();

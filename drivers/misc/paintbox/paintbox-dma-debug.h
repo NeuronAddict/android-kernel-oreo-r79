@@ -23,11 +23,11 @@
 #define DMA_DEBUG_BUFFER_SIZE (DMA_NUM_REGS * REG_DEBUG_BUFFER_SIZE)
 
 #ifdef VERBOSE_DEBUG
-void log_dma_registers(struct paintbox_data *pb,
+void paintbox_log_dma_registers(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel, const char *msg);
 
 #define LOG_DMA_REGISTERS(pb, channel)		\
-	log_dma_registers(pb, channel, __func__)
+	paintbox_log_dma_registers(pb, channel, __func__)
 
 #else
 #define LOG_DMA_REGISTERS(pb, channel)		\
@@ -87,14 +87,19 @@ do { } while (0)
 do { } while (0)
 #endif
 
-
-int dump_dma_registers(struct paintbox_debug *debug, char *buf,
+#ifdef CONFIG_PAINTBOX_DEBUG
+int paintbox_dump_dma_registers(struct paintbox_debug *debug, char *buf,
 		size_t len);
-int dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
+int paintbox_dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
 		size_t len);
 
 void paintbox_dma_debug_init(struct paintbox_data *pb);
 void paintbox_dma_channel_debug_init(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel);
+#else
+static inline void paintbox_dma_debug_init(struct paintbox_data *pb) { }
+static inline void paintbox_dma_channel_debug_init(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel) { }
+#endif
 
 #endif  /* __PAINTBOX_DMA_DEBUG_H__ */

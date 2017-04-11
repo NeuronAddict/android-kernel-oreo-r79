@@ -283,7 +283,9 @@ void paintbox_log_dma_mipi_to_dram_transfer(struct paintbox_data *pb,
 	paintbox_log_dma_common_transfer(pb, config);
 }
 
-static uint64_t dma_reg_entry_read(struct paintbox_debug_reg_entry *reg_entry)
+#ifdef CONFIG_PAINTBOX_DEBUG
+static uint64_t paintbox_dma_reg_entry_read(
+			struct paintbox_debug_reg_entry *reg_entry)
 {
 	struct paintbox_debug *debug = reg_entry->debug;
 	struct paintbox_dma *dma = container_of(debug, struct paintbox_dma,
@@ -301,8 +303,8 @@ static uint64_t dma_reg_entry_read(struct paintbox_debug_reg_entry *reg_entry)
 	return val;
 }
 
-static void dma_reg_entry_write(struct paintbox_debug_reg_entry *reg_entry,
-		uint64_t val)
+static void paintbox_dma_reg_entry_write(
+		struct paintbox_debug_reg_entry *reg_entry, uint64_t val)
 {
 	struct paintbox_debug *debug = reg_entry->debug;
 	struct paintbox_dma *dma = container_of(debug, struct paintbox_dma,
@@ -317,7 +319,7 @@ static void dma_reg_entry_write(struct paintbox_debug_reg_entry *reg_entry,
 	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 }
 
-static uint64_t dma_channel_reg_entry_read(
+static uint64_t paintbox_dma_channel_reg_entry_read(
 		struct paintbox_debug_reg_entry *reg_entry)
 {
 	struct paintbox_debug *debug = reg_entry->debug;
@@ -342,7 +344,7 @@ static uint64_t dma_channel_reg_entry_read(
 	return val;
 }
 
-static void dma_channel_reg_entry_write(
+static void paintbox_dma_channel_reg_entry_write(
 		struct paintbox_debug_reg_entry *reg_entry, uint64_t val)
 {
 	struct paintbox_debug *debug = reg_entry->debug;
@@ -363,6 +365,7 @@ static void dma_channel_reg_entry_write(
 
 	mutex_unlock(&pb->lock);
 }
+#endif
 
 static inline int dump_dma_reg(struct paintbox_data *pb, uint32_t reg_offset,
 		uint64_t reg_value, char *buf, int *written, size_t len)
@@ -409,7 +412,8 @@ static inline const char *dma_swizzle_to_str(uint64_t val)
 }
 
 /* The caller to this function must hold pb->lock */
-int dump_dma_registers(struct paintbox_debug *debug, char *buf, size_t len)
+int paintbox_dump_dma_registers(struct paintbox_debug *debug, char *buf,
+		size_t len)
 {
 	uint64_t dma_ctrl_registers[DMA_CTRL_NUM_REGS];
 	uint64_t dma_stat_registers[DMA_STAT_NUM_REGS];
@@ -651,7 +655,8 @@ static int dump_chan_img_layout_register(struct paintbox_data *pb,
 			"\tPLANE_STRIDE %llu ROW_STRIDE %u\n",
 			(val & DMA_CHAN_IMG_LAYOUT_PLANE_STRIDE_MASK) >>
 			DMA_CHAN_IMG_LAYOUT_PLANE_STRIDE_SHIFT,
-			val & DMA_CHAN_IMG_LAYOUT_ROW_STRIDE_MASK);
+			(val & DMA_CHAN_IMG_LAYOUT_ROW_STRIDE_MASK) >>
+			DMA_CHAN_IMG_LAYOUT_ROW_STRIDE_SHIFT);
 }
 
 static int dump_chan_bif_transfer_register(struct paintbox_data *pb,
@@ -715,7 +720,54 @@ static inline uint64_t get_reg_value(uint64_t *reg_values, uint32_t reg_offset)
 	return reg_values[REG_INDEX(reg_offset - DMA_CHAN_BLOCK_START)];
 }
 
-int dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
+/* The caller to this function must hold pb->dma.dma_lock. */
+void paintbox_log_dma_registers(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel, const char *msg)
+{
+	dev_info(&pb->pdev->dev, "%s\n", msg);
+	dump_chan_mode_register(pb, DMA_CHAN_MODE_RO,
+			readq(pb->dma.dma_base + DMA_CHAN_MODE_RO), NULL, NULL,
+			0);
+
+	dump_chan_img_format_register(pb, DMA_CHAN_IMG_FORMAT_RO,
+			readq(pb->dma.dma_base + DMA_CHAN_IMG_FORMAT_RO), NULL,
+			NULL, 0);
+
+	dump_chan_img_size_register(pb, DMA_CHAN_IMG_SIZE_RO,
+			readq(pb->dma.dma_base + DMA_CHAN_IMG_SIZE_RO), NULL,
+			NULL, 0);
+
+	dump_chan_img_position_register(pb, DMA_CHAN_IMG_POS_RO,
+			readq(pb->dma.dma_base + DMA_CHAN_IMG_POS_RO), NULL,
+			NULL, 0);
+
+	dump_chan_img_layout_register(pb, DMA_CHAN_IMG_LAYOUT_RO,
+			readq(pb->dma.dma_base + DMA_CHAN_IMG_LAYOUT_RO), NULL,
+			NULL, 0);
+
+	dump_chan_bif_transfer_register(pb, DMA_CHAN_BIF_XFER_RO,
+			readq(pb->dma.dma_base + DMA_CHAN_BIF_XFER_RO), NULL,
+			NULL, 0);
+
+	dump_chan_va_register(pb, DMA_CHAN_VA_RO,
+			readq(pb->dma.dma_base + DMA_CHAN_VA_RO), NULL, NULL,
+			0);
+
+	dump_chan_va_bdry_register(pb, DMA_CHAN_VA_BDRY_RO,
+			readq(pb->dma.dma_base + DMA_CHAN_VA_BDRY_RO), NULL,
+			NULL, 0);
+
+	dump_chan_noc_transfer_register(pb, DMA_CHAN_NOC_XFER_RO,
+			readq(pb->dma.dma_base + DMA_CHAN_NOC_XFER_RO), NULL,
+			NULL, 0);
+
+	dump_chan_node_register(pb, DMA_CHAN_NODE_RO,
+			readq(pb->dma.dma_base + DMA_CHAN_NODE_RO), NULL, NULL,
+			0);
+}
+
+#ifdef CONFIG_PAINTBOX_DEBUG
+int paintbox_dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
 			size_t len)
 {
 	uint64_t reg_values[DMA_CHAN_NUM_REGS];
@@ -887,53 +939,7 @@ err_exit:
 	return ret;
 }
 
-/* The caller to this function must hold pb->dma.dma_lock. */
-void log_dma_registers(struct paintbox_data *pb,
-		struct paintbox_dma_channel *channel, const char *msg)
-{
-	dev_info(&pb->pdev->dev, "%s\n", msg);
-	dump_chan_mode_register(pb, DMA_CHAN_MODE_RO,
-			readq(pb->dma.dma_base + DMA_CHAN_MODE_RO), NULL, NULL,
-			0);
-
-	dump_chan_img_format_register(pb, DMA_CHAN_IMG_FORMAT_RO,
-			readq(pb->dma.dma_base + DMA_CHAN_IMG_FORMAT_RO), NULL,
-			NULL, 0);
-
-	dump_chan_img_size_register(pb, DMA_CHAN_IMG_SIZE_RO,
-			readq(pb->dma.dma_base + DMA_CHAN_IMG_SIZE_RO), NULL,
-			NULL, 0);
-
-	dump_chan_img_position_register(pb, DMA_CHAN_IMG_POS_RO,
-			readq(pb->dma.dma_base + DMA_CHAN_IMG_POS_RO), NULL,
-			NULL, 0);
-
-	dump_chan_img_layout_register(pb, DMA_CHAN_IMG_LAYOUT_RO,
-			readq(pb->dma.dma_base + DMA_CHAN_IMG_LAYOUT_RO), NULL,
-			NULL, 0);
-
-	dump_chan_bif_transfer_register(pb, DMA_CHAN_BIF_XFER_RO,
-			readq(pb->dma.dma_base + DMA_CHAN_BIF_XFER_RO), NULL,
-			NULL, 0);
-
-	dump_chan_va_register(pb, DMA_CHAN_VA_RO,
-			readq(pb->dma.dma_base + DMA_CHAN_VA_RO), NULL, NULL,
-			0);
-
-	dump_chan_va_bdry_register(pb, DMA_CHAN_VA_BDRY_RO,
-			readq(pb->dma.dma_base + DMA_CHAN_VA_BDRY_RO), NULL,
-			NULL, 0);
-
-	dump_chan_noc_transfer_register(pb, DMA_CHAN_NOC_XFER_RO,
-			readq(pb->dma.dma_base + DMA_CHAN_NOC_XFER_RO), NULL,
-			NULL, 0);
-
-	dump_chan_node_register(pb, DMA_CHAN_NODE_RO,
-			readq(pb->dma.dma_base + DMA_CHAN_NODE_RO), NULL, NULL,
-			0);
-}
-
-int dump_dma_channel_stats(struct paintbox_debug *debug, char *buf,
+int paintbox_dump_dma_channel_stats(struct paintbox_debug *debug, char *buf,
 		size_t len)
 {
 	struct paintbox_dma_channel *channel = container_of(debug,
@@ -1095,13 +1101,14 @@ void paintbox_dma_channel_debug_init(struct paintbox_data *pb,
 {
 	paintbox_debug_create_entry(pb, &channel->debug,
 			pb->dma.debug.debug_dir, "channel", channel->channel_id,
-			dump_dma_channel_registers, dump_dma_channel_stats,
+			paintbox_dump_dma_channel_registers,
+			paintbox_dump_dma_channel_stats,
 			channel);
 
 	paintbox_debug_create_reg_entries(pb, &channel->debug,
 			&dma_reg_names[REG_INDEX(DMA_CHAN_BLOCK_START)],
-			DMA_CHAN_NUM_REGS, dma_channel_reg_entry_write,
-			dma_channel_reg_entry_read);
+			DMA_CHAN_NUM_REGS, paintbox_dma_channel_reg_entry_write,
+			paintbox_dma_channel_reg_entry_read);
 
 	channel->time_stats_enable_dentry = debugfs_create_file(
 			"time_stats_enable", S_IRUSR | S_IRGRP | S_IWUSR,
@@ -1122,7 +1129,7 @@ void paintbox_dma_debug_init(struct paintbox_data *pb)
 	int ret;
 
 	paintbox_debug_create_entry(pb, &pb->dma.debug, pb->debug_root, "dma",
-			-1, dump_dma_registers, NULL, &pb->dma);
+			-1, paintbox_dump_dma_registers, NULL, &pb->dma);
 
 	ret = paintbox_debug_alloc_reg_entries(pb, &pb->dma.debug, reg_count);
 
@@ -1144,7 +1151,8 @@ void paintbox_dma_debug_init(struct paintbox_data *pb)
 		ret = paintbox_debug_create_reg_entry(pb, &pb->dma.debug, i,
 				dma_reg_names[reg_index],
 				reg_index * IPU_REG_WIDTH,
-				dma_reg_entry_write, dma_reg_entry_read);
+				paintbox_dma_reg_entry_write,
+				paintbox_dma_reg_entry_read);
 		if (ret < 0) {
 			paintbox_debug_free_reg_entries(&pb->dma.debug);
 			return;
@@ -1160,12 +1168,12 @@ void paintbox_dma_debug_init(struct paintbox_data *pb)
 		ret = paintbox_debug_create_reg_entry(pb, &pb->dma.debug,
 				i, dma_reg_names[reg_index],
 				reg_index * IPU_REG_WIDTH,
-				dma_reg_entry_write, dma_reg_entry_read);
+				paintbox_dma_reg_entry_write,
+				paintbox_dma_reg_entry_read);
 		if (ret < 0) {
 			paintbox_debug_free_reg_entries(&pb->dma.debug);
 			return;
 		}
 	}
-
-	paintbox_alloc_debug_buffer(pb, DMA_DEBUG_BUFFER_SIZE);
 }
+#endif

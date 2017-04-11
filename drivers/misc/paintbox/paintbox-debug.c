@@ -27,8 +27,8 @@
 #include "paintbox-io.h"
 #include "paintbox-lbp-debug.h"
 #include "paintbox-mipi-debug.h"
+#include "paintbox-stp-debug.h"
 #include "paintbox-regs.h"
-#include "paintbox-stp.h"
 
 #define REG_NAME_COLUMN_NUMBER 8
 #define REG_VALUE_COLUMN_NUMBER 44
@@ -137,7 +137,7 @@ int dump_ipu_register_with_value64(struct paintbox_data *pb,
 }
 
 
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_PAINTBOX_DEBUG
 static int debug_stats_show(struct seq_file *s, void *unused)
 {
 	struct paintbox_debug *debug = s->private;
@@ -428,8 +428,6 @@ void paintbox_debug_create_reg_entries(struct paintbox_data *pb,
 	}
 }
 
-#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
-
 #define PB_IOCTL_NAME_ENTRY(c) [_IOC_NR(c)] = #c
 
 static const char *ioctl_names[PB_NUM_IOCTLS] = {
@@ -497,6 +495,77 @@ static const char *ioctl_names[PB_NUM_IOCTLS] = {
 	PB_IOCTL_NAME_ENTRY(PB_FLUSH_ALL_INTERRUPTS)
 };
 
+void paintbox_debug_log_cache_stats(struct paintbox_data *pb, ktime_t start,
+		ktime_t end)
+{
+	ktime_t duration = ktime_sub(end, start);
+
+	if (ktime_after(duration, pb->stats.cache_op.max_time))
+		pb->stats.cache_op.max_time = duration;
+
+	if (ktime_before(duration, pb->stats.cache_op.min_time))
+		pb->stats.cache_op.min_time = duration;
+
+	pb->stats.cache_op.total_time = ktime_add(pb->stats.cache_op.total_time,
+			duration);
+
+	pb->stats.cache_op.count++;
+}
+
+void paintbox_debug_log_dma_enq_stats(struct paintbox_data *pb, ktime_t start,
+		ktime_t end)
+{
+	ktime_t duration = ktime_sub(end, start);
+
+	if (ktime_after(duration, pb->stats.dma_enq.max_time))
+		pb->stats.dma_enq.max_time = duration;
+
+	if (ktime_before(duration, pb->stats.dma_enq.min_time))
+		pb->stats.dma_enq.min_time = duration;
+
+	pb->stats.dma_enq.total_time = ktime_add(pb->stats.dma_enq.total_time,
+			duration);
+
+	pb->stats.dma_enq.count++;
+}
+
+void paintbox_debug_log_dma_setup_stats(struct paintbox_data *pb, ktime_t start,
+		ktime_t end)
+{
+	ktime_t duration = ktime_sub(end, start);
+
+	if (ktime_after(duration, pb->stats.dma_setup.max_time))
+		pb->stats.dma_setup.max_time = duration;
+
+	if (ktime_before(duration, pb->stats.dma_setup.min_time))
+		pb->stats.dma_setup.min_time = duration;
+
+	pb->stats.dma_setup.total_time =
+			ktime_add(pb->stats.dma_setup.total_time, duration);
+
+	pb->stats.dma_setup.count++;
+}
+
+void paintbox_debug_log_dma_malloc_stats(struct paintbox_data *pb, ktime_t start,
+		ktime_t end, size_t transfer_len)
+{
+	ktime_t duration = ktime_sub(end, start);
+
+	if (ktime_after(duration, pb->stats.dma_malloc.max_time))
+		pb->stats.dma_malloc.max_time = duration;
+
+	if (ktime_before(duration, pb->stats.dma_malloc.min_time))
+		pb->stats.dma_malloc.min_time = duration;
+
+	pb->stats.dma_malloc.total_time =
+			ktime_add(pb->stats.dma_malloc.total_time, duration);
+
+	if (transfer_len > pb->stats.dma_malloc_max_transfer_len)
+		pb->stats.dma_malloc_max_transfer_len = transfer_len;
+
+	pb->stats.dma_malloc.count++;
+}
+
 void paintbox_debug_log_ioctl_stats(struct paintbox_data *pb, unsigned int cmd,
 		ktime_t start, ktime_t end)
 {
@@ -530,7 +599,52 @@ static int paintbox_ioctl_time_stats_show(struct seq_file *s, void *p)
 	struct paintbox_data *pb = s->private;
 	unsigned int i;
 
+	seq_printf(s, "probe %lldus\n", ktime_to_us(pb->stats.probe_time));
+
+	if (pb->stats.dma_setup.count)
+		seq_printf(s, "setup total min %lldns max %lldns avg %lldns tot %lldns cnt %u\n",
+				ktime_to_ns(pb->stats.dma_setup.min_time),
+				ktime_to_ns(pb->stats.dma_setup.max_time),
+				ktime_to_ns(pb->stats.dma_setup.total_time) /
+				pb->stats.dma_setup.count,
+				ktime_to_ns(pb->stats.dma_setup.total_time),
+				pb->stats.dma_setup.count);
+
+	if (pb->stats.cache_op.count)
+		seq_printf(s, "\tdma buf map (+cache op) min %lldns max %lldns avg %lldns tot %lldns cnt %u\n",
+				ktime_to_ns(pb->stats.cache_op.min_time),
+				ktime_to_ns(pb->stats.cache_op.max_time),
+				ktime_to_ns(pb->stats.cache_op.total_time) /
+				pb->stats.cache_op.count,
+				ktime_to_ns(pb->stats.cache_op.total_time),
+				pb->stats.cache_op.count);
+
+	if (pb->stats.dma_malloc.count)
+		seq_printf(s, "\tuser space copy min %lldns max %lldns avg %lldns tot %lldns max len %zu cnt %u\n",
+				ktime_to_ns(pb->stats.dma_malloc.min_time),
+				ktime_to_ns(pb->stats.dma_malloc.max_time),
+				ktime_to_ns(pb->stats.dma_malloc.total_time) /
+				pb->stats.dma_malloc.count,
+				ktime_to_ns(pb->stats.dma_malloc.total_time),
+				pb->stats.dma_malloc_max_transfer_len,
+				pb->stats.dma_malloc.count);
+
+	if (pb->stats.dma_enq.count)
+		seq_printf(s, "transfer queue min %lldns max %lldns avg %lldns tot %lldns cnt %u\n",
+				ktime_to_ns(pb->stats.dma_enq.min_time),
+				ktime_to_ns(pb->stats.dma_enq.max_time),
+				ktime_to_ns(pb->stats.dma_enq.total_time) /
+				pb->stats.dma_enq.count,
+				ktime_to_ns(pb->stats.dma_enq.total_time),
+				pb->stats.dma_enq.count);
+
+
 	mutex_lock(&pb->stats.ioctl_lock);
+
+	if (!pb->stats.ioctl_entries) {
+		mutex_unlock(&pb->stats.ioctl_lock);
+		return 0;
+	}
 
 	for (i = 0; i < PB_NUM_IOCTLS; i++) {
 		struct paintbox_ioctl_stat *entry;
@@ -586,6 +700,31 @@ static ssize_t paintbox_ioctl_time_stats_write(struct file *file,
 				return -ENOMEM;
 			}
 
+			pb->stats.cache_op.min_time = ktime_set(KTIME_SEC_MAX,
+					0);
+			pb->stats.cache_op.max_time = ktime_set(0, 0);
+			pb->stats.cache_op.total_time = ktime_set(0, 0);
+			pb->stats.cache_op.count = 0;
+
+			pb->stats.dma_enq.min_time = ktime_set(KTIME_SEC_MAX,
+					0);
+			pb->stats.dma_enq.max_time = ktime_set(0, 0);
+			pb->stats.dma_enq.total_time = ktime_set(0, 0);
+			pb->stats.dma_enq.count = 0;
+
+			pb->stats.dma_setup.min_time = ktime_set(KTIME_SEC_MAX,
+					0);
+			pb->stats.dma_setup.max_time = ktime_set(0, 0);
+			pb->stats.dma_setup.total_time = ktime_set(0, 0);
+			pb->stats.dma_setup.count = 0;
+
+			pb->stats.dma_malloc.min_time = ktime_set(KTIME_SEC_MAX,
+					0);
+			pb->stats.dma_malloc.max_time = ktime_set(0, 0);
+			pb->stats.dma_malloc.total_time = ktime_set(0, 0);
+			pb->stats.dma_malloc.count = 0;
+			pb->stats.dma_malloc_max_transfer_len = 0;
+
 			for (i = 0; i < PB_NUM_IOCTLS; i++)
 				pb->stats.ioctl_entries[i].min_time =
 						ktime_set(KTIME_SEC_MAX, 0);
@@ -616,7 +755,6 @@ static const struct file_operations ioctl_time_stats_fops = {
 	.release = single_release,
 	.owner = THIS_MODULE,
 };
-#endif
 
 static int paintbox_reg_dump_show(struct seq_file *s, void *unused)
 {
@@ -632,7 +770,8 @@ static int paintbox_reg_dump_show(struct seq_file *s, void *unused)
 
 	mutex_lock(&pb->lock);
 
-	ret = dump_io_apb_registers(&pb->io.apb_debug, buf + written,
+	/* TODO(showarth):  Add V1 support for AON registers */
+	ret = paintbox_dump_io_apb_registers(&pb->io.apb_debug, buf + written,
 			len - written);
 	if (ret < 0)
 		goto err_exit;
@@ -646,15 +785,15 @@ static int paintbox_reg_dump_show(struct seq_file *s, void *unused)
 
 	written += ret;
 
-	ret = dump_mipi_common_registers(&pb->io_ipu.debug, buf + written,
-			len - written);
+	ret = paintbox_dump_mipi_common_registers(&pb->io_ipu.debug,
+			buf + written, len - written);
 	if (ret < 0)
 		goto err_exit;
 
 	written += ret;
 
 	for (i = 0; i < pb->io_ipu.num_mipi_input_streams; i++) {
-		ret = dump_mipi_input_stream_registers(
+		ret = paintbox_dump_mipi_input_stream_registers(
 				&pb->io_ipu.mipi_input_streams[i].debug,
 				buf + written, len - written);
 		if (ret < 0)
@@ -664,7 +803,7 @@ static int paintbox_reg_dump_show(struct seq_file *s, void *unused)
 	}
 
 	for (i = 0; i < pb->io_ipu.num_mipi_output_streams; i++) {
-		ret = dump_mipi_output_stream_registers(
+		ret = paintbox_dump_mipi_output_stream_registers(
 				&pb->io_ipu.mipi_output_streams[i].debug,
 				buf + written, len - written);
 		if (ret < 0)
@@ -673,15 +812,17 @@ static int paintbox_reg_dump_show(struct seq_file *s, void *unused)
 		written += ret;
 	}
 
-	ret = dump_dma_registers(&pb->dma.debug, buf + written, len - written);
+	ret = paintbox_dump_dma_registers(&pb->dma.debug, buf + written,
+			len - written);
 	if (ret < 0)
 		goto err_exit;
 
 	written += ret;
 
 	for (i = 0; i < pb->dma.num_channels; i++) {
-		ret = dump_dma_channel_registers(&pb->dma.channels[i].debug,
-				buf + written, len - written);
+		ret = paintbox_dump_dma_channel_registers(
+				&pb->dma.channels[i].debug, buf + written,
+				len - written);
 		if (ret < 0)
 			goto err_exit;
 
@@ -689,8 +830,8 @@ static int paintbox_reg_dump_show(struct seq_file *s, void *unused)
 	}
 
 	for (i = 0; i < pb->stp.num_stps; i++) {
-		ret = dump_stp_registers(&pb->stp.stps[i].debug, buf + written,
-				len - written);
+		ret = paintbox_dump_stp_registers(&pb->stp.stps[i].debug,
+				buf + written, len - written);
 		if (ret < 0)
 			goto err_exit;
 
@@ -734,14 +875,18 @@ static int paintbox_reg_dump_open(struct inode *inode, struct file *file)
 	struct paintbox_data *pb = inode->i_private;
 	size_t len;
 
-	len = IO_APB_DEBUG_BUFFER_SIZE;
-	len += BIF_DEBUG_BUFFER_SIZE;
-	len += pb->io_ipu.num_mipi_input_streams * MIPI_DEBUG_BUFFER_SIZE;
-	len += pb->io_ipu.num_mipi_output_streams * MIPI_DEBUG_BUFFER_SIZE;
+	/* TODO(showarth):  Add V1 support for AON registers */
+	len = IO_APB_NUM_REGS * REG_DEBUG_BUFFER_SIZE;
+	len += IO_AXI_NUM_REGS * REG_DEBUG_BUFFER_SIZE;
+	len += pb->io_ipu.num_mipi_input_streams * IO_IPU_NUM_REGS *
+			REG_DEBUG_BUFFER_SIZE;
+	len += pb->io_ipu.num_mipi_output_streams * IO_IPU_NUM_REGS *
+			REG_DEBUG_BUFFER_SIZE;
 	len += pb->dma.num_channels * DMA_DEBUG_BUFFER_SIZE;
-	len += pb->stp.num_stps * STP_DEBUG_BUFFER_SIZE;
-	len += pb->lbp.num_lbps * LBP_DEBUG_BUFFER_SIZE;
-	len += pb->lbp.num_lbps * pb->lbp.max_lbs * LB_DEBUG_BUFFER_SIZE;
+	len += pb->stp.num_stps * STP_NUM_REGS * REG_DEBUG_BUFFER_SIZE;
+	len += pb->lbp.num_lbps * LBP_NUM_REGS * REG_DEBUG_BUFFER_SIZE;
+	len += pb->lbp.num_lbps * pb->lbp.max_lbs * LB_NUM_REGS *
+			REG_DEBUG_BUFFER_SIZE;
 
 	return single_open_size(file, paintbox_reg_dump_show, inode->i_private,
 			len);
@@ -772,7 +917,6 @@ void paintbox_debug_init(struct paintbox_data *pb)
 		return;
 	}
 
-#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
 	pb->stats.ioctl_time_stats_dentry = debugfs_create_file("ioctl_stats",
 			S_IRUSR | S_IRGRP | S_IWUSR, pb->debug_root, pb,
 			&ioctl_time_stats_fops);
@@ -783,15 +927,12 @@ void paintbox_debug_init(struct paintbox_data *pb)
 	}
 
 	mutex_init(&pb->stats.ioctl_lock);
-#endif
 }
 
 void paintbox_debug_remove(struct paintbox_data *pb)
 {
-#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
 	debugfs_remove(pb->stats.ioctl_time_stats_dentry);
 	mutex_destroy(&pb->stats.ioctl_lock);
-#endif
 
 	debugfs_remove(pb->regs_dentry);
 	debugfs_remove(pb->debug_root);

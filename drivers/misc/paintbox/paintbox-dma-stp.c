@@ -35,6 +35,10 @@
 #include "paintbox-regs.h"
 #include "paintbox-stp.h"
 
+/* TODO(ahampson):  Temporarily make stp dma configuration validation a debug
+ * only operation.
+ */
+#ifdef DEBUG
 /* DRAM to STP transfers must be aligned to 32 byte SRAM offset */
 #define DMA_STP_SRAM_ADDR_ALIGN_MASK 0x1F
 
@@ -121,6 +125,7 @@ static int validate_stp_scalar_sram_transfer(struct paintbox_data *pb,
 
 	return 0;
 }
+#endif
 
 /* The caller to this function must hold pb->lock */
 static int set_dma_stp_parameters(struct paintbox_data *pb,
@@ -142,31 +147,43 @@ static int set_dma_stp_parameters(struct paintbox_data *pb,
 	 */
 	switch (stp_config->sram_target) {
 	case SRAM_TARGET_STP_INSTRUCTION_RAM:
+		/* TODO(ahampson):  Temporarily make stp dma configuration
+		 * validation a debug only operation.
+		 */
+#ifdef DEBUG
 		ret = validate_stp_inst_sram_transfer(pb, channel, stp,
 				dram_config, stp_config);
 		if (ret < 0)
 			return ret;
-
+#endif
 		paintbox_dma_set_lb_start(transfer,
 				(uint64_t)stp_config->sram_addr,
 				DMA_CHAN_LB_START_Y_STP_IRAM);
 		break;
 	case SRAM_TARGET_STP_CONSTANT_RAM:
+		/* TODO(ahampson):  Temporarily make stp dma configuration
+		 * validation a debug only operation.
+		 */
+#ifdef DEBUG
 		ret = validate_stp_cnst_sram_transfer(pb, channel, stp,
 				dram_config, stp_config);
 		if (ret < 0)
 			return ret;
-
+#endif
 		paintbox_dma_set_lb_start(transfer,
 				(uint64_t)stp_config->sram_addr,
 				DMA_CHAN_LB_START_Y_STP_CRAM);
 		break;
 	case SRAM_TARGET_STP_SCALAR_RAM:
+		/* TODO(ahampson):  Temporarily make stp dma configuration
+		 * validation a debug only operation.
+		 */
+#ifdef DEBUG
 		ret = validate_stp_scalar_sram_transfer(pb, channel, stp,
 				dram_config, stp_config);
 		if (ret < 0)
 			return ret;
-
+#endif
 		paintbox_dma_set_lb_start(transfer,
 				(uint64_t)stp_config->sram_addr,
 				DMA_CHAN_LB_START_Y_STP_DRAM);
@@ -174,7 +191,6 @@ static int set_dma_stp_parameters(struct paintbox_data *pb,
 	case SRAM_TARGET_STP_VECTOR_RAM:
 		/* TODO(ahampson):  Add parameter checks for vector b/30969166
 		 */
-
 		paintbox_dma_set_lb_start(transfer,
 				(uint64_t)stp_config->sram_addr,
 				stp_config->include_halo ?
@@ -204,6 +220,10 @@ int dma_setup_dram_to_stp_transfer(struct paintbox_data *pb,
 {
 	int ret;
 
+	/* TODO(ahampson):  Temporarily make stp dma configuration validation a
+	 * debug only operation.
+	 */
+#ifdef DEBUG
 	if (config->src.dram.len_bytes > DMA_CHAN_VA_BDRY_LEN_MAX) {
 		dev_err(&pb->pdev->dev,
 				"%s: dma channel%u: transfer too large, %llu max %llu bytes",
@@ -222,10 +242,7 @@ int dma_setup_dram_to_stp_transfer(struct paintbox_data *pb,
 				config->dst.stp.stp_id, ret);
 		return ret;
 	}
-
-	if (!access_ok(VERIFY_READ, config->src.dram.host_vaddr,
-			config->src.dram.len_bytes))
-		return -EFAULT;
+#endif
 
 	ret = ipu_dma_attach_buffer(pb, channel, transfer, &config->src.dram,
 			DMA_TO_DEVICE);

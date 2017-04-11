@@ -37,6 +37,10 @@
 #define LB_BLOCK_TRANSFER_HEIGHT 4
 #define LB_BLOCK_TRANSFER_WIDTH  4
 
+/* TODO(ahampson):  Temporarily make the line buffer configuration validation a
+ * debug only operation.
+ */
+#ifdef DEBUG
 static int validate_lb_config(struct paintbox_data *pb,
 		struct paintbox_lbp *lbp, struct line_buffer_config *lb_config)
 {
@@ -123,6 +127,7 @@ static int validate_lb_config(struct paintbox_data *pb,
 
 	return 0;
 }
+#endif
 
 /* The caller to this function must hold pb->lock */
 int validate_lbp(struct paintbox_data *pb,
@@ -369,11 +374,13 @@ int setup_lb_ioctl(struct paintbox_data *pb,
 
 	lb = &lbp->lbs[lb_config.lb_id];
 
+#ifdef DEBUG
 	ret = validate_lb_config(pb, lbp, &lb_config);
 	if (ret < 0) {
 		mutex_unlock(&pb->lock);
 		return ret;
 	}
+#endif
 
 	switch (lb_config.padding.method) {
 	case IPU_PADDING_DO_NOT_PAD:

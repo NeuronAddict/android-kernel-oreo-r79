@@ -34,6 +34,10 @@
 #include "paintbox-regs.h"
 #include "paintbox-stp.h"
 
+/* TODO(ahampson):  Temporarily make DMA configuration validation a debug
+ * only operation.
+ */
+#ifdef DEBUG
 /* The caller to this function must hold pb->lock */
 static int validate_dma_image_parameters(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel,
@@ -125,6 +129,7 @@ static int validate_dma_image_parameters(struct paintbox_data *pb,
 
 	return 0;
 }
+#endif
 
 /* The caller to this function must hold pb->lock */
 int set_dma_image_parameters(struct paintbox_data *pb,
@@ -132,11 +137,16 @@ int set_dma_image_parameters(struct paintbox_data *pb,
 		struct paintbox_dma_transfer *transfer,
 		struct dma_image_config *config)
 {
+	/* TODO(ahampson):  Temporarily make LBP DMA configuration validation a
+	 * debug only operation.
+	 */
+#ifdef DEBUG
 	int ret;
 
 	ret = validate_dma_image_parameters(pb, channel, config);
 	if (ret < 0)
 		return ret;
+#endif
 
 	/* Image Start Position */
 	paintbox_dma_set_img_start(transfer, (uint64_t)config->start_x_pixels,
@@ -213,7 +223,9 @@ int set_dma_image_parameters(struct paintbox_data *pb,
 				DMA_CHAN_IMG_FORMAT_MIPI_RAW_FORMAT_MASK;
 
 	/* Image Layout */
-	transfer->chan_img_layout = config->row_stride_bytes;
+	transfer->chan_img_layout = ((uint64_t)config->row_stride_bytes <<
+			DMA_CHAN_IMG_LAYOUT_ROW_STRIDE_SHIFT) &
+			DMA_CHAN_IMG_LAYOUT_ROW_STRIDE_MASK;
 	transfer->chan_img_layout |= (config->plane_stride_bytes <<
 			DMA_CHAN_IMG_LAYOUT_PLANE_STRIDE_SHIFT) &
 			DMA_CHAN_IMG_LAYOUT_PLANE_STRIDE_MASK;
@@ -227,6 +239,11 @@ int set_dma_transfer_region_parameters(struct paintbox_data *pb,
 		struct paintbox_dma_transfer *transfer,
 		struct dma_transfer_config *config)
 {
+
+/* TODO(ahampson):  Temporarily make DMA configuration validation a debug
+ * only operation.
+ */
+#ifdef DEBUG
 	if (config->stripe_height > DMA_CHAN_BIF_XFER_STRIPE_HEIGHT_MAX) {
 		dev_err(&pb->pdev->dev,
 				"%s: dma channel%u invalid stripe height %u, max %u\n",
@@ -276,6 +293,7 @@ int set_dma_transfer_region_parameters(struct paintbox_data *pb,
 				DMA_CHAN_NOC_XFER_RETRY_INTERVAL_MAX);
 		return -EINVAL;
 	}
+#endif
 
 	transfer->chan_bif_xfer = config->stripe_height;
 	transfer->chan_bif_xfer |= (pb->dma.bif_outstanding - 1) <<

@@ -67,6 +67,7 @@ void paintbox_log_mipi_output_setup(struct paintbox_data *pb,
 			setup->free_running, setup->frame_count);
 }
 
+#ifdef CONFIG_PAINTBOX_DEBUG
 static uint64_t mipi_reg_entry_read(struct paintbox_debug_reg_entry *reg_entry)
 {
 	struct paintbox_debug *debug = reg_entry->debug;
@@ -122,7 +123,7 @@ static void mipi_reg_entry_write(struct paintbox_debug_reg_entry *reg_entry,
 
 	mutex_unlock(&pb->lock);
 }
-
+#endif
 
 static const char *io_ipu_reg_names[IO_IPU_NUM_REGS] = {
 	REG_NAME_ENTRY(MPI_CAP),
@@ -274,7 +275,57 @@ static int dump_mipi_output_strm_cnfg1(struct paintbox_data *pb,
 }
 #endif
 
-int dump_mipi_common_registers(struct paintbox_debug *debug, char *buf,
+/* The caller to this function must hold pb->lock */
+void paintbox_log_mipi_registers(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream, const char *msg)
+{
+	dev_info(&pb->pdev->dev, "%s\n", msg);
+
+	if (stream->is_input) {
+		dump_mipi_input_strm_ctrl(pb, MPI_STRM_CTRL,
+				readq(pb->io_ipu.ipu_base + MPI_STRM_CTRL),
+				NULL, NULL, 0);
+
+		dump_mipi_input_strm_cnfg0(pb, MPI_STRM_CNFG0,
+				readq(pb->io_ipu.ipu_base + MPI_STRM_CNFG0),
+				NULL, NULL, 0);
+
+		dump_mipi_input_strm_cnfg1(pb, MPI_STRM_CNFG1,
+				readq(pb->io_ipu.ipu_base + MPI_STRM_CNFG1),
+				NULL, NULL, 0);
+
+		dump_mipi_input_strm_cnfg0(pb, MPI_STRM_CNFG0_RO,
+				readq(pb->io_ipu.ipu_base + MPI_STRM_CNFG0_RO),
+				NULL, NULL, 0);
+
+		dump_mipi_input_strm_cnfg1(pb, MPI_STRM_CNFG1_RO,
+				readq(pb->io_ipu.ipu_base + MPI_STRM_CNFG1_RO),
+				NULL, NULL, 0);
+	} else {
+		dump_mipi_output_strm_ctrl(pb, MPO_STRM_CTRL,
+				readq(pb->io_ipu.ipu_base + MPO_STRM_CTRL),
+				NULL, NULL, 0);
+
+		dump_mipi_output_strm_cnfg0(pb, MPO_STRM_CNFG0,
+				readq(pb->io_ipu.ipu_base + MPO_STRM_CNFG0),
+				NULL, NULL, 0);
+
+		dump_mipi_output_strm_cnfg1(pb, MPO_STRM_CNFG1,
+				readq(pb->io_ipu.ipu_base + MPO_STRM_CNFG1),
+				NULL, NULL, 0);
+
+		dump_mipi_output_strm_cnfg0(pb, MPO_STRM_CNFG0_RO,
+				readq(pb->io_ipu.ipu_base + MPO_STRM_CNFG0_RO),
+				NULL, NULL, 0);
+
+		dump_mipi_output_strm_cnfg1(pb, MPO_STRM_CNFG1_RO,
+				readq(pb->io_ipu.ipu_base + MPO_STRM_CNFG1_RO),
+				NULL, NULL, 0);
+	}
+}
+
+#ifdef CONFIG_PAINTBOX_DEBUG
+int paintbox_dump_mipi_common_registers(struct paintbox_debug *debug, char *buf,
 		size_t len)
 {
 	uint64_t mipi_registers[MPI_COMMON_NUM_REGS];
@@ -346,8 +397,8 @@ static inline uint64_t get_mipi_input_stream_reg(uint64_t *reg_values,
 	return reg_values[REG_INDEX(reg_offset - MPI_STRM_BLOCK_START)];
 }
 
-int dump_mipi_input_stream_registers(struct paintbox_debug *debug, char *buf,
-		size_t len)
+int paintbox_dump_mipi_input_stream_registers(struct paintbox_debug *debug,
+		char *buf, size_t len)
 {
 	uint64_t mipi_registers[MPI_STRM_NUM_REGS];
 	struct paintbox_mipi_stream *stream = container_of(debug,
@@ -412,8 +463,8 @@ static inline uint64_t get_mipi_output_stream_reg(uint64_t *reg_values,
 	return reg_values[REG_INDEX(reg_offset - MPO_STRM_BLOCK_START)];
 }
 
-int dump_mipi_output_stream_registers(struct paintbox_debug *debug, char *buf,
-		size_t len)
+int paintbox_dump_mipi_output_stream_registers(struct paintbox_debug *debug,
+		char *buf, size_t len)
 {
 	uint64_t mipi_registers[MPO_STRM_NUM_REGS];
 	struct paintbox_mipi_stream *stream = container_of(debug,
@@ -473,57 +524,8 @@ int dump_mipi_output_stream_registers(struct paintbox_debug *debug, char *buf,
 	return written;
 }
 
-/* The caller to this function must hold pb->lock */
-void log_mipi_registers(struct paintbox_data *pb,
-		struct paintbox_mipi_stream *stream, const char *msg)
-{
-	dev_info(&pb->pdev->dev, "%s\n", msg);
-
-	if (stream->is_input) {
-		dump_mipi_input_strm_ctrl(pb, MPI_STRM_CTRL,
-				readq(pb->io_ipu.ipu_base + MPI_STRM_CTRL),
-				NULL, NULL, 0);
-
-		dump_mipi_input_strm_cnfg0(pb, MPI_STRM_CNFG0,
-				readq(pb->io_ipu.ipu_base + MPI_STRM_CNFG0),
-				NULL, NULL, 0);
-
-		dump_mipi_input_strm_cnfg1(pb, MPI_STRM_CNFG1,
-				readq(pb->io_ipu.ipu_base + MPI_STRM_CNFG1),
-				NULL, NULL, 0);
-
-		dump_mipi_input_strm_cnfg0(pb, MPI_STRM_CNFG0_RO,
-				readq(pb->io_ipu.ipu_base + MPI_STRM_CNFG0_RO),
-				NULL, NULL, 0);
-
-		dump_mipi_input_strm_cnfg1(pb, MPI_STRM_CNFG1_RO,
-				readq(pb->io_ipu.ipu_base + MPI_STRM_CNFG1_RO),
-				NULL, NULL, 0);
-	} else {
-		dump_mipi_output_strm_ctrl(pb, MPO_STRM_CTRL,
-				readq(pb->io_ipu.ipu_base + MPO_STRM_CTRL),
-				NULL, NULL, 0);
-
-		dump_mipi_output_strm_cnfg0(pb, MPO_STRM_CNFG0,
-				readq(pb->io_ipu.ipu_base + MPO_STRM_CNFG0),
-				NULL, NULL, 0);
-
-		dump_mipi_output_strm_cnfg1(pb, MPO_STRM_CNFG1,
-				readq(pb->io_ipu.ipu_base + MPO_STRM_CNFG1),
-				NULL, NULL, 0);
-
-		dump_mipi_output_strm_cnfg0(pb, MPO_STRM_CNFG0_RO,
-				readq(pb->io_ipu.ipu_base + MPO_STRM_CNFG0_RO),
-				NULL, NULL, 0);
-
-		dump_mipi_output_strm_cnfg1(pb, MPO_STRM_CNFG1_RO,
-				readq(pb->io_ipu.ipu_base + MPO_STRM_CNFG1_RO),
-				NULL, NULL, 0);
-	}
-}
-
-int dump_mipi_input_stream_stats(struct paintbox_debug *debug, char *buf,
-		size_t len)
+static int paintbox_dump_mipi_input_stream_stats(struct paintbox_debug *debug,
+		char *buf, size_t len)
 {
 	struct paintbox_mipi_stream *stream = container_of(debug,
 			struct paintbox_mipi_stream, debug);
@@ -552,8 +554,8 @@ int dump_mipi_input_stream_stats(struct paintbox_debug *debug, char *buf,
 	return written + ret;
 }
 
-int dump_mipi_output_stream_stats(struct paintbox_debug *debug, char *buf,
-		size_t len)
+static int paintbox_dump_mipi_output_stream_stats(struct paintbox_debug *debug,
+		char *buf, size_t len)
 {
 	struct paintbox_mipi_stream *stream = container_of(debug,
 			struct paintbox_mipi_stream, debug);
@@ -584,8 +586,8 @@ void paintbox_mipi_input_stream_debug_init(struct paintbox_data *pb,
 {
 	paintbox_debug_create_entry(pb, &stream->debug,
 			pb->io_ipu.debug.debug_dir, "in", stream->stream_id,
-			dump_mipi_input_stream_registers,
-			dump_mipi_input_stream_stats, stream);
+			paintbox_dump_mipi_input_stream_registers,
+			paintbox_dump_mipi_input_stream_stats, stream);
 
 	paintbox_debug_create_reg_entries(pb, &stream->debug,
 			io_ipu_reg_names, MPI_COMMON_NUM_REGS +
@@ -598,8 +600,8 @@ void paintbox_mipi_output_stream_debug_init(struct paintbox_data *pb,
 {
 	paintbox_debug_create_entry(pb, &stream->debug,
 			pb->io_ipu.debug.debug_dir, "out", stream->stream_id,
-			dump_mipi_output_stream_registers,
-			dump_mipi_output_stream_stats, stream);
+			paintbox_dump_mipi_output_stream_registers,
+			paintbox_dump_mipi_output_stream_stats, stream);
 
 	paintbox_debug_create_reg_entries(pb, &stream->debug,
 			&io_ipu_reg_names[REG_INDEX(MPO_COMMON_BLOCK_START)],
@@ -610,8 +612,7 @@ void paintbox_mipi_output_stream_debug_init(struct paintbox_data *pb,
 void paintbox_mipi_debug_init(struct paintbox_data *pb)
 {
 	paintbox_debug_create_entry(pb, &pb->io_ipu.debug, pb->debug_root,
-			"mipi", -1, dump_mipi_common_registers, NULL,
+			"mipi", -1, paintbox_dump_mipi_common_registers, NULL,
 			&pb->io_ipu);
-
-	paintbox_alloc_debug_buffer(pb, MIPI_DEBUG_BUFFER_SIZE);
 }
+#endif

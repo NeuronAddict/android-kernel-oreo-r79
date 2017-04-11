@@ -28,7 +28,7 @@
 #include "paintbox-io.h"
 #include "paintbox-regs.h"
 
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_PAINTBOX_DEBUG
 static uint64_t paintbox_bif_reg_entry_read(
 		struct paintbox_debug_reg_entry *reg_entry)
 {
@@ -328,6 +328,7 @@ void paintbox_bif_interrupt(struct paintbox_data *pb)
 
 int paintbox_bif_init(struct paintbox_data *pb)
 {
+#ifdef CONFIG_PAINTBOX_DEBUG
 	paintbox_debug_create_entry(pb, &pb->io.axi_debug, pb->debug_root,
 			"bif", -1, paintbox_dump_bif_registers, NULL, &pb->io);
 
@@ -335,7 +336,7 @@ int paintbox_bif_init(struct paintbox_data *pb)
 			bif_reg_names, IO_AXI_NUM_REGS,
 			paintbox_bif_reg_entry_write,
 			paintbox_bif_reg_entry_read);
-
+#endif
 	dev_dbg(&pb->pdev->dev, "bif: base %p len %lu\n",
 			pb->io.axi_base, IO_AXI_BLOCK_LEN);
 
@@ -344,8 +345,10 @@ int paintbox_bif_init(struct paintbox_data *pb)
 
 void paintbox_bif_remove(struct paintbox_data *pb)
 {
+#ifdef CONFIG_PAINTBOX_DEBUG
 	paintbox_debug_free_reg_entries(&pb->io.axi_debug);
 	paintbox_debug_free_entry(&pb->io.axi_debug);
+#endif
 }
 
 void paintbox_bif_start(struct paintbox_data *pb)

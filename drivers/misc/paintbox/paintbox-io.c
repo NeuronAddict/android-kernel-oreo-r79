@@ -13,8 +13,8 @@
  * GNU General Public License for more details.
  */
 
-#include <linux/debugfs.h>
 #include <linux/delay.h>
+#include <linux/debugfs.h>
 #include <linux/dma-mapping.h>
 #include <linux/err.h>
 #include <linux/interrupt.h>
@@ -40,8 +40,8 @@
 #include "paintbox-regs.h"
 #include "paintbox-stp.h"
 
-#ifdef CONFIG_DEBUG_FS
-static uint64_t io_apb_reg_entry_read(
+#ifdef CONFIG_PAINTBOX_DEBUG
+static uint64_t paintbox_io_apb_reg_entry_read(
 		struct paintbox_debug_reg_entry *reg_entry)
 {
 	struct paintbox_debug *debug = reg_entry->debug;
@@ -50,40 +50,39 @@ static uint64_t io_apb_reg_entry_read(
 	return readq(io->apb_base + reg_entry->reg_offset);
 }
 
-static void io_apb_reg_entry_write(struct paintbox_debug_reg_entry *reg_entry,
-		uint64_t val)
+static void paintbox_io_apb_reg_entry_write(
+		struct paintbox_debug_reg_entry *reg_entry, uint64_t val)
 {
 	struct paintbox_debug *debug = reg_entry->debug;
 	struct paintbox_io *io = container_of(debug, struct paintbox_io,
 			apb_debug);
 	writeq(val, io->apb_base + reg_entry->reg_offset);
 }
-#endif
 
-#if defined(CONFIG_DEBUG_FS) || defined(VERBOSE_DEBUG)
 static const char *io_apb_reg_names[IO_APB_NUM_REGS] = {
 	REG_NAME_ENTRY(IPU_ISR),
 	REG_NAME_ENTRY(IPU_IMR),
 };
 
-static inline int dump_io_apb_reg(struct paintbox_data *pb, uint32_t reg_offset,
-		char *buf, int *written, size_t len)
+static inline int paintbox_dump_io_apb_reg(struct paintbox_data *pb,
+		uint32_t reg_offset, char *buf, int *written, size_t len)
 {
 	const char *reg_name = io_apb_reg_names[REG_INDEX(reg_offset)];
 	return dump_ipu_register64(pb, pb->io.apb_base, reg_offset, reg_name,
 			buf, written, len);
 }
 
-int dump_io_apb_registers(struct paintbox_debug *debug, char *buf, size_t len)
+int paintbox_dump_io_apb_registers(struct paintbox_debug *debug, char *buf,
+		size_t len)
 {
 	struct paintbox_data *pb = debug->pb;
 	int ret, written = 0;
 
-	ret = dump_io_apb_reg(pb, IPU_ISR, buf, &written, len);
+	ret = paintbox_dump_io_apb_reg(pb, IPU_ISR, buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
 
-	ret = dump_io_apb_reg(pb, IPU_IMR, buf, &written, len);
+	ret = paintbox_dump_io_apb_reg(pb, IPU_IMR, buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
 
@@ -95,7 +94,7 @@ err_exit:
 	return ret;
 }
 
-int dump_io_apb_stats(struct paintbox_debug *debug, char *buf,
+int paintbox_dump_io_apb_stats(struct paintbox_debug *debug, char *buf,
 		size_t len)
 {
 	struct paintbox_data *pb = debug->pb;
@@ -162,29 +161,6 @@ static const struct file_operations io_apb_time_stats_enable_fops = {
 	.release = single_release,
 	.owner = THIS_MODULE,
 };
-#endif
-
-#ifdef VERBOSE_DEBUG
-static void log_io_apb_registers(struct paintbox_data *pb, const char *msg)
-{
-	int ret, written;
-
-	ret = snprintf(pb->vdbg_log, pb->vdbg_log_len, "io_apb:\n");
-	if (ret < 0)
-		return;
-
-	written = ret;
-
-	dump_io_apb_registers(&pb->io.apb_debug, pb->vdbg_log + written,
-			pb->vdbg_log_len - written);
-	dev_vdbg(&pb->pdev->dev, "%s\n%s", msg, pb->vdbg_log);
-}
-
-#define LOG_IO_APB_REGISTERS(pb)		\
-	log_io_apb_registers(pb, __func__)
-#else
-#define LOG_IO_APB_REGISTERS(pb)		\
-do { } while (0)
 #endif
 
 static irqreturn_t paintbox_io_interrupt(int irq, void *arg)
@@ -445,14 +421,15 @@ int paintbox_io_apb_init(struct paintbox_data *pb)
 
 	spin_lock_init(&pb->io.io_lock);
 
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_PAINTBOX_DEBUG
 	paintbox_debug_create_entry(pb, &pb->io.apb_debug, pb->debug_root,
-			"apb", -1, dump_io_apb_registers, dump_io_apb_stats,
-			&pb->io);
+			"apb", -1, paintbox_dump_io_apb_registers,
+			paintbox_dump_io_apb_stats, &pb->io);
 
 	paintbox_debug_create_reg_entries(pb, &pb->io.apb_debug,
 			io_apb_reg_names, IO_APB_NUM_REGS,
-			io_apb_reg_entry_write, io_apb_reg_entry_read);
+			paintbox_io_apb_reg_entry_write,
+			paintbox_io_apb_reg_entry_read);
 
 	pb->io.stats.time_stats_enable_dentry = debugfs_create_file(
 			"time_stats_enable", S_IRUSR | S_IRGRP | S_IWUSR,
@@ -463,10 +440,6 @@ int paintbox_io_apb_init(struct paintbox_data *pb)
 				PTR_ERR(pb->io.stats.time_stats_enable_dentry));
 		return PTR_ERR(pb->io.stats.time_stats_enable_dentry);
 	}
-#endif
-
-#ifdef VERBOSE_DEBUG
-	paintbox_alloc_debug_buffer(pb, IO_APB_DEBUG_BUFFER_SIZE);
 #endif
 
 	/* Update the number of available interrupts reported to the user space.

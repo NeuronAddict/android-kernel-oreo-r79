@@ -78,6 +78,7 @@ struct ion_buffer {
 	int handle_count;
 	char task_comm[TASK_COMM_LEN];
 	pid_t pid;
+	bool dirty;
 };
 void ion_buffer_destroy(struct ion_buffer *buffer);
 

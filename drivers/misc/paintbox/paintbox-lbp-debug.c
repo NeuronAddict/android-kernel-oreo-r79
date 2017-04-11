@@ -25,7 +25,7 @@
 #include "paintbox-debug.h"
 #include "paintbox-regs.h"
 
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_PAINTBOX_DEBUG
 static uint64_t paintbox_lbp_reg_entry_read(
 		struct paintbox_debug_reg_entry *reg_entry)
 {
@@ -356,6 +356,30 @@ static int paintbox_dump_lb_l_param_register(struct paintbox_data *pb,
 			LB_L_PARAM_L_WIDTH_SHIFT, val & LB_L_PARAM_L_INC_MASK);
 }
 
+void paintbox_log_lbp_registers(struct paintbox_data *pb,
+		struct paintbox_lbp *lbp, struct paintbox_lb *lb,
+		const char *msg)
+{
+	writel(lbp->pool_id | lb->lb_id << LBP_SEL_LB_SEL_SHIFT,
+			pb->lbp.reg_base + LBP_SEL);
+
+	paintbox_dump_lbp_sel_register(pb, NULL, NULL, 0);
+	paintbox_dump_lbp_ctrl_register(pb, NULL, NULL, 0);
+	paintbox_dump_lbp_stat_register(pb, NULL, NULL, 0);
+	paintbox_dump_lbp_cap0_register(pb, NULL, NULL, 0);
+	paintbox_dump_lbp_cap1_register(pb, NULL, NULL, 0);
+
+	paintbox_dump_lb_ctrl0_register(pb, NULL, NULL, 0);
+	paintbox_dump_lb_offset_register(pb, NULL, NULL, 0);
+	paintbox_dump_lb_bdry_register(pb, NULL, NULL, 0);
+	paintbox_dump_lb_img_size_register(pb, NULL, NULL, 0);
+	paintbox_dump_lb_sb_size_register(pb, NULL, NULL, 0);
+	paintbox_dump_lb_base_register(pb, NULL, NULL, 0);
+	paintbox_dump_lb_stat_register(pb, NULL, NULL, 0);
+	paintbox_dump_lb_l_param_register(pb, NULL, NULL, 0);
+}
+
+#ifdef CONFIG_PAINTBOX_DEBUG
 int paintbox_dump_lbp_registers(struct paintbox_debug *debug, char *buf,
 		size_t len)
 {
@@ -447,46 +471,19 @@ int paintbox_dump_lb_registers(struct paintbox_debug *debug, char *buf,
 	return written;
 }
 
-void paintbox_log_lbp_registers(struct paintbox_data *pb,
-		struct paintbox_lbp *lbp, struct paintbox_lb *lb,
-		const char *msg)
-{
-	writel(lbp->pool_id | lb->lb_id << LBP_SEL_LB_SEL_SHIFT,
-			pb->lbp.reg_base + LBP_SEL);
-
-	paintbox_dump_lbp_sel_register(pb, NULL, NULL, 0);
-	paintbox_dump_lbp_ctrl_register(pb, NULL, NULL, 0);
-	paintbox_dump_lbp_stat_register(pb, NULL, NULL, 0);
-	paintbox_dump_lbp_cap0_register(pb, NULL, NULL, 0);
-	paintbox_dump_lbp_cap1_register(pb, NULL, NULL, 0);
-
-	paintbox_dump_lb_ctrl0_register(pb, NULL, NULL, 0);
-	paintbox_dump_lb_offset_register(pb, NULL, NULL, 0);
-	paintbox_dump_lb_bdry_register(pb, NULL, NULL, 0);
-	paintbox_dump_lb_img_size_register(pb, NULL, NULL, 0);
-	paintbox_dump_lb_sb_size_register(pb, NULL, NULL, 0);
-	paintbox_dump_lb_base_register(pb, NULL, NULL, 0);
-	paintbox_dump_lb_stat_register(pb, NULL, NULL, 0);
-	paintbox_dump_lb_l_param_register(pb, NULL, NULL, 0);
-}
-
 void paintbox_lbp_debug_init(struct paintbox_data *pb, struct paintbox_lbp *lbp)
 {
-#ifdef CONFIG_DEBUG_FS
 	paintbox_debug_create_entry(pb, &lbp->debug, pb->debug_root, "lbp",
 			lbp->pool_id, paintbox_dump_lbp_registers, NULL, lbp);
 
 	paintbox_debug_create_reg_entries(pb, &lbp->debug, lbp_reg_names,
 			LBP_POOL_NUM_REGS, paintbox_lbp_reg_entry_write,
 			paintbox_lbp_reg_entry_read);
-#endif
-
 }
 
 void paintbox_lb_debug_init(struct paintbox_data *pb, struct paintbox_lbp *lbp,
 		struct paintbox_lb *lb)
 {
-#ifdef CONFIG_DEBUG_FS
 	paintbox_debug_create_entry(pb, &lb->debug, lbp->debug.debug_dir, "lb",
 			lb->lb_id, paintbox_dump_lb_registers, NULL, lb);
 
@@ -494,5 +491,5 @@ void paintbox_lb_debug_init(struct paintbox_data *pb, struct paintbox_lbp *lbp,
 			&lbp_reg_names[REG_INDEX(LB_BLOCK_START)],
 			LB_NUM_REGS, paintbox_lb_reg_entry_write,
 			paintbox_lb_reg_entry_read);
-#endif
 }
+#endif

@@ -64,7 +64,7 @@
 #define MMU_SYNC_DELAY 10 /* us */
 #define MMU_SYNC_MAX_ATTEMPTS 3
 
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_PAINTBOX_DEBUG
 static uint64_t paintbox_mmu_reg_entry_read(
 		struct paintbox_debug_reg_entry *reg_entry)
 {
@@ -80,9 +80,7 @@ static void paintbox_mmu_reg_entry_write(
 	struct paintbox_data *pb = debug->pb;
 	writeq(val, pb->io.axi_base + reg_entry->reg_offset);
 }
-#endif
 
-#if defined(CONFIG_DEBUG_FS) || defined(VERBOSE_DEBUG)
 static const char *paintbox_mmu_reg_names[IO_AXI_NUM_REGS] = {
 	REG_NAME_ENTRY(MMU_CTRL),
 	REG_NAME_ENTRY(MMU_TABLE_BASE),
@@ -592,7 +590,7 @@ int paintbox_mmu_iommu_detach(struct paintbox_data *pb)
 }
 #endif
 
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_PAINTBOX_DEBUG
 #ifdef CONFIG_PAINTBOX_IOMMU
 static int paintbox_mmu_enable_show(struct seq_file *s, void *p)
 {
@@ -683,12 +681,8 @@ int paintbox_mmu_init(struct paintbox_data *pb)
 
 	paintbox_enable_mmu_interrupt(pb);
 
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_PAINTBOX_DEBUG
 	paintbox_mmu_debug_init(pb);
-#endif
-
-#ifdef VERBOSE_DEBUG
-	paintbox_alloc_debug_buffer(pb, IO_AXI_DEBUG_BUFFER_SIZE);
 #endif
 
 #ifdef CONFIG_PAINTBOX_IOMMU

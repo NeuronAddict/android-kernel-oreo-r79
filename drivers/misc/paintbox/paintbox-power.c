@@ -36,7 +36,7 @@
 /* Delay for system to stabilize before sending real traffic */
 #define CORE_SYSTEM_STABLIZE_TIME 100 /* us */
 
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_PAINTBOX_DEBUG
 static uint64_t paintbox_pm_reg_entry_read(
 		struct paintbox_debug_reg_entry *reg_entry)
 {
@@ -444,6 +444,7 @@ void paintbox_pm_lbp_disable(struct paintbox_data *pb, struct paintbox_lbp *lbp)
 
 int paintbox_pm_init(struct paintbox_data *pb)
 {
+#ifdef CONFIG_PAINTBOX_DEBUG
 	paintbox_debug_create_entry(pb, &pb->power.debug, pb->debug_root,
 			"power", -1, paintbox_pm_dump_registers, NULL,
 			&pb->power);
@@ -451,6 +452,7 @@ int paintbox_pm_init(struct paintbox_data *pb)
 	paintbox_debug_create_reg_entries(pb, &pb->power.debug, io_pm_reg_names,
 			IO_AON_NUM_REGS, paintbox_pm_reg_entry_write,
 			paintbox_pm_reg_entry_read);
+#endif
 
 	spin_lock_init(&pb->power.power_lock);
 
@@ -467,6 +469,8 @@ int paintbox_pm_init(struct paintbox_data *pb)
 
 void paintbox_pm_remove(struct paintbox_data *pb)
 {
+#ifdef CONFIG_PAINTBOX_DEBUG
 	paintbox_debug_free_reg_entries(&pb->power.debug);
 	paintbox_debug_free_entry(&pb->power.debug);
+#endif
 }

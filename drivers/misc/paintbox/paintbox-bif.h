@@ -21,21 +21,10 @@
 #include "paintbox-common.h"
 #include "paintbox-regs.h"
 
-/* Size of the debug buffer used for debugfs or verbose logging.  These values
- * should be reevaluated whenever the paintbox_dump_*_registers functions are
- * changed.
- */
-#define BIF_DEBUG_BUFFER_SIZE (IO_AXI_NUM_REGS * REG_DEBUG_BUFFER_SIZE)
 
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_PAINTBOX_DEBUG
 int paintbox_dump_bif_registers(struct paintbox_debug *debug, char *buf,
 		size_t len);
-#else
-static inline int paintbox_dump_bif_registers(struct paintbox_debug *debug,
-		char *buf, size_t len)
-{
-	return 0;
-}
 #endif
 
 /* This function must be called from an interrupt context */

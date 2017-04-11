@@ -853,20 +853,29 @@ static void ion_buffer_sync_for_device(struct ion_buffer *buffer,
 		return;
 
 	mutex_lock(&buffer->lock);
-	for (i = 0; i < pages; i++) {
-		struct page *page = buffer->pages[i];
+	if (buffer->dirty) {
+		buffer->dirty = false;
 
-		if (ion_buffer_page_is_dirty(page))
-			ion_pages_sync_for_device(dev, ion_buffer_page(page),
-						  PAGE_SIZE, dir);
+		for (i = 0; i < pages; i++) {
+			struct page *page = buffer->pages[i];
 
-		ion_buffer_page_clean(buffer->pages + i);
+			if (ion_buffer_page_is_dirty(page)) {
+				ion_pages_sync_for_device(dev,
+						ion_buffer_page(page),
+						PAGE_SIZE, dir);
+				ion_buffer_page_clean(buffer->pages + i);
+			}
+		}
 	}
-	list_for_each_entry(vma_list, &buffer->vmas, list) {
-		struct vm_area_struct *vma = vma_list->vma;
 
-		zap_page_range(vma, vma->vm_start, vma->vm_end - vma->vm_start,
-			       NULL);
+	/* Only zap user space mappings if the DMA is from the device. */
+	if (dir == DMA_FROM_DEVICE) {
+		list_for_each_entry(vma_list, &buffer->vmas, list) {
+			struct vm_area_struct *vma = vma_list->vma;
+
+			zap_page_range(vma, vma->vm_start, vma->vm_end -
+					vma->vm_start, NULL);
+		}
 	}
 	mutex_unlock(&buffer->lock);
 }
@@ -878,6 +887,7 @@ static int ion_vm_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	int ret;
 
 	mutex_lock(&buffer->lock);
+	buffer->dirty = true;
 	ion_buffer_page_dirty(buffer->pages + vmf->pgoff);
 	BUG_ON(!buffer->pages || !buffer->pages[vmf->pgoff]);
 

@@ -23,12 +23,6 @@
 
 #include "paintbox-common.h"
 
-
-/* Size of the debug buffer used for debugfs or verbose logging.  This value
- * should be reevaluated whenever the dump_stp_registers function is changed.
- */
-#define STP_DEBUG_BUFFER_SIZE (STP_NUM_REGS * REG_DEBUG_BUFFER_SIZE)
-
 int allocate_stp_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 int release_stp_ioctl(struct paintbox_data *pb,
@@ -72,10 +66,6 @@ void enable_stp_access_to_lbp(struct paintbox_data *pb,
 		struct paintbox_session *session, struct paintbox_lbp *lbp);
 void disable_stp_access_to_lbp(struct paintbox_data *pb,
 		struct paintbox_session *session, struct paintbox_lbp *lbp);
-#endif
-
-#if defined(CONFIG_DEBUG_FS) || defined(VERBOSE_DEBUG)
-int dump_stp_registers(struct paintbox_debug *debug, char *buf, size_t len);
 #endif
 
 irqreturn_t paintbox_stp_interrupt(struct paintbox_data *pb, uint64_t stp_mask,

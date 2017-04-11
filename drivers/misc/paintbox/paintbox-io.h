@@ -21,12 +21,6 @@
 #include "paintbox-common.h"
 #include "paintbox-regs.h"
 
-/* Size of the debug buffer used for debugfs or verbose logging.  These values
- * should be reevaluated whenever the dump_*_registers functions are changed.
- */
-#define IO_AXI_DEBUG_BUFFER_SIZE (IO_AXI_NUM_REGS * REG_DEBUG_BUFFER_SIZE)
-#define IO_APB_DEBUG_BUFFER_SIZE (IO_APB_NUM_REGS * REG_DEBUG_BUFFER_SIZE)
-
 void io_enable_dma_channel_interrupt(struct paintbox_data *pb,
 		unsigned int channel_id);
 void io_disable_dma_channel_interrupt(struct paintbox_data *pb,
@@ -57,8 +51,9 @@ void io_disable_dma_channel(struct paintbox_data *pb, unsigned int channel_id);
 
 int paintbox_io_apb_init(struct paintbox_data *pb);
 
-#if defined(CONFIG_DEBUG_FS) || defined(VERBOSE_DEBUG)
-int dump_io_apb_registers(struct paintbox_debug *debug, char *buf, size_t len);
+#ifdef CONFIG_PAINTBOX_DEBUG
+int paintbox_dump_io_apb_registers(struct paintbox_debug *debug, char *buf,
+		size_t len);
 #endif
 
 #endif /* __PAINTBOX_IO_H__ */

@@ -77,7 +77,6 @@ typedef void (*register_write_t)(struct paintbox_debug_reg_entry *reg_entry,
 		uint64_t val);
 typedef uint64_t (*register_read_t)(struct paintbox_debug_reg_entry *reg_entry);
 
-
 struct paintbox_debug_reg_entry {
 	struct paintbox_debug *debug;
 	struct dentry *debug_dentry;
@@ -110,7 +109,7 @@ struct paintbox_debug {
 	stats_dump_t stats_dump;
 };
 
-#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
+#ifdef CONFIG_PAINTBOX_DEBUG
 struct paintbox_ioctl_stat {
 	ktime_t min_time;
 	ktime_t max_time;
@@ -120,7 +119,9 @@ struct paintbox_ioctl_stat {
 #endif
 
 struct paintbox_power {
+#ifdef CONFIG_PAINTBOX_DEBUG
 	struct paintbox_debug debug;
+#endif
 	unsigned int active_core_count;
 
 	/* power_lock is used to protect the idle clock disable registers and
@@ -131,8 +132,10 @@ struct paintbox_power {
 };
 
 struct paintbox_mmu {
+#ifdef CONFIG_PAINTBOX_DEBUG
 	struct paintbox_debug debug;
 	struct dentry *enable_dentry;
+#endif
 #ifdef CONFIG_PAINTBOX_IOMMU
 	struct paintbox_iommu_pdata pdata;
 	struct device iommu_dev;
@@ -142,8 +145,10 @@ struct paintbox_mmu {
 };
 
 struct paintbox_io {
+#ifdef CONFIG_PAINTBOX_DEBUG
 	struct paintbox_debug axi_debug;
 	struct paintbox_debug apb_debug;
+#endif
 	void __iomem *aon_base;
 	void __iomem *axi_base;
 	void __iomem *apb_base;
@@ -182,8 +187,9 @@ struct paintbox_mipi_stream {
 	 * PB_RELEASE_MIPI_OUT_STREAM ioctls.
 	 */
 	struct list_head session_entry;
-
+#ifdef CONFIG_PAINTBOX_DEBUG
 	struct paintbox_debug debug;
+#endif
 	struct paintbox_session *session;
 	struct paintbox_mipi_interface *interface;
 	struct paintbox_irq *irq;
@@ -238,7 +244,9 @@ struct paintbox_mipi_stream {
 };
 
 struct paintbox_io_ipu {
+#ifdef CONFIG_PAINTBOX_DEBUG
 	struct paintbox_debug debug;
+#endif
 	void __iomem *ipu_base;
 	struct paintbox_mipi_stream *mipi_input_streams;
 	struct paintbox_mipi_stream *mipi_output_streams;
@@ -353,8 +361,9 @@ struct paintbox_dma_channel {
 	 * ioctls.
 	 */
 	struct list_head session_entry;
-
+#ifdef CONFIG_PAINTBOX_DEBUG
 	struct paintbox_debug debug;
+#endif
 	struct paintbox_session *session;
 	struct dentry *time_stats_enable_dentry;
 
@@ -403,7 +412,9 @@ struct paintbox_dma_channel {
 };
 
 struct paintbox_dma {
+#ifdef CONFIG_PAINTBOX_DEBUG
 	struct paintbox_debug debug;
+#endif
 	struct paintbox_dma_channel *channels;
 	unsigned int num_channels;
 	void __iomem *dma_base;
@@ -434,8 +445,9 @@ struct paintbox_stp {
 	 * ioctls.
 	 */
 	struct list_head session_entry;
-
+#ifdef CONFIG_PAINTBOX_DEBUG
 	struct paintbox_debug debug;
+#endif
 	struct paintbox_session *session;
 	struct paintbox_irq *irq;
 	unsigned int stp_id;
@@ -474,7 +486,9 @@ struct paintbox_lbp;
  * One entry will be allocated for each line buffer in a pool.
  */
 struct paintbox_lb {
+#ifdef CONFIG_PAINTBOX_DEBUG
 	struct paintbox_debug debug;
+#endif
 	struct paintbox_lbp *lbp;
 	unsigned int lb_id;
 	unsigned int fb_rows;
@@ -500,8 +514,9 @@ struct paintbox_lbp {
 	 * PB_RELEASE_LINE_BUFFER_POOL ioctls.
 	 */
 	struct list_head session_entry;
-
+#ifdef CONFIG_PAINTBOX_DEBUG
 	struct paintbox_debug debug;
+#endif
 	struct paintbox_session *session;
 	struct paintbox_lb *lbs;
 	unsigned int pool_id;
@@ -536,8 +551,6 @@ struct paintbox_data {
 #endif
 	struct miscdevice misc_device;
 	struct platform_device *pdev;
-	struct dentry *debug_root;
-	struct dentry *regs_dentry;
 	struct paintbox_lbp_common lbp;
 	struct paintbox_stp_common stp;
 	struct paintbox_power power;
@@ -546,14 +559,20 @@ struct paintbox_data {
 	struct paintbox_io_ipu io_ipu;
 	struct paintbox_dma dma;
 	struct paintbox_irq *irqs;
-	size_t vdbg_log_len;
-	char *vdbg_log;
 	uint32_t hardware_id;
 	uint64_t perf_stp_sample_mask;
 	struct task_struct *perf_thread;
 
-#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
+#ifdef CONFIG_PAINTBOX_DEBUG
+	struct dentry *debug_root;
+	struct dentry *regs_dentry;
 	struct {
+		ktime_t probe_time;
+		struct paintbox_ioctl_stat dma_enq;
+		struct paintbox_ioctl_stat dma_setup;
+		struct paintbox_ioctl_stat dma_malloc;
+		struct paintbox_ioctl_stat cache_op;
+		size_t dma_malloc_max_transfer_len;
 		struct dentry *ioctl_time_stats_dentry;
 		struct mutex ioctl_lock;
 		struct paintbox_ioctl_stat *ioctl_entries;
@@ -561,18 +580,5 @@ struct paintbox_data {
 	} stats;
 #endif
 };
-
-static inline uint8_t lbp_id_to_noc_id(uint8_t lbp_id)
-{
-	return (lbp_id << 1) + 1;
-}
-
-static inline uint8_t stp_id_to_noc_id(uint8_t stp_id)
-{
-	return stp_id << 1;
-}
-
-void paintbox_alloc_debug_buffer(struct paintbox_data *pb, size_t len);
-
 
 #endif /* __PAINTBOX_COMMON_H__ */
