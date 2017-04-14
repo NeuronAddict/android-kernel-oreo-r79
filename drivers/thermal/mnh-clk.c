@@ -649,11 +649,13 @@ int mnh_clock_gating_mode(int enabled)
 	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_BTSRAM_PD_EN, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, BTROM_SLP, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, IPU_MEM_DS, enabled);
-
+	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, IPU_MEM_SD, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_AXICG_EN, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_CPUCG_EN, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_BTSRAMCG_EN, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_BTROMCG_EN, enabled);
+	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLKEN, !enabled);
+
 	/* HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_LP4CG_EN, 1); */
 	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_LP4_PLL_BYPCLK_CG_EN,
 		enabled);

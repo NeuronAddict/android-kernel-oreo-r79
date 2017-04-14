@@ -51,6 +51,7 @@
 #include <linux/intel-hwio.h>
 #include <soc/mnh/mnh-hwio-pcie-ep.h>
 #include <soc/mnh/mnh-hwio-pcie-ss.h>
+#include <soc/mnh/mnh-hwio-scu.h>
 #include <linux/pagemap.h>
 #include <linux/dma-buf.h>
 
@@ -698,13 +699,15 @@ static int pcie_set_l_one(uint32_t enable, uint32_t clkpm)
 		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_CLK_PM_EN, 0);
 	}
 	if (enable == 1) {
-		/*PCIECAP_OUTf(PCIE_CAP_LINK_CONTROL_LINK_STATUS,
-				PCIE_CAP_ACTIVE_STATE_LINK_PM_CONTROL, 0x2);*/
 		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_REQ_ENTRY_L1, 1);
 		PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CONTROL1,
 					L1_1_ASPM_EN, 0x1);
 		PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CONTROL1,
 					L1_2_ASPM_EN, 0x1);
+		SCUS_OUTf(CCU_CLK_CTL, PCIE_AXI_CLKEN, 0x0);
+		SCUS_OUTf(PERIPH_CLK_CTRL, PCIE_CLK_MODE, 0x0);
+		SCUS_OUTf(PERIPH_CLK_CTRL, PCIE_REFCLKEN, 0x0);
+		SCUS_OUTf(MEM_PWR_MGMNT, PCIE_MEM_DS, 0x1);
 	} else {
 		PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CONTROL1,
 					L1_1_ASPM_EN, 0x0);
@@ -718,7 +721,13 @@ static int pcie_set_l_one(uint32_t enable, uint32_t clkpm)
 
 static irqreturn_t pcie_handle_wake_irq(int irq, void *dev_id)
 {
+	SCUS_OUTf(PERIPH_CLK_CTRL, PCIE_CLK_MODE, 0x1);
+		SCUS_OUTf(PERIPH_CLK_CTRL, PCIE_REFCLKEN, 0x1);
+	SCUS_OUTf(CCU_CLK_CTL, PCIE_AXI_CLKEN, 0x1);
+	SCUS_OUTf(MEM_PWR_MGMNT, PCIE_MEM_DS, 0x0);
+
 	CSR_OUTf(PCIE_APP_STS, PCIE_WAKE_EVENT, 0x1);
+	SCUS_OUTf(PERIPH_CLK_CTRL, PCIE_CLK_MODE, 0x1);
 	dev_info(pcie_ep_dev->dev, "%s:%d\n", __func__, __LINE__);
 
 	/* return interrupt handled */
@@ -1404,6 +1413,33 @@ static int config_mem(struct platform_device *pdev)
 				resource_size(pcie_ep_dev->outbound_mem));
 		return -ENOMEM;
 	}
+	pcie_ep_dev->scu_mem = platform_get_resource(pdev,
+					IORESOURCE_MEM, 3);
+	if (!pcie_ep_dev->scu_mem) {
+		iounmap(&pcie_ep_dev->clust_mem);
+		iounmap(&pcie_ep_dev->conf_mem);
+		iounmap(&pcie_ep_dev->outb_mem);
+		release_mem_region(pcie_ep_dev->config_mem->start,
+			resource_size(pcie_ep_dev->config_mem));
+		release_mem_region(pcie_ep_dev->cluster_mem->start,
+				resource_size(pcie_ep_dev->cluster_mem));
+		return -ENOMEM;
+	}
+	pcie_ep_dev->scu = ioremap(pcie_ep_dev->scu_mem->start,
+				resource_size(pcie_ep_dev->scu_mem));
+	if (!pcie_ep_dev->scu) {
+		dev_err(&pdev->dev, "unable to request mem region\n");
+		iounmap(&pcie_ep_dev->clust_mem);
+		iounmap(&pcie_ep_dev->conf_mem);
+		iounmap(&pcie_ep_dev->outb_mem);
+		release_mem_region(pcie_ep_dev->config_mem->start,
+				resource_size(pcie_ep_dev->config_mem));
+		release_mem_region(pcie_ep_dev->cluster_mem->start,
+				resource_size(pcie_ep_dev->cluster_mem));
+		release_mem_region(pcie_ep_dev->outbound_mem->start,
+				resource_size(pcie_ep_dev->outbound_mem));
+		return -ENOMEM;
+	}
 	return 0;
 }
 
@@ -1412,6 +1448,7 @@ static int clear_mem(void)
 	iounmap(&pcie_ep_dev->conf_mem);
 	iounmap(&pcie_ep_dev->clust_mem);
 	iounmap(&pcie_ep_dev->outb_mem);
+	iounmap(&pcie_ep_dev->scu);
 	release_mem_region(pcie_ep_dev->config_mem->start,
 				resource_size(pcie_ep_dev->config_mem));
 	release_mem_region(pcie_ep_dev->cluster_mem->start,
