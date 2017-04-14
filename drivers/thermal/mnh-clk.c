@@ -661,6 +661,9 @@ int mnh_clock_gating_mode(int enabled)
 		enabled);
 	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, LP4PHY_PLL_BYPASS_CLKEN,
 		enabled);
+
+	HW_OUTf(mnh_dev->regs, SCU, RSTC, MIPITXPHY_RST, enabled);
+	HW_OUTf(mnh_dev->regs, SCU, RSTC, MIPIRXPHY_RST, enabled);
 	return 0;
 }
 EXPORT_SYMBOL(mnh_clock_gating_mode);
