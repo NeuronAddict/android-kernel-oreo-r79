@@ -128,11 +128,17 @@ static int paintbox_perf_thread_main(void* data) {
 /* The caller to this function must hold pb->lock */
 void stp_pc_histogram_clear(struct paintbox_stp *stp,
 		size_t inst_mem_size_in_instructions) {
-	size_t stalled_size = inst_mem_size_in_instructions *
-			sizeof(stp->stalled[0]);
+	/* If histogram recording has not been enabled then there is nothing to
+	 * do here.
+	 */
+	if (!stp->stalled)
+		return;
+
 	stp->disabled = 0;
 	stp->running = 0;
-	memset(stp->stalled, 0, stalled_size);
+
+	memset(stp->stalled, 0, inst_mem_size_in_instructions *
+			sizeof(stp->stalled[0]));
 }
 
 int stp_pc_histogram_clear_ioctl(struct paintbox_data *pb,
@@ -174,12 +180,45 @@ int stp_pc_histogram_enable(struct paintbox_data *pb, uint64_t stp_mask)
 {
 	/* save the previous sample mask so we can act on changes */
 	uint64_t prev_mask = pb->perf_stp_sample_mask;
-
 	/* only modify status for stps this session owns */
 	pb->perf_stp_sample_mask = stp_mask;
 
 	dev_dbg(&pb->pdev->dev, "%s: stp_pc_sample_mask %llx->%llx\n",
 			__func__, prev_mask, pb->perf_stp_sample_mask);
+
+	if (stp_mask != 0) {
+		uint64_t mask = stp_mask;
+		unsigned int stp_index;
+
+		for (stp_index = 0; stp_index < pb->stp.num_stps && mask;
+				stp_index++, mask >>= 1) {
+			struct paintbox_stp *stp;
+			size_t len;
+
+			/* If this stp is not part of the measurement then skip
+			 * it.
+			 */
+			if (!(mask & 0x01))
+				continue;
+
+			stp = &pb->stp.stps[stp_index];
+
+			/* If this stp already has a stalled buffer then
+			 * continue.
+			 */
+			if (stp->stalled)
+				continue;
+
+			len = pb->stp.inst_mem_size_in_instructions *
+					sizeof(stp->stalled[0]);
+			stp->stalled = kzalloc(len, GFP_KERNEL);
+			if (!stp->stalled) {
+				pr_err("Failed to allocate stalled array %zub",
+						len);
+				return -ENOMEM;
+			}
+		}
+	}
 
 	if (prev_mask == 0 && pb->perf_stp_sample_mask != 0) {
 		/* start the sampling thread */
@@ -262,6 +301,14 @@ int stp_pc_histogram_read_ioctl(struct paintbox_data *pb,
 	if (ret < 0) {
 		mutex_unlock(&pb->lock);
 		return ret;
+	}
+
+	/* If histogram recording has not been previously been enabled then
+	 * there is no data.
+	 */
+	if (!stp->stalled) {
+		mutex_unlock(&pb->lock);
+		return -ENODATA;
 	}
 
 	histogram.disabled = stp->disabled;

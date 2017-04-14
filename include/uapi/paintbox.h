@@ -285,6 +285,11 @@ struct stp_program_state {
 	bool stalled;
 };
 
+struct paintbox_all_stp_state {
+	uint64_t enabled;
+	uint64_t stalled;
+};
+
 struct stp_interrupt_config {
 	uint32_t stp_id;
 	uint32_t interrupt_id;
@@ -512,6 +517,9 @@ struct mipi_interrupt_config {
  * read back into the userspace buffer.
  */
 #define PB_GET_COMPLETED_UNREAD_COUNT _IOW('p', 58, unsigned int)
+#define PB_RESET_ALL_PROCESSORS        _IO('p', 59)
+#define PB_GET_ALL_PROCESSOR_STATES   _IOR('p', 60, \
+		struct paintbox_all_stp_state)
 #define PB_BIND_STP_INTERRUPT         _IOW('p', 62, struct stp_interrupt_config)
 #define PB_UNBIND_STP_INTERRUPT       _IOW('p', 63, unsigned int)
 #define PB_STOP_DMA_TRANSFER          _IOW('p', 64, unsigned int)

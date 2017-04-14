@@ -380,6 +380,7 @@ err_exit:
 #if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 	paintbox_enable_mmu_bif_idle_clock_gating(pb);
 #endif
+	return;
 }
 
 /* Called with page table spinlock held. */
@@ -421,6 +422,7 @@ err_exit:
 #if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 	paintbox_enable_mmu_bif_idle_clock_gating(pb);
 #endif
+	return;
 }
 
 static void paintbox_mmu_enable(void *priv, uint64_t table_base_paddr)

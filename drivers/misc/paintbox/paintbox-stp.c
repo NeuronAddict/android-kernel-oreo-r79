@@ -439,18 +439,6 @@ int allocate_stp_ioctl(struct paintbox_data *pb,
 				STP_CAP_HALO_MEM_SHIFT);
 	}
 
-	if (!stp->stalled) {
-		size_t stalled_size = pb->stp.inst_mem_size_in_instructions *
-				sizeof(stp->stalled[0]);
-		stp->stalled = kzalloc(stalled_size, GFP_KERNEL);
-		if (!stp->stalled) {
-			pr_err("Failed to allocate stalled array %zub",
-			       stalled_size);
-			mutex_unlock(&pb->lock);
-			return -ENOMEM;
-		}
-	}
-
 	dev_dbg(&pb->pdev->dev, "stp%u allocated\n", stp_id);
 
 	mutex_unlock(&pb->lock);
@@ -694,6 +682,29 @@ int reset_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 	return ret;
 }
 
+int paintbox_reset_all_stp_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session)
+{
+	struct paintbox_stp *stp, *stp_next;
+
+	mutex_lock(&pb->lock);
+
+	list_for_each_entry_safe(stp, stp_next, &session->stp_list,
+			session_entry) {
+		int ret = paintbox_stp_reset(pb, stp);
+		if (ret < 0) {
+			mutex_unlock(&pb->lock);
+			return ret;
+		}
+	}
+
+	dev_dbg(&pb->pdev->dev, "stp reset all\n");
+
+	mutex_unlock(&pb->lock);
+
+	return 0;
+}
+
 /* TODO(ahampson):  This should be removed b/36069658 */
 int setup_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 		unsigned long arg)
@@ -805,6 +816,50 @@ int get_program_state_ioctl(struct paintbox_data *pb,
 
 	if (copy_to_user(user_program_state, &program_state,
 			sizeof(program_state)))
+		return -EFAULT;
+
+	return 0;
+}
+
+int paintbox_get_all_processor_states(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg)
+{
+	struct paintbox_all_stp_state __user *user_state;
+	struct paintbox_all_stp_state state;
+	struct paintbox_stp *stp, *stp_next;
+	unsigned long irq_flags;
+	uint64_t stat;
+
+	user_state = (struct paintbox_all_stp_state __user *)arg;
+
+	state.enabled = 0;
+	state.stalled = 0;
+
+	mutex_lock(&pb->lock);
+
+	spin_lock_irqsave(&pb->stp.lock, irq_flags);
+
+	list_for_each_entry_safe(stp, stp_next, &session->stp_list,
+			session_entry) {
+		uint64_t stp_mask = 1ULL << stp->stp_id;
+
+		writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
+		stat = readq(pb->stp.reg_base + STP_STAT);
+
+		if (stp->enabled)
+			state.enabled |= stp_mask;
+
+		if (stat & STP_STAT_STALLED_MASK)
+			state.stalled |= stp_mask;
+	}
+
+	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
+
+	dev_dbg(&pb->pdev->dev, "stp get all states\n");
+
+	mutex_unlock(&pb->lock);
+
+	if (copy_to_user(user_state, &state, sizeof(state)))
 		return -EFAULT;
 
 	return 0;

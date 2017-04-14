@@ -41,9 +41,13 @@ int resume_stp_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 int reset_stp_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
+int paintbox_reset_all_stp_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session);
 int setup_stp_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 int get_program_state_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg);
+int paintbox_get_all_processor_states(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 int bind_stp_interrupt_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);

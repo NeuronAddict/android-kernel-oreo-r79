@@ -286,8 +286,14 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 	case PB_RESET_PROCESSOR:
 		ret = reset_stp_ioctl(pb, session, arg);
 		break;
+	case PB_RESET_ALL_PROCESSORS:
+		ret = paintbox_reset_all_stp_ioctl(pb, session);
+		break;
 	case PB_GET_PROGRAM_STATE:
 		ret = get_program_state_ioctl(pb, session, arg);
+		break;
+	case PB_GET_ALL_PROCESSOR_STATES:
+		ret = paintbox_get_all_processor_states(pb, session, arg);
 		break;
 	case PB_RELEASE_PROCESSOR:
 		ret = release_stp_ioctl(pb, session, arg);
