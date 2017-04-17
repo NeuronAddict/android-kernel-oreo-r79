@@ -619,13 +619,13 @@ static void mnh_ddr_disable_lp(void)
 }
 
 /**
- * Set the SCU clock gating mode
+ * Set the SCU clock gating at init
  * Return: 0 on success, an error code otherwise.
  *
  * enable == 1 sets the SCU to enable clock gating in general when CPU enters
  * L2 WFI state.
  */
-int mnh_clock_gating_mode(int enabled)
+int mnh_clock_init_gating(int enabled)
 {
 	dev_dbg(mnh_dev->dev, "%s\n", __func__);
 
@@ -635,9 +635,6 @@ int mnh_clock_gating_mode(int enabled)
 	/* Add periph clk gates */
 	HW_OUTf(mnh_dev->regs, SCU, RSTC, TIMER_RST, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, RSTC, PERI_DMA_RST, enabled);
-	HW_OUTf(mnh_dev->regs, SCU, RSTC, IPU_RST, enabled);
-	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, PVT_CLKEN,
-		!enabled);
 	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, PERI_DMA_CLKEN_SW,
 		!enabled);
 	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, TIMER_CLKEN_SW,
@@ -648,13 +645,8 @@ int mnh_clock_gating_mode(int enabled)
 	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_BTROM_PD_EN, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_BTSRAM_PD_EN, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, BTROM_SLP, enabled);
-	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, IPU_MEM_DS, enabled);
-	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, IPU_MEM_SD, enabled);
-	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_AXICG_EN, enabled);
-	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_CPUCG_EN, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_BTSRAMCG_EN, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_BTROMCG_EN, enabled);
-	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLKEN, !enabled);
 
 	/* HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_LP4CG_EN, 1); */
 	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_LP4_PLL_BYPCLK_CG_EN,
@@ -662,11 +654,45 @@ int mnh_clock_gating_mode(int enabled)
 	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, LP4PHY_PLL_BYPASS_CLKEN,
 		enabled);
 
-	HW_OUTf(mnh_dev->regs, SCU, RSTC, MIPITXPHY_RST, enabled);
-	HW_OUTf(mnh_dev->regs, SCU, RSTC, MIPIRXPHY_RST, enabled);
 	return 0;
 }
-EXPORT_SYMBOL(mnh_clock_gating_mode);
+EXPORT_SYMBOL(mnh_clock_init_gating);
+
+/**
+ * Set the SCU clock gating for bypass mode
+ * Return: 0 on success, an error code otherwise.
+ *
+ * enable == 1 sets the SCU to enable clock gating in general when CPU enters
+ * L2 WFI state.
+ */
+int mnh_clock_bypass_gating(int enabled)
+{
+	dev_dbg(mnh_dev->dev, "%s\n", __func__);
+
+	if (enabled != 1 && enabled != 0)
+		return -EINVAL;
+
+	/*
+	 * NOTE: mnh-hwio-scu.h has incorrect macros, MIPIRXPHY_RST is actually
+	 * IPU_APB_RST, and MIPITXPHY_RST is actually IPU_AXI_RST.
+	 */
+	if (enabled) {
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, IPU_MEM_DS, enabled);
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, IPU_MEM_SD, enabled);
+		HW_OUTf(mnh_dev->regs, SCU, RSTC, MIPIRXPHY_RST, enabled);
+		HW_OUTf(mnh_dev->regs, SCU, RSTC, MIPITXPHY_RST, enabled);
+		HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLKEN, !enabled);
+	} else {
+		HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLKEN, !enabled);
+		HW_OUTf(mnh_dev->regs, SCU, RSTC, MIPIRXPHY_RST, enabled);
+		HW_OUTf(mnh_dev->regs, SCU, RSTC, MIPITXPHY_RST, enabled);
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, IPU_MEM_DS, enabled);
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, IPU_MEM_SD, enabled);
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(mnh_clock_bypass_gating);
 
 
 /* Frequency calculation by PLL configuration
@@ -923,7 +949,7 @@ static ssize_t clock_gating_set(struct device *dev,
 
 	if (var == 1 || var == 0) {
 		dev_dbg(mnh_dev->dev, "%s: %d\n", __func__, var);
-		if (!mnh_clock_gating_mode(var))
+		if (!mnh_clock_bypass_gating(var))
 			return count;
 	}
 	return -EIO;
@@ -1127,7 +1153,7 @@ int mnh_clk_init(struct platform_device *pdev, void __iomem *baseadress)
 
 	init_sysfs(mnh_dev->dev, kernel_kobj);
 
-	mnh_clock_gating_mode(0);
+	mnh_clock_init_gating(1);
 	return 0;
 
 mnh_probe_err:

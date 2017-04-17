@@ -116,7 +116,7 @@ int mnh_lpddr_freq_change(int index);
  * Return: 0 on success, an error code otherwise.
  *
  */
-int mnh_clock_gating_mode(int enabled);
+int mnh_clock_init_gating(int enabled);
 
 
 /**

@@ -113,7 +113,7 @@ static void mnh_pm_intr_proc(struct work_struct *work)
 
 	mnh_debug("%s mnh_suspend_start\n", __func__);
 
-	mnh_clock_gating_mode(CLOCK_GATING_DISABLED);
+	mnh_clock_init_gating(CLOCK_GATING_DISABLED);
 
 	error = pm_suspend(PM_SUSPEND_MEM);
 	if (error)
@@ -121,7 +121,7 @@ static void mnh_pm_intr_proc(struct work_struct *work)
 
 	mnh_debug("%s mnh_resume_complete\n", __func__);
 
-	mnh_clock_gating_mode(CLOCK_GATING_ENABLED);
+	mnh_clock_init_gating(CLOCK_GATING_ENABLED);
 }
 
 static irqreturn_t mnh_pm_handle_irq(int irq, void *dev_id)
