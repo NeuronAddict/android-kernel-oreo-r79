@@ -49,7 +49,7 @@
 #define MNH_PM_SUSPEND_AARCH64	0xC300FF04
 
 /* PM debug messages definition */
-#if CONFIG_MNH_PM_DEBUG
+#ifdef CONFIG_MNH_PM_DEBUG
 #define mnh_debug pr_err
 #else
 #define mnh_debug pr_debug
