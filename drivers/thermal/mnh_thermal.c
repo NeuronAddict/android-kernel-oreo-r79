@@ -103,7 +103,7 @@
 			/PVT_FREQ_US_UNIT)
 
 /* PVT debug messages definition */
-#if CONFIG_MNH_PVT_DEBUG
+#ifdef CONFIG_MNH_PVT_DEBUG
 #define mnh_debug pr_err
 #else
 #define mnh_debug pr_debug
@@ -169,6 +169,15 @@ static void config_pvt_clk(struct mnh_thermal_device *dev, bool clk_en)
 	 */
 	HW_OUTf(dev->regs, SCU, PERIPH_CLK_CTRL, PVT_CLKEN, clk_en);
 	udelay(2);
+}
+
+/**
+ * Check pvt clock is enabled
+ * Return: 0 if pvt clk is off, 1 if pvt clk is on
+ */
+static uint32_t read_pvt_clk_en(struct mnh_thermal_device *dev)
+{
+	return HW_INf(dev->regs, SCU, PERIPH_CLK_CTRL, PVT_CLKEN);
 }
 
 static int config_thermal_properties(struct platform_device *pdev,
@@ -358,6 +367,11 @@ static int mnh_thermal_get_data(void *data, int *data_out)
 				break;
 		}
 	} else { /* silicon */
+
+		/* If PVT clk is off, turn it on before accessing it */
+		if (!read_pvt_clk_en(sensor->dev))
+			config_pvt_clk(sensor->dev, 1);
+
 		op_mode = sensor->tzd->tzp->op_mode;
 		psample = mnh_op_mode_table[op_mode].psample;
 		vsample = mnh_op_mode_table[op_mode].vsample;
