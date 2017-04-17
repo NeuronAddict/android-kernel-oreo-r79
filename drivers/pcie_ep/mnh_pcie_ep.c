@@ -728,7 +728,7 @@ static irqreturn_t pcie_handle_wake_irq(int irq, void *dev_id)
 
 	CSR_OUTf(PCIE_APP_STS, PCIE_WAKE_EVENT, 0x1);
 	SCUS_OUTf(PERIPH_CLK_CTRL, PCIE_CLK_MODE, 0x1);
-	dev_info(pcie_ep_dev->dev, "%s:%d\n", __func__, __LINE__);
+	dev_dbg(pcie_ep_dev->dev, "%s:%d\n", __func__, __LINE__);
 
 	/* return interrupt handled */
 	return IRQ_HANDLED;
