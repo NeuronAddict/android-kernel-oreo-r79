@@ -697,11 +697,10 @@ static void mnh_ddr_disable_lp(void)
  */
 int mnh_clock_init_gating(int enabled)
 {
-	dev_dbg(mnh_dev->dev, "%s\n", __func__);
+	dev_dbg(mnh_dev->dev, "%s:%d\n", __func__, __LINE__);
 
 	if (enabled != 1 && enabled != 0)
 		return -EINVAL;
-
 	/* Add periph clk gates */
 	HW_OUTf(mnh_dev->regs, SCU, RSTC, TIMER_RST, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, RSTC, PERI_DMA_RST, enabled);
@@ -710,15 +709,40 @@ int mnh_clock_init_gating(int enabled)
 	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, TIMER_CLKEN_SW,
 		!enabled);
 
-	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_CPUMEM_PD_EN, enabled);
-	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_LP4CMEM_PD_EN, enabled);
+	if (enabled) {
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_LP4CMEM_PD_EN,
+			enabled);
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, LP4C_MEM_DS,
+			enabled);
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_CPUMEM_PD_EN,
+			enabled);
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, CPU_L2MEM_DS,
+			enabled);
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, CPU_L1MEM_DS,
+			enabled);
+	} else {
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, LP4C_MEM_DS,
+			enabled);
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_LP4CMEM_PD_EN,
+			enabled);
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, CPU_L2MEM_DS,
+			enabled);
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, CPU_L1MEM_DS,
+			enabled);
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_CPUMEM_PD_EN,
+			enabled);
+	}
 	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_BTROM_PD_EN, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_BTSRAM_PD_EN, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, BTROM_SLP, enabled);
+	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, BTSRAM_DS, enabled);
+	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_AXICG_EN, enabled);
+	/* HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_AHBCG_EN, enabled); */
+	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_CPUCG_EN, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_BTSRAMCG_EN, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_BTROMCG_EN, enabled);
 
-	/* HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_LP4CG_EN, 1); */
+	/* HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_LP4CG_EN, enabled); */
 	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_LP4_PLL_BYPCLK_CG_EN,
 		enabled);
 	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, LP4PHY_PLL_BYPASS_CLKEN,
@@ -1018,7 +1042,7 @@ static ssize_t clock_gating_set(struct device *dev,
 		return ret;
 
 	if (var == 1 || var == 0) {
-		dev_dbg(mnh_dev->dev, "%s: %d\n", __func__, var);
+		dev_info(mnh_dev->dev, "%s: %d\n", __func__, var);
 		if (!mnh_clock_bypass_gating(var))
 			return count;
 	}

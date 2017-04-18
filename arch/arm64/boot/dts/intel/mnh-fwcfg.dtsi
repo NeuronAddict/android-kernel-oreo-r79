@@ -241,7 +241,7 @@ firmware_config {
 		peripheral_clk_ctl = <0x80006048>;
 		mem_pwr_mgmnt = <0x0200c500>;
 
-		global_wake_en_set0 = <0x0FFE2800>;
-		global_wake_en_set1 = <0x08020002>;
+		global_wake_en_set0 = <0xEFFE28FC>;
+		global_wake_en_set1 = <0x08020003>;
 	};
 };
