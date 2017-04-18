@@ -81,33 +81,16 @@ static void set_axi_clk(void)
 	else {
 		fsp = SCU_INf(LPDDR4_LOW_POWER_STS, LPDDR4_CUR_FSP);
 		switch (fsp) {
+
 		case 0x0:
-			/* read from LPDDR4_FSP0_SETTINGS */
-			fbdiv = SCU_INf(LPDDR4_FSP0_SETTING, FSP0_FBDIV);
-			sys200 = SCU_INf(LPDDR4_FSP0_SETTING, FSP0_SYS200_MODE);
-			axi_clk_div = SCU_INf(LPDDR4_FSP0_SETTING,
-						FSP0_AXI_FABRIC_CLK_DIV);
-			break;
 		case 0x1:
-			/* read from LPDDR4_FSP1_SETTINGS */
-			fbdiv = SCU_INf(LPDDR4_FSP1_SETTING, FSP1_FBDIV);
-			sys200 = SCU_INf(LPDDR4_FSP1_SETTING, FSP1_SYS200_MODE);
-			axi_clk_div = SCU_INf(LPDDR4_FSP1_SETTING,
-						FSP1_AXI_FABRIC_CLK_DIV);
-			break;
 		case 0x2:
-			/* read from LPDDR4_FSP2_SETTINGS */
-			fbdiv = SCU_INf(LPDDR4_FSP2_SETTING, FSP2_FBDIV);
-			sys200 = SCU_INf(LPDDR4_FSP2_SETTING, FSP2_SYS200_MODE);
-			axi_clk_div = SCU_INf(LPDDR4_FSP2_SETTING,
-						FSP2_AXI_FABRIC_CLK_DIV);
-			break;
 		case 0x3:
-			/* read from LPDDR4_FSP3_SETTINGS */
-			fbdiv = SCU_INf(LPDDR4_FSP3_SETTING, FSP3_FBDIV);
-			sys200 = SCU_INf(LPDDR4_FSP3_SETTING, FSP3_SYS200_MODE);
-			axi_clk_div = SCU_INf(LPDDR4_FSP3_SETTING,
-						FSP3_AXI_FABRIC_CLK_DIV);
+			/* read from LPDDR4_FSP0_SETTINGS */
+			fbdiv = SCU_INxf(LPDDR4_FSP_SETTING, fsp, FSP_FBDIV);
+			sys200 = SCU_INxf(LPDDR4_FSP_SETTING, fsp, FSP_SYS200_MODE);
+			axi_clk_div = SCU_INxf(LPDDR4_FSP_SETTING, fsp,
+						FSP_AXI_FABRIC_CLK_DIV);
 			break;
 		case 0x7:
 			fbdiv = SCU_INf(LPDDR4_REFCLK_PLL_INTGR_DIV, FBDIV);
@@ -120,8 +103,7 @@ static void set_axi_clk(void)
 			fbdiv = 1;
 			break;
 		}
-		ref_clk = ((SCU_INf(HW_STRAP, HW_STRAP) & REF_FREQ_MASK)
-				== REF_FREQ_MASK) ? 24000000 : 19200000;
+		ref_clk = SCU_INf(HW_STRAP, REF_CLK_SEL) ? 24000000 : 19200000;
 		if (sys200 == 1)
 			axi_clk = (200000000) / (axi_clk_div + 1);
 		else

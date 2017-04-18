@@ -59,13 +59,14 @@
 #define VENDOR_ID				0x8086
 #define DEVICE_ID				0x3140
 
+
 #define COMBINE_SG	1
 
 int (*irq_callback)(struct mnh_pcie_irq *irq);
 int (*dma_callback)(struct mnh_dma_irq *irq);
 struct mnh_pcie_ep_device *pcie_ep_dev;
 struct delayed_work msi_work;
-struct work_struct msi_rx_work, vm0_work, vm1_work;
+struct work_struct msi_rx_work, vm0_work, vm1_work, wake_work;
 #define DEVICE_NAME "mnh_pcie_ep"
 #define CLASS_NAME "pcie_ep"
 #define MSI_DELAY (HZ/20) /* TODO: Need to understand what this should be */
@@ -74,6 +75,9 @@ uint32_t rw_address_sysfs, rw_size_sysfs;
 struct mnh_pcie_irq sysfs_irq;
 
 static int pcie_ll_destroy(struct mnh_dma_ll *ll);
+static int pcie_set_l_one(uint32_t enable, uint32_t clkpm);
+static void pcie_set_power_mode_state(uint32_t l1state, uint32_t clkpm);
+static void pcie_get_power_mode_state(uint32_t *l1state, uint32_t *clkpm);
 
 #if MNH_PCIE_DEBUG_ENABLE
 
@@ -177,29 +181,10 @@ static int pcie_link_init(void)
 	};
 
 	/*enable L1 entry */
-
-	PCIECAP_OUTf(PCIE_CAP_LINK_CAPABILITIES,
-			PCIE_CAP_CLOCK_POWER_MAN, 0x1);
-	PCIECAP_OUTf(PCIE_CAP_LINK_CAPABILITIES,
-			PCIE_CAP_ACTIVE_STATE_LINK_PM_SUPPORT, 0x1);
 	PCIECAP_OUTf(PCIE_CAP_LINK_CONTROL_LINK_STATUS,
 			PCIE_CAP_ACTIVE_STATE_LINK_PM_CONTROL, 0x2);
-	PCIECAP_OUTf(PCIE_CAP_LINK_CONTROL_LINK_STATUS,
-			PCIE_CAP_EN_CLK_POWER_MAN, 0x1);
-	
-
-
-	PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CAPABILITY,
-			L1_PMSUB_SUPPORT, 0x1);
-	PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CAPABILITY,
-			L1_1_ASPM_SUPPORT, 0x1);
-	PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CAPABILITY,
-			L1_2_ASPM_SUPPORT, 0x1);
-	PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CAPABILITY,
-			L1_1_PCIPM_SUPPORT, 0x1);
-	PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CAPABILITY,
-			L1_2_PCIPM_SUPPORT, 0x1);
-
+	pcie_get_power_mode_state(&pcie_ep_dev->l1state, &pcie_ep_dev->clkpm);
+	pcie_set_l_one(pcie_ep_dev->l1state, pcie_ep_dev->clkpm);
 
 	/* Enable interupts */
 	CSR_OUT(PCIE_SS_INTR_EN, PCIE_SS_IRQ_MASK);
@@ -690,24 +675,40 @@ static int pcie_write_data(uint8_t *buff, uint32_t size, uint64_t adr)
 	return 0;
 }
 
+static void pcie_set_power_mode_state(uint32_t l1state, uint32_t clkpm)
+{
+	dev_dbg(pcie_ep_dev->dev, "%s l1state=%d, clkpm=%d\n", __func__,
+		l1state, clkpm);
+	SCUS_OUTf(GP_POWER_MODE, PCIE_L1_2_EN, l1state);
+	SCUS_OUTf(GP_POWER_MODE, PCIE_CLKPM_EN, clkpm);
+}
+
+static void pcie_get_power_mode_state(uint32_t *l1state, uint32_t *clkpm)
+{
+	*l1state = SCUS_INf(GP_POWER_MODE, PCIE_L1_2_EN);
+	*clkpm =SCUS_INf(GP_POWER_MODE, PCIE_CLKPM_EN);
+	dev_dbg(pcie_ep_dev->dev, "%s l1state=%d, clkpm=%d\n", __func__,
+		*l1state, *clkpm);
+}
+
 static int pcie_set_l_one(uint32_t enable, uint32_t clkpm)
 {
+	dev_dbg(pcie_ep_dev->dev, "%s:%d enable=%d clkpm=%d\n",
+		__func__, __LINE__, enable, clkpm);
 
-	if (clkpm == 1) {
+	pcie_ep_dev->clkpm = clkpm;
+	pcie_ep_dev->l1state = enable;
+	if (pcie_ep_dev->clkpm == 1) {
 		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_CLK_PM_EN, 1);
 	} else {
 		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_CLK_PM_EN, 0);
 	}
-	if (enable == 1) {
+	if (pcie_ep_dev->l1state == 1) {
+		PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CONTROL1,
+				L1_1_ASPM_EN, 0x1);
+		PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CONTROL1,
+				L1_2_ASPM_EN, 0x1);
 		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_REQ_ENTRY_L1, 1);
-		PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CONTROL1,
-					L1_1_ASPM_EN, 0x1);
-		PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CONTROL1,
-					L1_2_ASPM_EN, 0x1);
-		SCUS_OUTf(CCU_CLK_CTL, PCIE_AXI_CLKEN, 0x0);
-		SCUS_OUTf(PERIPH_CLK_CTRL, PCIE_CLK_MODE, 0x0);
-		SCUS_OUTf(PERIPH_CLK_CTRL, PCIE_REFCLKEN, 0x0);
-		SCUS_OUTf(MEM_PWR_MGMNT, PCIE_MEM_DS, 0x1);
 	} else {
 		PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CONTROL1,
 					L1_1_ASPM_EN, 0x0);
@@ -715,22 +716,30 @@ static int pcie_set_l_one(uint32_t enable, uint32_t clkpm)
 					L1_2_ASPM_EN, 0x0);
 		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_REQ_EXIT_L1, 1);
 	}
-
+	pcie_set_power_mode_state(pcie_ep_dev->l1state, pcie_ep_dev->clkpm);
 	return 0;
+}
+
+static void pcie_wake_worker(struct work_struct *work) {
+	int l1state = 0, clkpm = 0;
+
+	/* read pcie target state from the gp reg */
+	pcie_get_power_mode_state(&l1state, &clkpm);
+	udelay(100);
+
+	dev_dbg(pcie_ep_dev->dev, "%s:%d curstate=%d target state=%d\n",
+		__func__, __LINE__, pcie_ep_dev->l1state, l1state);
+	if (	pcie_ep_dev->l1state != l1state ||
+		pcie_ep_dev->clkpm != clkpm) {
+		pcie_set_l_one(l1state, clkpm);
+	}
 }
 
 static irqreturn_t pcie_handle_wake_irq(int irq, void *dev_id)
 {
-	SCUS_OUTf(PERIPH_CLK_CTRL, PCIE_CLK_MODE, 0x1);
-		SCUS_OUTf(PERIPH_CLK_CTRL, PCIE_REFCLKEN, 0x1);
-	SCUS_OUTf(CCU_CLK_CTL, PCIE_AXI_CLKEN, 0x1);
-	SCUS_OUTf(MEM_PWR_MGMNT, PCIE_MEM_DS, 0x0);
-
 	CSR_OUTf(PCIE_APP_STS, PCIE_WAKE_EVENT, 0x1);
-	SCUS_OUTf(PERIPH_CLK_CTRL, PCIE_CLK_MODE, 0x1);
-	dev_dbg(pcie_ep_dev->dev, "%s:%d\n", __func__, __LINE__);
+	schedule_work(&wake_work);
 
-	/* return interrupt handled */
 	return IRQ_HANDLED;
 }
 
@@ -2060,6 +2069,7 @@ static int mnh_pcie_ep_probe(struct platform_device *pdev)
 
 /* declare MSI worker */
 	INIT_DELAYED_WORK(&msi_work, pcie_msi_worker);
+	INIT_WORK(&wake_work, pcie_wake_worker);
 	INIT_WORK(&msi_rx_work, msi_rx_worker);
 	INIT_WORK(&vm0_work, vm0_worker);
 	INIT_WORK(&vm1_work, vm1_worker);
@@ -2115,19 +2125,10 @@ static int mnh_pcie_ep_suspend(struct platform_device *pdev, pm_message_t state)
 static int mnh_pcie_ep_resume(struct platform_device *pdev)
 {
 	/*enable L1 entry */
-
 	PCIECAP_OUTf(PCIE_CAP_LINK_CONTROL_LINK_STATUS,
 			PCIE_CAP_ACTIVE_STATE_LINK_PM_CONTROL, 0x2);
-	PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CAPABILITY,
-			L1_PMSUB_SUPPORT, 0x1);
-	PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CAPABILITY,
-			L1_1_ASPM_SUPPORT, 0x1);
-	PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CAPABILITY,
-			L1_2_ASPM_SUPPORT, 0x1);
-	PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CAPABILITY,
-			L1_1_PCIPM_SUPPORT, 0x1);
-	PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CAPABILITY,
-			L1_2_PCIPM_SUPPORT, 0x1);
+	pcie_get_power_mode_state(&pcie_ep_dev->l1state, &pcie_ep_dev->clkpm);
+	pcie_set_l_one(pcie_ep_dev->l1state, pcie_ep_dev->clkpm);
 
 	/* Enable interupts */
 	CSR_OUT(PCIE_SS_INTR_EN, PCIE_SS_IRQ_MASK);

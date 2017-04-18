@@ -273,10 +273,16 @@
 
 #define CSR_MASK(reg, fld)		HWIO_PCIE_SS_##reg##_##fld##_FLDMASK
 
+#define SCUS_IN(reg, fld)		HW_IN(pcie_ep_dev->scu, SCU, reg)
+#define SCUS_INx(reg, inst)		HW_INx(pcie_ep_dev->scu, SCU, reg, inst)
+#define SCUS_OUT(reg, fld, val)		HW_OUT(pcie_ep_dev->scu, SCU,\
+							reg, val)
 #define SCUS_INf(reg, fld)		HW_INf(pcie_ep_dev->scu, SCU, reg,\
 						fld)
 #define SCUS_OUTf(reg, fld, val)		HW_OUTf(pcie_ep_dev->scu, SCU,\
 							reg, fld, val)
+#define SCUS_OUTx(reg, inst, val)		HW_OUTx(pcie_ep_dev->scu, SCU,\
+							reg, inst, val)
 
 
 #define MNH_BAD_ADDR  ((void *)0xFFFFFFFF)

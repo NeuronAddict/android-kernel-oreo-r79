@@ -79,6 +79,8 @@ struct mnh_pcie_ep_device {
 	struct resource *cluster_mem;
 	struct resource *outbound_mem;
 	struct resource *scu_mem;
+	int clkpm;
+	int l1state;
 };
 
 #endif

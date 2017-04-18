@@ -39,7 +39,6 @@
 #define DELTA_AXI_SPEED	6000
 
 #define AXI_SPD_DIV	1000
-#define REF_FREQ_MASK	0x8
 
 # define PRMU_1_MASK	0x1
 # define PRMU_2_MASK	0x2
@@ -144,6 +143,10 @@ struct perf_result {
 						fld)
 #define SCU_OUTf(reg, fld, val)		HW_OUTf(perf_mon_dev->scu, SCU, reg,\
 							fld, val)
+#define SCU_INxf(reg, inst, fld)	HW_INxf(perf_mon_dev->scu, SCU, reg,\
+						inst, fld)
+#define SCU_OUTxf(reg, inst, fld, val)	HW_OUTxf(perf_mon_dev->scu, SCU, reg,\
+							inst, fld, val)
 
 
 
