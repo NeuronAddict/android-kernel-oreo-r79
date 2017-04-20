@@ -160,6 +160,64 @@ struct mnh_freq_cooling_device {
 
 static struct mnh_freq_cooling_device *mnh_dev;
 
+int mnh_cpu_freq_to_index(void)
+{
+	int fbdiv, postdiv1, postdiv2, clk_div;
+	int sys200, ipu_clk_src;
+	int i;
+	const struct freq_reg_table *table = cpu_reg_tables[mnh_dev->refclk];
+
+	sys200 = HW_INf(mnh_dev->regs, SCU, CCU_CLK_CTL, CPU_IPU_SYS200_MODE);
+	if (sys200)
+		return 0;
+
+	ipu_clk_src = HW_INf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLK_SRC);
+	if (ipu_clk_src == CPU_IPU_PLL)
+		return mnh_dev->cpu_freq;
+
+	fbdiv = HW_INf(mnh_dev->regs, SCU, IPU_PLL_INTGR_DIV, FBDIV);
+	postdiv1 = HW_INf(mnh_dev->regs, SCU, IPU_PLL_INTGR_DIV, POSTDIV1);
+	postdiv2 = HW_INf(mnh_dev->regs, SCU, IPU_PLL_INTGR_DIV, POSTDIV2);
+	clk_div = HW_INf(mnh_dev->regs, SCU, CCU_CLK_DIV, IPU_CLK_DIV);
+
+	for (i = 0; i < ARRAY_SIZE(cpu_reg_tables[0]); i++) {
+		if ((fbdiv == table[i].fbdiv) &&
+		    (postdiv1 == table[i].postdiv1) &&
+		    (postdiv2 == table[i].postdiv2) &&
+		    (clk_div == table[i].clk_div))
+			return i;
+	}
+
+	return -EINVAL;
+}
+
+int mnh_ipu_freq_to_index(void)
+{
+	int fbdiv, postdiv1, postdiv2, clk_div;
+	int sys200;
+	int i;
+	const struct freq_reg_table *table = ipu_reg_tables[mnh_dev->refclk];
+
+	sys200 = HW_INf(mnh_dev->regs, SCU, CCU_CLK_CTL, CPU_IPU_SYS200_MODE);
+	if (sys200)
+		return 0;
+
+	fbdiv = HW_INf(mnh_dev->regs, SCU, CPU_IPU_PLL_INTGR_DIV, FBDIV);
+	postdiv1 = HW_INf(mnh_dev->regs, SCU, CPU_IPU_PLL_INTGR_DIV, POSTDIV1);
+	postdiv2 = HW_INf(mnh_dev->regs, SCU, CPU_IPU_PLL_INTGR_DIV, POSTDIV2);
+	clk_div = HW_INf(mnh_dev->regs, SCU, CCU_CLK_DIV, CPU_CLK_DIV);
+
+	for (i = 0; i < ARRAY_SIZE(ipu_reg_tables[0]); i++) {
+		if ((fbdiv == table[i].fbdiv) &&
+		    (postdiv1 == table[i].postdiv1) &&
+		    (postdiv2 == table[i].postdiv2) &&
+		    (clk_div == table[i].clk_div))
+			return i;
+	}
+
+	return -EINVAL;
+}
+
 /**
  * CPU clock controller
  * @index: int with frquency table index info.
@@ -182,6 +240,12 @@ int mnh_cpu_freq_change(int index)
 		return -EINVAL;
 
 	dev_dbg(mnh_dev->dev, "%s: %d\n", __func__, index);
+
+	if (mnh_dev->cpu_freq == index) {
+		dev_dbg(mnh_dev->dev, "%s: already set to index %d\n", __func__,
+			index);
+		return 0;
+	}
 
 	/* Unlock PLL access */
 	HW_OUTf(mnh_dev->regs, SCU, PLL_PASSCODE, PASSCODE, PLL_UNLOCK);
@@ -282,6 +346,12 @@ int mnh_ipu_freq_change(int index)
 		return -EINVAL;
 
 	dev_dbg(mnh_dev->dev, "%s: %d\n", __func__, index);
+
+	if (mnh_dev->ipu_freq == index) {
+		dev_dbg(mnh_dev->dev, "%s: already set to index %d\n", __func__,
+			index);
+		return 0;
+	}
 
 	/* Disable IPU_PLL clock output */
 	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLKEN, 0x0);
@@ -1150,6 +1220,9 @@ int mnh_clk_init(struct platform_device *pdev, void __iomem *baseadress)
 	}
 	mnh_dev->cpu_pllcfg = &cpu_reg_tables[mnh_dev->refclk];
 	mnh_dev->ipu_pllcfg = &ipu_reg_tables[mnh_dev->refclk];
+
+	mnh_dev->cpu_freq = mnh_cpu_freq_to_index();
+	mnh_dev->ipu_freq = mnh_ipu_freq_to_index();
 
 	init_sysfs(mnh_dev->dev, kernel_kobj);
 
