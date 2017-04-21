@@ -51,6 +51,8 @@ HW_OUTf(mnh_dev->ddraddr, DDR_CTL, reg, fld, val)
 #define MNH_DDR_CTL_OUT(reg, val) \
 HW_OUT(mnh_dev->ddraddr, DDR_CTL, reg, val)
 
+int mnh_ddr_clr_int_status(void);
+
 /* If IPU clock is driven by CPU_IPU PLL
  * calculate IPU divider based on CPU clk and divider
  * CPU CLK < 850: IPU_CLK_DIV = ((CPU_CLK_DIV+1)*2-1)
@@ -148,7 +150,6 @@ struct mnh_freq_cooling_device {
 	struct device *dev;
 	void __iomem *regs;
 	void __iomem *ddraddr;
-	int ddr_irq;
 	enum mnh_ipu_clk_src ipu_clk_src;
 	enum mnh_cpu_freq_type cpu_freq;
 	enum mnh_ipu_freq_type ipu_freq;
@@ -488,7 +489,7 @@ int mnh_lpddr_freq_change(int index)
 	}
 
 	mnh_dev->ddr_freq = index;
-
+	mnh_ddr_clr_int_status();
 	return 0;
 }
 EXPORT_SYMBOL(mnh_lpddr_freq_change);
@@ -1216,16 +1217,6 @@ int mnh_clk_init(struct platform_device *pdev, void __iomem *baseadress)
 	if (!mnh_dev->ddraddr) {
 		dev_err(mnh_dev->dev, "unable to remap resources\n");
 		ret = -ENOMEM;
-		goto mnh_probe_err;
-	}
-
-	mnh_dev->ddr_irq = platform_get_irq(pdev, 0);
-	dev_dbg(mnh_dev->dev, "Allocate ddr irq %d\n", mnh_dev->ddr_irq);
-	err = request_irq(mnh_dev->ddr_irq, mnh_pm_handle_ddr_irq,
-	       IRQF_SHARED, DEVICE_NAME, mnh_dev->dev);
-	if (err) {
-		dev_err(mnh_dev->dev, "Could not allocated ddr irq\n");
-		ret = -EINVAL;
 		goto mnh_probe_err;
 	}
 
