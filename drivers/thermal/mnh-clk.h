@@ -96,7 +96,7 @@ int mnh_cpu_ipu_sys200_mode(void);
  *
  * LPDDR clock is derived from sys200 clk instead of separate lpddr clk
  */
-int mnh_lpddr_sys200_mode(void);
+int mnh_lpddr_sys200_mode(bool enable);
 
 /**
  * LPDDR clock control driver

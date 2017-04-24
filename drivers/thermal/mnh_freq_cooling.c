@@ -48,7 +48,6 @@ static struct device *dev;
 
 static int mnh_freq_cooling_probe(struct platform_device *pdev)
 {
-	int ret = 0, err = 0;
 	struct resource *res;
 
 	dev = &pdev->dev;
@@ -69,11 +68,6 @@ static int mnh_freq_cooling_probe(struct platform_device *pdev)
 	mnh_clk_init(pdev, baseaddr);
 
 	return 0;
-
-mnh_probe_err:
-	return ret;
-
-
 }
 
 

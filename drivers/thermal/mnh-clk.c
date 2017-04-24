@@ -14,7 +14,6 @@
  *
  */
 
-
 #include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/io.h>
@@ -440,9 +439,12 @@ int mnh_lpddr_freq_change(int index)
 	mnh_dev->ddr_freq = HW_INf(mnh_dev->regs, SCU, LPDDR4_LOW_POWER_STS,
 		LPDDR4_CUR_FSP);
 	if (mnh_dev->ddr_freq == index) {
-		dev_info(mnh_dev->dev, "requested fsp%d is in use\n", index);
+		dev_dbg(mnh_dev->dev, "requested fsp%d is in use\n", index);
 		return 0;
 	}
+
+	if (index > LPDDR_FREQ_FSP0)
+		mnh_lpddr_sys200_mode(false);
 
 	/* Disable LPC SW override */
 	HW_OUTf(mnh_dev->regs, SCU, LPDDR4_LOW_POWER_CFG,
@@ -489,6 +491,10 @@ int mnh_lpddr_freq_change(int index)
 	}
 
 	mnh_dev->ddr_freq = index;
+
+	if (index == LPDDR_FREQ_FSP0)
+		mnh_lpddr_sys200_mode(true);
+
 	mnh_ddr_clr_int_status();
 	return 0;
 }
@@ -500,23 +506,34 @@ EXPORT_SYMBOL(mnh_lpddr_freq_change);
  *
  * LPDDR clock is derived from sys200 clk instead of separate lpddr clk
  */
-int mnh_lpddr_sys200_mode(void)
+int mnh_lpddr_sys200_mode(bool enable)
 {
-	dev_dbg(mnh_dev->dev, "%s\n", __func__);
-	/* Switch lpddr to SYS200 mode */
-	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, LP4_AXI_SYS200_MODE, 0x1);
+	int lock;
 
-	udelay(100);
+	dev_dbg(mnh_dev->dev, "%s: %d\n", __func__, enable);
 	/* Unlock PLL access */
 	HW_OUTf(mnh_dev->regs, SCU, PLL_PASSCODE, PASSCODE, PLL_UNLOCK);
 
-	/* Power down LPDDR PLL */
-	HW_OUTf(mnh_dev->regs, SCU, LPDDR4_REFCLK_PLL_CTRL, FRZ_PLL_IN, 1);
-	HW_OUTf(mnh_dev->regs, SCU, LPDDR4_REFCLK_PLL_CTRL, PD, 1);
-	HW_OUTf(mnh_dev->regs, SCU, LPDDR4_REFCLK_PLL_CTRL, FOUTPOSTDIVPD, 1);
-	HW_OUTf(mnh_dev->regs, SCU, LPDDR4_REFCLK_PLL_CTRL, BYPASS, 1);
-	HW_OUTf(mnh_dev->regs, SCU, LPDDR4_REFCLK_PLL_CTRL, FRZ_PLL_IN, 0);
+	if (enable) {
+		/* Power down LPDDR PLL */
+		HW_OUTf(mnh_dev->regs, SCU, LPDDR4_REFCLK_PLL_CTRL, PD, 1);
+		HW_OUTf(mnh_dev->regs, SCU, LPDDR4_REFCLK_PLL_CTRL, FOUTPOSTDIVPD, 1);
+		HW_OUTf(mnh_dev->regs, SCU, LPDDR4_REFCLK_PLL_CTRL, BYPASS, 1);
 
+	} else {
+		/* Power up LPDDR PLL */
+		HW_OUTf(mnh_dev->regs, SCU, LPDDR4_REFCLK_PLL_CTRL, FRZ_PLL_IN, 1);
+		HW_OUTf(mnh_dev->regs, SCU, LPDDR4_REFCLK_PLL_CTRL, PD, 0);
+		HW_OUTf(mnh_dev->regs, SCU, LPDDR4_REFCLK_PLL_CTRL, FOUTPOSTDIVPD, 0);
+		HW_OUTf(mnh_dev->regs, SCU, LPDDR4_REFCLK_PLL_CTRL, BYPASS, 0);
+		HW_OUTf(mnh_dev->regs, SCU, LPDDR4_REFCLK_PLL_CTRL, FRZ_PLL_IN, 0);
+		/* Check PLL is locked */
+		do {
+			lock = HW_INf(mnh_dev->regs, SCU, LPDDR4_REFCLK_PLL_STS, LOCK);
+		} while (lock != 1);
+	}
+
+	/* Lock PLL */
 	HW_OUTf(mnh_dev->regs, SCU, PLL_PASSCODE, PASSCODE, 0);
 
 	return 0;
@@ -1085,8 +1102,19 @@ static ssize_t lpddr_sys200_get(struct device *dev,
 				struct device_attribute *attr,
 				char *buf)
 {
-	return sprintf(buf, "%d\n",
-		HW_INf(mnh_dev->regs, SCU, CCU_CLK_CTL, LP4_AXI_SYS200_MODE));
+	int sys200_mode = 0, fsp = 0;
+	if (HW_INf(mnh_dev->regs, SCU,
+			LPDDR4_LOW_POWER_CFG,
+			LP4_FSP_SW_OVERRIDE)) {
+		sys200_mode = HW_INf(mnh_dev->regs, SCU,
+			CCU_CLK_CTL, LP4_AXI_SYS200_MODE);
+	} else {
+		fsp = HW_INf(mnh_dev->regs, SCU,
+			LPDDR4_LOW_POWER_STS, LPDDR4_CUR_FSP);
+		sys200_mode = HW_INxf(mnh_dev->regs, SCU,
+			LPDDR4_FSP_SETTING, fsp, FSP_SYS200_MODE);
+	}
+	return sprintf(buf, "%d\n", sys200_mode);
 }
 
 static ssize_t lpddr_sys200_set(struct device *dev,
@@ -1102,14 +1130,11 @@ static ssize_t lpddr_sys200_set(struct device *dev,
 		return ret;
 
 	dev_dbg(mnh_dev->dev, "%s: %d\n", __func__, var);
-	if (var == 1)
-		mnh_lpddr_sys200_mode();
-	else if (var == 0)
-		mnh_lpddr_freq_change(0);
-	else {
-
-		dev_err(mnh_dev->dev, "Cannot disable sys200 mode. Use lpddr_freq.");
-		return -EIO;
+	if ((var == 0) || (var == 1)) {
+		mnh_lpddr_sys200_mode(var);
+	} else {
+		dev_err(mnh_dev->dev, "%s: Invalid argument", __func__);
+		return -EINVAL;
 	}
 
 	return count;
