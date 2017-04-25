@@ -163,22 +163,17 @@ static struct mnh_freq_cooling_device *mnh_dev;
 int mnh_cpu_freq_to_index(void)
 {
 	int fbdiv, postdiv1, postdiv2, clk_div;
-	int sys200, ipu_clk_src;
-	int i;
+	int sys200, i;
 	const struct freq_reg_table *table = cpu_reg_tables[mnh_dev->refclk];
 
 	sys200 = HW_INf(mnh_dev->regs, SCU, CCU_CLK_CTL, CPU_IPU_SYS200_MODE);
 	if (sys200)
 		return 0;
 
-	ipu_clk_src = HW_INf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLK_SRC);
-	if (ipu_clk_src == CPU_IPU_PLL)
-		return mnh_dev->cpu_freq;
-
-	fbdiv = HW_INf(mnh_dev->regs, SCU, IPU_PLL_INTGR_DIV, FBDIV);
-	postdiv1 = HW_INf(mnh_dev->regs, SCU, IPU_PLL_INTGR_DIV, POSTDIV1);
-	postdiv2 = HW_INf(mnh_dev->regs, SCU, IPU_PLL_INTGR_DIV, POSTDIV2);
-	clk_div = HW_INf(mnh_dev->regs, SCU, CCU_CLK_DIV, IPU_CLK_DIV);
+	fbdiv = HW_INf(mnh_dev->regs, SCU, CPU_IPU_PLL_INTGR_DIV, FBDIV);
+	postdiv1 = HW_INf(mnh_dev->regs, SCU, CPU_IPU_PLL_INTGR_DIV, POSTDIV1);
+	postdiv2 = HW_INf(mnh_dev->regs, SCU, CPU_IPU_PLL_INTGR_DIV, POSTDIV2);
+	clk_div = HW_INf(mnh_dev->regs, SCU, CCU_CLK_DIV, CPU_CLK_DIV);
 
 	for (i = 0; i < ARRAY_SIZE(cpu_reg_tables[0]); i++) {
 		if ((fbdiv == table[i].fbdiv) &&
@@ -194,7 +189,7 @@ int mnh_cpu_freq_to_index(void)
 int mnh_ipu_freq_to_index(void)
 {
 	int fbdiv, postdiv1, postdiv2, clk_div;
-	int sys200;
+	int sys200, ipu_clk_src;
 	int i;
 	const struct freq_reg_table *table = ipu_reg_tables[mnh_dev->refclk];
 
@@ -202,10 +197,14 @@ int mnh_ipu_freq_to_index(void)
 	if (sys200)
 		return 0;
 
-	fbdiv = HW_INf(mnh_dev->regs, SCU, CPU_IPU_PLL_INTGR_DIV, FBDIV);
-	postdiv1 = HW_INf(mnh_dev->regs, SCU, CPU_IPU_PLL_INTGR_DIV, POSTDIV1);
-	postdiv2 = HW_INf(mnh_dev->regs, SCU, CPU_IPU_PLL_INTGR_DIV, POSTDIV2);
-	clk_div = HW_INf(mnh_dev->regs, SCU, CCU_CLK_DIV, CPU_CLK_DIV);
+	ipu_clk_src = HW_INf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLK_SRC);
+	if (ipu_clk_src == CPU_IPU_PLL)
+		return mnh_cpu_freq_to_index();
+
+	fbdiv = HW_INf(mnh_dev->regs, SCU, IPU_PLL_INTGR_DIV, FBDIV);
+	postdiv1 = HW_INf(mnh_dev->regs, SCU, IPU_PLL_INTGR_DIV, POSTDIV1);
+	postdiv2 = HW_INf(mnh_dev->regs, SCU, IPU_PLL_INTGR_DIV, POSTDIV2);
+	clk_div = HW_INf(mnh_dev->regs, SCU, CCU_CLK_DIV, IPU_CLK_DIV);
 
 	for (i = 0; i < ARRAY_SIZE(ipu_reg_tables[0]); i++) {
 		if ((fbdiv == table[i].fbdiv) &&
@@ -234,16 +233,18 @@ int mnh_ipu_freq_to_index(void)
 int mnh_cpu_freq_change(int index)
 {
 	int lock = 0;
-	int ipu_div = 0;
+	int sys200, ipu_div = 0;
 
 	if (index < CPU_FREQ_MIN || index > CPU_FREQ_MAX)
 		return -EINVAL;
 
 	dev_dbg(mnh_dev->dev, "%s: %d\n", __func__, index);
 
-	if (mnh_dev->cpu_freq == index) {
-		dev_dbg(mnh_dev->dev, "%s: already set to index %d\n", __func__,
-			index);
+	/* Check freq index only when cpu is not in sys200 mode */
+	sys200 = HW_INf(mnh_dev->regs, SCU, CCU_CLK_CTL, CPU_IPU_SYS200_MODE);
+	if (!sys200 && mnh_dev->cpu_freq == index) {
+		dev_dbg(mnh_dev->dev, "%s: already set to index %d\n",
+			__func__, index);
 		return 0;
 	}
 
@@ -347,9 +348,12 @@ int mnh_ipu_freq_change(int index)
 
 	dev_dbg(mnh_dev->dev, "%s: %d\n", __func__, index);
 
-	if (mnh_dev->ipu_freq == index) {
-		dev_dbg(mnh_dev->dev, "%s: already set to index %d\n", __func__,
-			index);
+	/* Check freq index only when current ipu clk src is IPU_PLL */
+	mnh_dev->ipu_clk_src =
+		HW_INf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLK_SRC);
+	if (mnh_dev->ipu_clk_src == IPU_PLL && mnh_dev->ipu_freq == index) {
+		dev_dbg(mnh_dev->dev, "%s: already set to index %d\n",
+			__func__, index);
 		return 0;
 	}
 
@@ -846,7 +850,7 @@ static int mnh_freq_check_refclk(uint32_t refclk_gpio)
 		if (gpio_get_value(refclk_gpio))
 			refclk = refclk | 0x1;
 
-		pr_info("%s gpio:%d refclk:%d\n", __func__,
+		pr_debug("%s gpio:%d refclk:%d\n", __func__,
 			refclk_gpio, refclk);
 	}
 err_gpio:
