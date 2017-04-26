@@ -717,6 +717,8 @@ static int pcie_set_l_one(uint32_t enable, uint32_t clkpm)
 		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_REQ_EXIT_L1, 1);
 	}
 	pcie_set_power_mode_state(pcie_ep_dev->l1state, pcie_ep_dev->clkpm);
+	/* send an msi just to wake up AP and notice the L1.2 state change */
+	mnh_send_msi(PET_WATCHDOG);
 	return 0;
 }
 
