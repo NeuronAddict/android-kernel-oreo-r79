@@ -378,6 +378,16 @@ static int arch_timer_setup(struct clock_event_device *clk)
 	return 0;
 }
 
+static int arch_timer_resume(struct clock_event_device *clk)
+{
+	enable_percpu_irq(arch_timer_ppi[arch_timer_uses_ppi], 0);
+
+	if (arch_timer_has_nonsecure_ppi())
+		enable_percpu_irq(arch_timer_ppi[PHYS_NONSECURE_PPI], 0);
+
+	return 0;
+}
+
 static void
 arch_timer_detect_rate(void __iomem *cntbase, struct device_node *np)
 {
@@ -549,8 +559,10 @@ static int arch_timer_cpu_pm_notify(struct notifier_block *self,
 {
 	if (action == CPU_PM_ENTER)
 		saved_cntkctl = arch_timer_get_cntkctl();
-	else if (action == CPU_PM_ENTER_FAILED || action == CPU_PM_EXIT)
+	else if (action == CPU_PM_ENTER_FAILED || action == CPU_PM_EXIT) {
 		arch_timer_set_cntkctl(saved_cntkctl);
+		arch_timer_resume(this_cpu_ptr(arch_timer_evt));
+	}
 	return NOTIFY_OK;
 }
 
