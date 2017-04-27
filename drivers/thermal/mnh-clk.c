@@ -788,22 +788,16 @@ int mnh_clock_bypass_gating(int enabled)
 	if (enabled != 1 && enabled != 0)
 		return -EINVAL;
 
-	/*
-	 * NOTE: mnh-hwio-scu.h has incorrect macros, MIPIRXPHY_RST is actually
-	 * IPU_APB_RST, and MIPITXPHY_RST is actually IPU_AXI_RST.
-	 */
 	if (enabled) {
+		HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLKEN, !enabled);
+		HW_OUTf(mnh_dev->regs, SCU, RSTC, IPU_RST, enabled);
 		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, IPU_MEM_DS, enabled);
 		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, IPU_MEM_SD, enabled);
-		HW_OUTf(mnh_dev->regs, SCU, RSTC, MIPIRXPHY_RST, enabled);
-		HW_OUTf(mnh_dev->regs, SCU, RSTC, MIPITXPHY_RST, enabled);
-		HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLKEN, !enabled);
 	} else {
-		HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLKEN, !enabled);
-		HW_OUTf(mnh_dev->regs, SCU, RSTC, MIPIRXPHY_RST, enabled);
-		HW_OUTf(mnh_dev->regs, SCU, RSTC, MIPITXPHY_RST, enabled);
-		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, IPU_MEM_DS, enabled);
 		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, IPU_MEM_SD, enabled);
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, IPU_MEM_DS, enabled);
+		HW_OUTf(mnh_dev->regs, SCU, RSTC, IPU_RST, enabled);
+		HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLKEN, !enabled);
 	}
 
 	return 0;
