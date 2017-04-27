@@ -89,6 +89,12 @@ static int paintbox_release(struct inode *ip, struct file *fp)
 	struct paintbox_stp *stp, *stp_next;
 	struct paintbox_lbp *lbp, *lbp_next;
 	struct paintbox_mipi_stream *stream, *stream_next;
+#ifdef CONFIG_PAINTBOX_DEBUG
+	ktime_t start_time;
+
+	if (pb->stats.ioctl_time_enabled)
+		start_time = ktime_get_boottime();
+#endif
 
 	mutex_lock(&pb->lock);
 
@@ -135,6 +141,12 @@ static int paintbox_release(struct inode *ip, struct file *fp)
 	mutex_unlock(&pb->lock);
 
 	kfree(session);
+
+#ifdef CONFIG_PAINTBOX_DEBUG
+	if (pb->stats.ioctl_time_enabled)
+		paintbox_debug_log_close_stats(pb, start_time,
+				ktime_get_boottime());
+#endif
 
 	return 0;
 }
@@ -571,6 +583,8 @@ static int paintbox_probe(struct platform_device *pdev)
 	pb->sim_base = pb->reg_base + SIM_GROUP_OFFSET;
 #endif
 
+	paintbox_pm_enable_io(pb);
+
 	ret = paintbox_get_capabilities(pb);
 	if (ret < 0)
 		return ret;
@@ -646,6 +660,7 @@ static int paintbox_remove(struct platform_device *pdev)
 	paintbox_deinit(pb);
 	paintbox_pm_remove(pb);
 	paintbox_fpga_remove(pb);
+	paintbox_pm_disable_io(pb);
 	devm_free_irq(&pdev->dev, pb->io.irq, pb);
 
 	devm_iounmap(&pdev->dev, pb->reg_base);

@@ -17,17 +17,21 @@
 #define __PAINTBOX_DMA_H__
 
 #include <linux/interrupt.h>
+#include <linux/io.h>
 #include <linux/ktime.h>
 #include <linux/types.h>
 
 #include "paintbox-common.h"
+#include "paintbox-dma.h"
+#include "paintbox-regs.h"
 
 /* MAX_ACTIVE_TRANSFERS is number of transfers that can be queued in hardware.
  */
+#ifdef CONFIG_PAINTBOX_SIMULATOR_SUPPORT
+#define MAX_ACTIVE_TRANSFERS 1
+#else
 #define MAX_ACTIVE_TRANSFERS 2
-
-/* The caller to this function must hold pb->lock */
-void dma_select_channel(struct paintbox_data *pb, uint32_t channel_id);
+#endif
 
 /* DMA Ioctl Handlers */
 int allocate_dma_channel_ioctl(struct paintbox_data *pb,
@@ -124,5 +128,19 @@ int dma_test_reset_ioctl(struct paintbox_data *pb,
 int dma_test_channel_reset_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 #endif
+
+/* The caller to this function must hold pb->dma.dma_lock. */
+static inline void paintbox_dma_select_channel(struct paintbox_data *pb,
+		unsigned int channel_id)
+{
+	if (pb->dma.selected_dma_channel_id == channel_id)
+		return;
+
+	pb->dma.selected_dma_channel_id = channel_id;
+
+	writel((channel_id << DMA_CTRL_DMA_CHAN_SEL_SHIFT) &
+			DMA_CTRL_DMA_CHAN_SEL_MASK,
+			pb->dma.dma_base + DMA_CTRL);
+}
 
 #endif  /* __PAINTBOX_DMA_H__ */

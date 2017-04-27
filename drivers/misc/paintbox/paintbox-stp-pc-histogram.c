@@ -98,7 +98,7 @@ static int paintbox_perf_thread_main(void* data) {
 					pb->stp.stps[stp_index].enabled;
 
 			stp_id = stp_index_to_id(stp_index);
-			writel(stp_id, pb->stp.reg_base + STP_SEL);
+			paintbox_stp_select(pb, stp_id);
 
 			samples[stp_index].stat =
 					readq(pb->stp.reg_base + STP_STAT);

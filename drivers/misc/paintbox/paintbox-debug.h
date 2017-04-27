@@ -56,6 +56,12 @@ void paintbox_debug_log_dma_setup_stats(struct paintbox_data *pb, ktime_t start,
 		ktime_t end);
 void paintbox_debug_log_dma_malloc_stats(struct paintbox_data *pb, ktime_t start,
 		ktime_t end, size_t transfer_len);
+void paintbox_debug_log_wait_for_interrupt_pre_stats(struct paintbox_data *pb,
+		ktime_t start, ktime_t end);
+void paintbox_debug_log_wait_for_interrupt_post_stats(struct paintbox_data *pb,
+		ktime_t start, ktime_t end);
+void paintbox_debug_log_close_stats(struct paintbox_data *pb, ktime_t start,
+		ktime_t end);
 
 void paintbox_debug_create_entry(struct paintbox_data *pb,
 		struct paintbox_debug *debug, struct dentry *debug_root,

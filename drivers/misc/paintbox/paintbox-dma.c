@@ -70,12 +70,35 @@ static inline bool paintbox_dma_dst_is_lbp(uint32_t mode)
 			DMA_CHAN_MODE_DST_LBP;
 }
 
-/* The caller to this function must hold pb->dma.dma_lock. */
-void dma_select_channel(struct paintbox_data *pb, unsigned int channel_id)
+/* The caller to this function must hold pb->dma.dma_lock and DMA_CHAN_SEL must
+ * be set.
+ */
+static inline void paintbox_dma_enable_channel_interrupts(
+		struct paintbox_data *pb, struct paintbox_dma_channel *channel)
 {
-	writel((channel_id << DMA_CTRL_DMA_CHAN_SEL_SHIFT) &
-			DMA_CTRL_DMA_CHAN_SEL_MASK,
-			pb->dma.dma_base + DMA_CTRL);
+	if (!channel->interrupts_enabled) {
+		channel->interrupts_enabled = true;
+
+		writel(DMA_CHAN_IMR_EOF_MASK | DMA_CHAN_IMR_VA_ERR_MASK,
+				pb->dma.dma_base + DMA_CHAN_IMR);
+
+		/* Enable the DMA channel interrupt in the top-level IPU_IMR */
+		paintbox_enable_dma_channel_interrupt(pb, channel->channel_id);
+	}
+}
+
+/* The caller to this function must hold pb->dma.dma_lock and DMA_CHAN_SEL must
+ * be set.
+ */
+static inline void paintbox_dma_disable_channel_interrupts(
+		struct paintbox_data *pb, struct paintbox_dma_channel *channel)
+{
+	if (channel->interrupts_enabled) {
+		channel->interrupts_enabled = false;
+
+		writel(0, pb->dma.dma_base + DMA_CHAN_IMR);
+		paintbox_disable_dma_channel_interrupt(pb, channel->channel_id);
+	}
 }
 
 /* The caller to this function must hold pb->lock */
@@ -284,16 +307,12 @@ static void dma_reset_channel_locked(struct paintbox_data *pb,
 	 * there is no need to reset the channel.
 	 */
 	if (!force && channel->active_count == 0) {
-		/* Disable the DMA channel interrupts in the local IMR and in
-		 * the top-level IPU_IMR.
-		 */
-		writel(0, dma->dma_base + DMA_CHAN_IMR);
-		io_disable_dma_channel_interrupt(pb, channel->channel_id);
+		paintbox_dma_disable_channel_interrupts(pb, channel);
 		paintbox_pm_disable_dma_channel(pb, channel);
 		return;
 	}
 
-	dma_select_channel(pb, channel->channel_id);
+	paintbox_dma_select_channel(pb, channel->channel_id);
 
 	chan_ctrl = readq(dma->dma_base + DMA_CHAN_CTRL);
 	chan_ctrl |= 1 << channel->channel_id;
@@ -338,7 +357,13 @@ void dma_stop_transfer(struct paintbox_data *pb,
 
 	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
 
-	dma_select_channel(pb, channel->channel_id);
+	/* If the DMA channel is powered down then there is nothing to stop. */
+	if (!channel->pm_enabled) {
+		spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
+		return;
+	}
+
+	paintbox_dma_select_channel(pb, channel->channel_id);
 
 	/* Disable the channel to prevent any pending transfers from starting.
 	 */
@@ -352,11 +377,7 @@ void dma_stop_transfer(struct paintbox_data *pb,
 	 * power down the channel.
 	 */
 	if (channel->active_count == 0) {
-		/* Disable the DMA channel interrupts in the local IMR and in
-		 * the top-level IPU_IMR.
-		 */
-		writel(0, dma->dma_base + DMA_CHAN_IMR);
-		io_disable_dma_channel_interrupt(pb, channel->channel_id);
+		paintbox_dma_disable_channel_interrupts(pb, channel);
 		paintbox_pm_disable_dma_channel(pb, channel);
 
 		spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
@@ -403,18 +424,14 @@ void dma_stop_transfer(struct paintbox_data *pb,
 	/* Re-select the channel, the DMA_SEL field might have changed while the
 	 * lock was not held.
 	 */
-	dma_select_channel(pb, channel->channel_id);
+	paintbox_dma_select_channel(pb, channel->channel_id);
 
 	/* Stop bits are not self-clearing so clear it here. */
 	chan_ctrl = readq(dma->dma_base + DMA_CHAN_CTRL);
 	chan_ctrl &= ~(1 << (channel->channel_id + DMA_CHAN_CTRL_STOP_SHIFT));
 	writeq(chan_ctrl, dma->dma_base + DMA_CHAN_CTRL);
 
-	/* Disable the DMA channel interrupts in the local IMR and in the
-	 * top-level IPU_IMR.
-	 */
-	writel(0, dma->dma_base + DMA_CHAN_IMR);
-	io_disable_dma_channel_interrupt(pb, channel->channel_id);
+	paintbox_dma_disable_channel_interrupts(pb, channel);
 
 	/* If the transfer was to or from a line buffer then reset the
 	 * line buffer too.
@@ -683,6 +700,75 @@ int allocate_dma_channel_ioctl(struct paintbox_data *pb,
 	return 0;
 }
 
+/* The caller to this function must hold pb->dma.dma_lock and DMA_CHAN_SEL must
+ * be set.
+ */
+static inline void paintbox_dma_load_channel_regs(void __iomem *dma_base,
+		struct paintbox_dma_channel *channel,
+		struct paintbox_dma_transfer *transfer)
+{
+	if (transfer->chan_img_format != channel->regs.chan_img_format) {
+		channel->regs.chan_img_format = transfer->chan_img_format;
+		writel(transfer->chan_img_format, dma_base +
+				DMA_CHAN_IMG_FORMAT);
+	}
+
+	if (transfer->chan_img_size != channel->regs.chan_img_size) {
+		channel->regs.chan_img_size = transfer->chan_img_size;
+		writel(transfer->chan_img_size, dma_base + DMA_CHAN_IMG_SIZE);
+	}
+
+	if (transfer->chan_img_pos != channel->regs.chan_img_pos) {
+		channel->regs.chan_img_pos = transfer->chan_img_pos;
+		writeq(transfer->chan_img_pos, dma_base + DMA_CHAN_IMG_POS);
+	}
+
+	if (transfer->chan_img_layout != channel->regs.chan_img_layout) {
+		channel->regs.chan_img_layout = transfer->chan_img_layout;
+		writeq(transfer->chan_img_layout, dma_base +
+				DMA_CHAN_IMG_LAYOUT);
+	}
+
+	if (transfer->chan_bif_xfer != channel->regs.chan_bif_xfer) {
+		channel->regs.chan_bif_xfer = transfer->chan_bif_xfer;
+		writel(transfer->chan_bif_xfer, dma_base + DMA_CHAN_BIF_XFER);
+	}
+
+	/* TODO(ahampson):  The trace_combiner used in register trace generation
+	 * relies on the DMA_CHAN_VA and DMA_CHAN_VA_BDRY registers being
+	 * present in register traces for DMA transfers.  When running on the
+	 * Simulator the driver needs to always write these registers
+	 * until the trace combiner is fixed.  b/37688363
+	 */
+#ifdef CONFIG_PAINTBOX_SIMULATOR_SUPPORT
+	channel->regs.chan_va = transfer->chan_va;
+	writeq(transfer->chan_va, dma_base + DMA_CHAN_VA);
+
+	channel->regs.chan_va_bdry = transfer->chan_va_bdry;
+	writeq(transfer->chan_va_bdry, dma_base + DMA_CHAN_VA_BDRY);
+#else
+	if (transfer->chan_va != channel->regs.chan_va) {
+		channel->regs.chan_va = transfer->chan_va;
+		writeq(transfer->chan_va, dma_base + DMA_CHAN_VA);
+	}
+
+	if (transfer->chan_va_bdry != channel->regs.chan_va_bdry) {
+		channel->regs.chan_va_bdry = transfer->chan_va_bdry;
+		writeq(transfer->chan_va_bdry, dma_base + DMA_CHAN_VA_BDRY);
+	}
+#endif
+
+	if (transfer->chan_noc_xfer != channel->regs.chan_noc_xfer) {
+		channel->regs.chan_noc_xfer = transfer->chan_noc_xfer;
+		writeq(transfer->chan_noc_xfer, dma_base + DMA_CHAN_NOC_XFER);
+	}
+
+	if (transfer->chan_node != channel->regs.chan_node) {
+		channel->regs.chan_node = transfer->chan_node;
+		writel(transfer->chan_node, dma_base + DMA_CHAN_NODE);
+	}
+}
+
 /* The caller to this function must hold pb->dma.dma_lock. */
 static void commit_transfer_to_hardware(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel,
@@ -693,25 +779,9 @@ static void commit_transfer_to_hardware(struct paintbox_data *pb,
 	list_add_tail(&transfer->entry, &channel->active_list);
 	channel->active_count++;
 
-	dma_select_channel(pb, channel->channel_id);
-
-	/* Load the transfer into the DMA channel registers */
-	writel(transfer->chan_img_format, dma->dma_base + DMA_CHAN_IMG_FORMAT);
-	writel(transfer->chan_img_size, dma->dma_base + DMA_CHAN_IMG_SIZE);
-	writeq(transfer->chan_img_pos, dma->dma_base + DMA_CHAN_IMG_POS);
-	writeq(transfer->chan_img_layout, dma->dma_base + DMA_CHAN_IMG_LAYOUT);
-	writel(transfer->chan_bif_xfer, dma->dma_base + DMA_CHAN_BIF_XFER);
-	writeq(transfer->chan_va, dma->dma_base + DMA_CHAN_VA);
-	writeq(transfer->chan_va_bdry, dma->dma_base + DMA_CHAN_VA_BDRY);
-	writeq(transfer->chan_noc_xfer, dma->dma_base + DMA_CHAN_NOC_XFER);
-	writel(transfer->chan_node, dma->dma_base + DMA_CHAN_NODE);
-
-	/* Enable interrupts for the channel */
-	writel(DMA_CHAN_IMR_EOF_MASK | DMA_CHAN_IMR_VA_ERR_MASK, dma->dma_base +
-			DMA_CHAN_IMR);
-
-	/* Enable the DMA channel interrupt in the top-level IPU_IMR */
-	io_enable_dma_channel_interrupt(pb, channel->channel_id);
+	paintbox_dma_select_channel(pb, channel->channel_id);
+	paintbox_dma_load_channel_regs(pb->dma.dma_base, channel, transfer);
+	paintbox_dma_enable_channel_interrupts(pb, channel);
 
 	if (channel->stats.time_stats_enabled)
 		transfer->start_time = ktime_get_boottime();
@@ -1019,7 +1089,7 @@ static void dma_report_channel_error_locked(struct paintbox_data *pb,
 
 	channel = &pb->dma.channels[channel_id];
 
-	dma_select_channel(pb, channel->channel_id);
+	paintbox_dma_select_channel(pb, channel->channel_id);
 
 	/* Disable the channel to prevent any pending transfers from starting.
 	 */
@@ -1335,7 +1405,7 @@ irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 		channel = &pb->dma.channels[channel_id];
 		channel->stats.irq_activations++;
 
-		dma_select_channel(pb, channel_id);
+		paintbox_dma_select_channel(pb, channel_id);
 
 		/* Each DMA channel has an ISR register and an ISR_OVF register.
 		 * If if an interrupt occurs on the channel then the appropriate
@@ -1354,13 +1424,16 @@ irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 		 * pop the other active transfer off the active transfer queue
 		 * and process it.
 		 */
-		overflow_status = readl(pb->dma.dma_base + DMA_CHAN_ISR_OVF);
-		if (overflow_status) {
-			writel(overflow_status, pb->dma.dma_base +
+		if (channel->active_count > 0) {
+			overflow_status = readl(pb->dma.dma_base +
 					DMA_CHAN_ISR_OVF);
+			if (overflow_status) {
+				writel(overflow_status, pb->dma.dma_base +
+						DMA_CHAN_ISR_OVF);
 
-			power_down = paintbox_dma_process_transfer(pb, channel,
-					overflow_status, timestamp);
+				power_down = paintbox_dma_process_transfer(pb,
+					channel, overflow_status, timestamp);
+			}
 		}
 
 		if (power_down)
@@ -1375,12 +1448,14 @@ irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 int paintbox_dma_init(struct paintbox_data *pb)
 {
 	unsigned int channel_id;
-	uint32_t bif_xfer;
 
-	bif_xfer = readl(pb->dma.dma_base + DMA_CHAN_BIF_XFER);
-	pb->dma.bif_outstanding = ((bif_xfer &
+	pb->dma.bif_outstanding = ((DMA_CHAN_BIF_XFER_DEF &
 			DMA_CHAN_BIF_XFER_OUTSTANDING_MASK) >>
 			DMA_CHAN_BIF_XFER_OUTSTANDING_SHIFT) + 1;
+
+	pb->dma.selected_dma_channel_id = (DMA_CTRL_DEF &
+			DMA_CTRL_DMA_CHAN_SEL_MASK) >>
+			DMA_CTRL_DMA_CHAN_SEL_SHIFT;
 
 	spin_lock_init(&pb->dma.dma_lock);
 	INIT_LIST_HEAD(&pb->dma.discard_list);
@@ -1401,6 +1476,16 @@ int paintbox_dma_init(struct paintbox_data *pb)
 		struct paintbox_dma_channel *channel =
 				&pb->dma.channels[channel_id];
 		channel->channel_id = channel_id;
+		channel->regs.chan_img_format = DMA_CHAN_IMG_FORMAT_DEF;
+		channel->regs.chan_img_size = DMA_CHAN_IMG_SIZE_DEF;
+		channel->regs.chan_img_pos = DMA_CHAN_IMG_POS_DEF;
+		channel->regs.chan_img_layout = DMA_CHAN_IMG_LAYOUT_DEF;
+		channel->regs.chan_bif_xfer = DMA_CHAN_BIF_XFER_DEF;
+		channel->regs.chan_va = DMA_CHAN_VA_DEF;
+		channel->regs.chan_va_bdry = DMA_CHAN_VA_BDRY_DEF;
+		channel->regs.chan_noc_xfer = DMA_CHAN_NOC_XFER_DEF;
+		channel->regs.chan_node = DMA_CHAN_NODE_DEF;
+
 		INIT_LIST_HEAD(&channel->pending_list);
 		INIT_LIST_HEAD(&channel->active_list);
 		INIT_LIST_HEAD(&channel->completed_list);

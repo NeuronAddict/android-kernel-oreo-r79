@@ -333,7 +333,7 @@ static uint64_t paintbox_dma_channel_reg_entry_read(
 
 	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
 
-	dma_select_channel(pb, channel->channel_id);
+	paintbox_dma_select_channel(pb, channel->channel_id);
 	val = readl(pb->dma.dma_base + DMA_CHAN_BLOCK_START +
 		reg_entry->reg_offset);
 
@@ -357,7 +357,7 @@ static void paintbox_dma_channel_reg_entry_write(
 
 	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
 
-	dma_select_channel(pb, channel->channel_id);
+	paintbox_dma_select_channel(pb, channel->channel_id);
 	writel(val, pb->dma.dma_base + DMA_CHAN_BLOCK_START +
 		reg_entry->reg_offset);
 
@@ -690,9 +690,13 @@ static int dump_chan_noc_transfer_register(struct paintbox_data *pb,
 		size_t len)
 {
 	return dump_dma_reg_verbose(pb, reg_offset, val, buf, written, len,
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+			"\tRETRY_INTERVAL %u OUTSTANDING %u SHEET_HEIGHT %u SHEET_WIDTH %u\n",
+#else
 			"\tDYN_OUTSTANDING %d RETRY_INTERVAL %u OUTSTANDING %u SHEET_HEIGHT %u SHEET_WIDTH %u\n",
 			(val & DMA_CHAN_NOC_XFER_DYN_OUTSTANDING_MASK) >>
 			DMA_CHAN_NOC_XFER_DYN_OUTSTANDING_SHIFT,
+#endif
 			(val & DMA_CHAN_NOC_XFER_RETRY_INTERVAL_MASK) >>
 			DMA_CHAN_NOC_XFER_RETRY_INTERVAL_SHIFT,
 			(val & DMA_CHAN_NOC_XFER_OUTSTANDING_MASK) >>
@@ -780,7 +784,7 @@ int paintbox_dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
 
 	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
 
-	dma_select_channel(pb, channel->channel_id);
+	paintbox_dma_select_channel(pb, channel->channel_id);
 
 	for (reg_offset = DMA_CHAN_BLOCK_START; reg_offset < DMA_CHAN_BLOCK_END;
 			reg_offset += IPU_REG_WIDTH) {

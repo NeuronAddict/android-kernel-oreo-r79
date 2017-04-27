@@ -38,7 +38,7 @@ int stp_sram_write_word(struct paintbox_data *pb,
 
 	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-	writel(sram_config->core_id, pb->stp.reg_base + STP_SEL);
+	paintbox_stp_select(pb, sram_config->core_id);
 
 	/* TODO(ahampson):  This can be removed once the SWAP and COL_MAJOR
 	 * support is moved outside the driver.
@@ -79,7 +79,7 @@ int stp_sram_write_word(struct paintbox_data *pb,
 		 * occurred while stp_lock was not held then the STP_SEL
 		 * register may have been changed.
 		 */
-		writel(sram_config->core_id, pb->stp.reg_base + STP_SEL);
+		paintbox_stp_select(pb, sram_config->core_id);
 	}
 
 	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
@@ -96,7 +96,7 @@ int stp_sram_read_word(struct paintbox_data *pb,
 
 	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-	writel(sram_config->core_id, pb->stp.reg_base + STP_SEL);
+	paintbox_stp_select(pb, sram_config->core_id);
 
 	writel(STP_RAM_CTRL_RUN_MASK | ram_ctrl_addr |
 			sram_config->ram_ctrl_target, pb->stp.reg_base +
@@ -119,7 +119,7 @@ int stp_sram_read_word(struct paintbox_data *pb,
 		 * occurred while stp_lock was not held then the STP_SEL
 		 * register may have been changed.
 		 */
-		writel(sram_config->core_id, pb->stp.reg_base + STP_SEL);
+		paintbox_stp_select(pb, sram_config->core_id);
 	}
 
 	/* TODO(ahampson):  This can be removed once the SWAP and COL_MAJOR

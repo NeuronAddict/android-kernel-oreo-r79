@@ -161,6 +161,11 @@ struct paintbox_io {
 	spinlock_t io_lock;
 
 	struct {
+		uint32_t ipu_imr;
+		uint32_t dma_chan_en;
+	} regs;
+
+	struct {
 		struct dentry *time_stats_enable_dentry;
 		bool time_stats_enabled;
 		ktime_t irq_min_time;
@@ -389,6 +394,19 @@ struct paintbox_dma_channel {
 	int completed_count;
 	bool stop_request;
 	bool pm_enabled;
+	bool interrupts_enabled;
+
+	struct {
+		uint64_t chan_img_pos;
+		uint64_t chan_img_layout;
+		uint64_t chan_va;
+		uint64_t chan_va_bdry;
+		uint64_t chan_noc_xfer;
+		uint32_t chan_img_format;
+		uint32_t chan_img_size;
+		uint32_t chan_bif_xfer;
+		uint32_t chan_node;
+	} regs;
 
 	struct {
 		unsigned int irq_activations;
@@ -430,6 +448,9 @@ struct paintbox_dma {
 
 	/* dma_lock protects access to DMA transfer queues and registers. */
 	spinlock_t dma_lock;
+
+	/* Protected by dma_lock */
+	unsigned int selected_dma_channel_id;
 };
 
 /* Data structure for information specific to a Stencil Processor.
@@ -472,6 +493,7 @@ struct paintbox_stp_common {
 	unsigned int const_mem_size_in_words;
 	unsigned int vector_mem_size_in_words;
 	unsigned int halo_mem_size_in_words;
+	unsigned int selected_stp_id;
 	bool caps_inited;
 
 	/* The stp lock is used to protect access to the STP registers between
@@ -527,6 +549,8 @@ struct paintbox_lbp_common {
 	void __iomem *reg_base;
 	struct paintbox_lbp *lbps;
 	unsigned int num_lbps;
+	unsigned int selected_lbp_id;
+	unsigned int selected_lb_id;
 	uint32_t mem_size_bytes;
 	uint32_t max_fb_rows;
 	uint32_t max_lbs;
@@ -572,6 +596,9 @@ struct paintbox_data {
 		struct paintbox_ioctl_stat dma_setup;
 		struct paintbox_ioctl_stat dma_malloc;
 		struct paintbox_ioctl_stat cache_op;
+		struct paintbox_ioctl_stat wait_pre;
+		struct paintbox_ioctl_stat wait_post;
+		struct paintbox_ioctl_stat close;
 		size_t dma_malloc_max_transfer_len;
 		struct dentry *ioctl_time_stats_dentry;
 		struct mutex ioctl_lock;

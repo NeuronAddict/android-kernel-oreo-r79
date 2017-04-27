@@ -20,6 +20,14 @@
 
 #include "paintbox-common.h"
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+void paintbox_pm_enable_io(struct paintbox_data *pb);
+void paintbox_pm_disable_io(struct paintbox_data *pb);
+#else
+static inline void paintbox_pm_enable_io(struct paintbox_data *pb) {}
+static inline void paintbox_pm_disable_io(struct paintbox_data *pb) {}
+#endif
+
 void paintbox_enable_mmu_bif_idle_clock_gating(struct paintbox_data *pb);
 void paintbox_disable_mmu_bif_idle_clock_gating(struct paintbox_data *pb);
 

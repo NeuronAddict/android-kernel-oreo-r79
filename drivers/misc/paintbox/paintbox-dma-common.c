@@ -306,11 +306,13 @@ int set_dma_transfer_region_parameters(struct paintbox_data *pb,
 	transfer->chan_noc_xfer |= (uint64_t)config->retry_interval <<
 			DMA_CHAN_NOC_XFER_RETRY_INTERVAL_SHIFT;
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 	/* TODO(ahampson):  DMA_CHAN_NOC_XFER_DYN_OUTSTANDING_MASK is currently
 	 * set for all DMA transfers at this time.  This may change in the
 	 * future to give priority to MIPI transfers.
 	 */
 	transfer->chan_noc_xfer |= DMA_CHAN_NOC_XFER_DYN_OUTSTANDING_MASK;
+#endif
 
 	return 0;
 }

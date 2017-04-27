@@ -81,4 +81,15 @@ static inline unsigned int stp_index_to_id(unsigned int stp_index)
 	return stp_index + 1;
 }
 
+/* The caller to this function must hold pb->dma.dma_lock. */
+static inline void paintbox_stp_select(struct paintbox_data *pb,
+		unsigned int stp_id)
+{
+	if (pb->stp.selected_stp_id == stp_id)
+		return;
+
+	pb->stp.selected_stp_id = stp_id;
+	writel(stp_id, pb->stp.reg_base + STP_SEL);
+}
+
 #endif /* __PAINTBOX_STP_H__ */

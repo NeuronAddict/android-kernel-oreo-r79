@@ -24,6 +24,7 @@
 #include "paintbox-common.h"
 #include "paintbox-debug.h"
 #include "paintbox-regs.h"
+#include "paintbox-stp.h"
 
 #define IO_POWER_RAMP_TIME 10 /* us */
 
@@ -139,30 +140,66 @@ err_exit:
 }
 #endif
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+void paintbox_pm_enable_io(struct paintbox_data *pb)
+{
+	mutex_lock(&pb->lock);
+
+	/* Power on I/O block */
+	writel(0, pb->io.aon_base + IO_POWER_ON_N);
+	udelay(IO_POWER_RAMP_TIME);
+
+	/* Power on RAMs for I/O block */
+	writel(0, pb->io.aon_base + IO_RAM_ON_N);
+	udelay(RAM_POWER_RAIL_RAMP_TIME);
+
+	/* Turn off isolation for I/O block */
+	writel(0, pb->io.aon_base + IO_ISO_ON);
+
+	mutex_unlock(&pb->lock);
+}
+
+void paintbox_pm_disable_io(struct paintbox_data *pb)
+{
+	mutex_lock(&pb->lock);
+
+	/* Turn on isolation for I/O block */
+	writel(1, pb->io.aon_base + IO_ISO_ON);
+
+	/* Power off RAMs for I/O block */
+	writel(1, pb->io.aon_base + IO_RAM_ON_N);
+
+	/* Power off I/O block */
+	writel(1, pb->io.aon_base + IO_POWER_ON_N);
+
+	mutex_unlock(&pb->lock);
+}
+#endif
+
 /* The caller to this function must hold pb->dma.dma_lock */
 void paintbox_pm_enable_dma_channel(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel)
 {
-	uint32_t val;
-
-	val = readl(pb->io.aon_base + IPU_DMA_CHAN_EN);
-	val |= 1 << channel->channel_id;
-	writel(val, pb->io.aon_base + IPU_DMA_CHAN_EN);
+	if (channel->pm_enabled)
+		return;
 
 	channel->pm_enabled = true;
+
+	pb->io.regs.dma_chan_en |= 1 << channel->channel_id;
+	writel(pb->io.regs.dma_chan_en, pb->io.aon_base + IPU_DMA_CHAN_EN);
 }
 
 /* The caller to this function must hold pb->dma.dma_lock */
 void paintbox_pm_disable_dma_channel(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel)
 {
-	uint32_t val;
-
-	val = readl(pb->io.aon_base + IPU_DMA_CHAN_EN);
-	val &= ~(1 << channel->channel_id);
-	writel(val, pb->io.aon_base + IPU_DMA_CHAN_EN);
+	if (!channel->pm_enabled)
+		return;
 
 	channel->pm_enabled = false;
+
+	pb->io.regs.dma_chan_en &= ~(1 << channel->channel_id);
+	writel(pb->io.regs.dma_chan_en, pb->io.aon_base + IPU_DMA_CHAN_EN);
 }
 
 void paintbox_enable_mmu_bif_idle_clock_gating(struct paintbox_data *pb)
@@ -245,19 +282,6 @@ static void paintbox_core_power_enable(struct paintbox_data *pb,
 			CLK_GATE_CONTROL_LBP_IDLE_GATE_DIS);
 
 	paintbox_disable_mmu_bif_idle_clock_gating(pb);
-
-#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
-	/* Power on I/O block */
-	writel(0, pb->io.aon_base + IO_POWER_ON_N);
-	udelay(IO_POWER_RAMP_TIME);
-
-	/* Power on RAMs for I/O block */
-	writel(0, pb->io.aon_base + IO_RAM_ON_N);
-	udelay(RAM_POWER_RAIL_RAMP_TIME);
-
-	/* Turn off isolation for I/O block */
-	writel(0, pb->io.aon_base + IO_ISO_ON);
-#endif
 
 	/* IPU cores need to be enabled in sequence in pairs */
 	for (active_cores = pb->power.active_core_count;
@@ -356,17 +380,6 @@ static void paintbox_core_power_disable(struct paintbox_data *pb,
 		writel(new_core_mask_n, pb->io.aon_base + CORE_POWER_ON_N);
 	}
 
-#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
-	/* Turn off isolation for I/O block */
-	writel(1, pb->io.aon_base + IO_ISO_ON);
-
-	/* Power on RAMs for I/O block */
-	writel(1, pb->io.aon_base + IO_RAM_ON_N);
-
-	/* Power off I/O block */
-	writel(1, pb->io.aon_base + IO_POWER_ON_N);
-#endif
-
 	udelay(CORE_SYSTEM_STABLIZE_TIME);
 
 	paintbox_enable_mmu_bif_idle_clock_gating(pb);
@@ -410,7 +423,8 @@ static void paintbox_core_power_down_walk(struct paintbox_data *pb)
 	 */
 	for (requested_cores = pb->power.active_core_count;
 			requested_cores > 0; requested_cores--) {
-		struct paintbox_stp *stp = &pb->stp.stps[requested_cores];
+		struct paintbox_stp *stp =
+				&pb->stp.stps[stp_id_to_index(requested_cores)];
 		struct paintbox_lbp *lbp = &pb->lbp.lbps[requested_cores];
 
 		if (stp->pm_enabled || lbp->pm_enabled)

@@ -62,6 +62,10 @@ static void paintbox_io_apb_reg_entry_write(
 static const char *io_apb_reg_names[IO_APB_NUM_REGS] = {
 	REG_NAME_ENTRY(IPU_ISR),
 	REG_NAME_ENTRY(IPU_IMR),
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	REG_NAME_ENTRY(IPU_IER),
+	REG_NAME_ENTRY(IPU_ITR),
+#endif
 };
 
 static inline int paintbox_dump_io_apb_reg(struct paintbox_data *pb,
@@ -229,61 +233,25 @@ static irqreturn_t paintbox_io_interrupt(int irq, void *arg)
 	return IRQ_HANDLED;
 }
 
-void io_enable_dma_channel_interrupt(struct paintbox_data *pb,
-		unsigned int channel_id)
+void paintbox_io_enable_interrupt(struct paintbox_data *pb,
+		uint32_t enable_mask)
 {
 	unsigned long irq_flags;
-	uint32_t ipu_imr;
 
 	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
-
-	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-	ipu_imr |= 1 << channel_id;
-	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
-
+	pb->io.regs.ipu_imr |= enable_mask;
+	writel(pb->io.regs.ipu_imr, pb->io.apb_base + IPU_IMR);
 	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
 }
 
-void io_disable_dma_channel_interrupt(struct paintbox_data *pb,
-		unsigned int channel_id)
+void paintbox_io_disable_interrupt(struct paintbox_data *pb,
+		uint32_t disable_mask)
 {
 	unsigned long irq_flags;
-	uint32_t ipu_imr;
 
 	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
-
-	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-	ipu_imr &= ~(1 << channel_id);
-	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
-
-	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
-}
-
-void io_enable_stp_interrupt(struct paintbox_data *pb, unsigned int stp_id)
-{
-	unsigned long irq_flags;
-	uint32_t ipu_imr;
-
-	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
-
-	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-	ipu_imr |= 1 << (stp_id_to_index(stp_id) + IPU_IMR_STP_INTR_SHIFT);
-	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
-
-	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
-}
-
-void io_disable_stp_interrupt(struct paintbox_data *pb, unsigned int stp_id)
-{
-	unsigned long irq_flags;
-	uint32_t ipu_imr;
-
-	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
-
-	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-	ipu_imr &= ~(1 << (stp_id_to_index(stp_id) + IPU_IMR_STP_INTR_SHIFT));
-	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
-
+	pb->io.regs.ipu_imr &= ~disable_mask;
+	writel(pb->io.regs.ipu_imr, pb->io.apb_base + IPU_IMR);
 	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
 }
 
@@ -301,125 +269,14 @@ bool get_mipi_output_interface_interrupt_state(struct paintbox_data *pb,
 			interface_id));
 }
 
-static void io_enable_mipi_interface_interrupt(struct paintbox_data *pb,
-		unsigned int interface_offset)
-{
-	unsigned long irq_flags;
-	uint32_t ipu_imr;
-
-	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
-
-	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-	ipu_imr |= 1 << interface_offset;
-	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
-
-	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
-}
-
-static void io_disable_mipi_interface_interrupt(struct paintbox_data *pb,
-		unsigned int interface_offset)
-{
-	unsigned long irq_flags;
-	uint32_t ipu_imr;
-
-	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
-
-	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-	ipu_imr &= ~(1 << interface_offset);
-	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
-
-	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
-}
-
-void io_enable_mipi_input_interface_interrupt(struct paintbox_data *pb,
-		unsigned int interface_id)
-{
-	io_enable_mipi_interface_interrupt(pb, interface_id +
-			IPU_IMR_MPI_INTR_SHIFT);
-}
-
-void io_disable_mipi_input_interface_interrupt(struct paintbox_data *pb,
-		unsigned int interface_id)
-{
-	io_disable_mipi_interface_interrupt(pb, interface_id +
-			IPU_IMR_MPI_INTR_SHIFT);
-}
-
-void io_enable_mipi_output_interface_interrupt(struct paintbox_data *pb,
-		unsigned int interface_id)
-{
-	io_enable_mipi_interface_interrupt(pb, interface_id +
-			IPU_IMR_MPO_INTR_SHIFT);
-}
-
-void io_disable_mipi_output_interface_interrupt(struct paintbox_data *pb,
-		unsigned int interface_id)
-{
-	io_disable_mipi_interface_interrupt(pb, interface_id +
-			IPU_IMR_MPO_INTR_SHIFT);
-}
-
-void paintbox_enable_bif_interrupt(struct paintbox_data *pb)
-{
-	unsigned long irq_flags;
-	uint32_t ipu_imr;
-
-	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
-
-	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-	ipu_imr |= IPU_IMR_BIF_INTR_MASK;
-	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
-
-	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
-}
-
-void paintbox_disable_bif_interrupt(struct paintbox_data *pb)
-{
-	unsigned long irq_flags;
-	uint32_t ipu_imr;
-
-	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
-
-	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-	ipu_imr &= ~IPU_IMR_BIF_INTR_MASK;
-	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
-
-	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
-}
-
-void paintbox_enable_mmu_interrupt(struct paintbox_data *pb)
-{
-	unsigned long irq_flags;
-	uint32_t ipu_imr;
-
-	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
-
-	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-	ipu_imr |= IPU_IMR_MMU_INTR_MASK;
-	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
-
-	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
-}
-
-void paintbox_disable_mmu_interrupt(struct paintbox_data *pb)
-{
-	unsigned long irq_flags;
-	uint32_t ipu_imr;
-
-	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
-
-	ipu_imr = readl(pb->io.apb_base + IPU_IMR);
-	ipu_imr &= ~IPU_IMR_MMU_INTR_MASK;
-	writel(ipu_imr, pb->io.apb_base + IPU_IMR);
-
-	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
-}
-
 int paintbox_io_apb_init(struct paintbox_data *pb)
 {
 	int ret;
 
 	spin_lock_init(&pb->io.io_lock);
+
+	pb->io.regs.ipu_imr = IPU_IMR_DEF;
+	pb->io.regs.dma_chan_en = IPU_DMA_CHAN_EN_DEF;
 
 #ifdef CONFIG_PAINTBOX_DEBUG
 	paintbox_debug_create_entry(pb, &pb->io.apb_debug, pb->debug_root,

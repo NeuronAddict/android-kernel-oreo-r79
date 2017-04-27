@@ -19,6 +19,7 @@
 #include <linux/io.h>
 
 #include "paintbox-common.h"
+#include "paintbox-regs.h"
 
 int allocate_lbp_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
@@ -50,5 +51,33 @@ void release_lbp(struct paintbox_data *pb, struct paintbox_session *session,
 		struct paintbox_lbp *lbp);
 void reset_lb(struct paintbox_data *pb, unsigned int lbp_id,
 		unsigned int lb_id);
+
+/* The caller to this function must hold pb->lock */
+static inline void paintbox_lbp_select(struct paintbox_data *pb,
+		unsigned int lbp_id)
+{
+	if (pb->lbp.selected_lbp_id == lbp_id)
+		return;
+
+	pb->lbp.selected_lbp_id = lbp_id;
+
+	writel(lbp_id | pb->lbp.selected_lb_id << LBP_SEL_LB_SEL_SHIFT,
+			pb->lbp.reg_base + LBP_SEL);
+}
+
+/* The caller to this function must hold pb->lock */
+static inline void paintbox_lb_select(struct paintbox_data *pb,
+		unsigned int lbp_id, unsigned int lb_id)
+{
+	if (pb->lbp.selected_lbp_id == lbp_id &&
+			pb->lbp.selected_lb_id == lb_id)
+		return;
+
+	pb->lbp.selected_lbp_id = lbp_id;
+	pb->lbp.selected_lb_id = lb_id;
+
+	writel(lbp_id | lb_id << LBP_SEL_LB_SEL_SHIFT,
+			pb->lbp.reg_base + LBP_SEL);
+}
 
 #endif /* __PAINTBOX_LBP_H__ */

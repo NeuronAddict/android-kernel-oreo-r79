@@ -42,10 +42,10 @@ static void enable_mipi_interface_interrupt(struct paintbox_data *pb,
 
 	if (interface->active_stream_mask == 0) {
 		if (stream->is_input)
-			io_enable_mipi_input_interface_interrupt(pb,
+			paintbox_enable_mipi_input_interface_interrupt(pb,
 					interface->interface_id);
 		else
-			io_enable_mipi_output_interface_interrupt(pb,
+			paintbox_enable_mipi_output_interface_interrupt(pb,
 					interface->interface_id);
 	}
 
@@ -68,10 +68,10 @@ static void disable_mipi_interface_interrupt(struct paintbox_data *pb,
 
 	if (interface->active_stream_mask == 0) {
 		if (stream->is_input)
-			io_disable_mipi_input_interface_interrupt(pb,
+			paintbox_disable_mipi_input_interface_interrupt(pb,
 					interface->interface_id);
 		else
-			io_disable_mipi_output_interface_interrupt(pb,
+			paintbox_disable_mipi_output_interface_interrupt(pb,
 					interface->interface_id);
 	}
 }

@@ -23,6 +23,7 @@
 
 #include "paintbox-common.h"
 #include "paintbox-debug.h"
+#include "paintbox-lbp.h"
 #include "paintbox-regs.h"
 
 #ifdef CONFIG_PAINTBOX_DEBUG
@@ -37,7 +38,7 @@ static uint64_t paintbox_lbp_reg_entry_read(
 
 	mutex_lock(&pb->lock);
 
-	writel(lbp->pool_id, pb->lbp.reg_base + LBP_SEL);
+	paintbox_lbp_select(pb, lbp->pool_id);
 	val = readq(pb->lbp.reg_base + reg_entry->reg_offset);
 
 	mutex_unlock(&pb->lock);
@@ -55,7 +56,7 @@ static void paintbox_lbp_reg_entry_write(
 
 	mutex_lock(&pb->lock);
 
-	writel(lbp->pool_id, pb->lbp.reg_base + LBP_SEL);
+	paintbox_lbp_select(pb, lbp->pool_id);
 	writeq(val, pb->lbp.reg_base + reg_entry->reg_offset);
 
 	mutex_unlock(&pb->lock);
@@ -72,8 +73,7 @@ static uint64_t paintbox_lb_reg_entry_read(
 
 	mutex_lock(&pb->lock);
 
-	writel(lbp->pool_id | (lb->lb_id << LBP_SEL_LB_SEL_SHIFT),
-			pb->lbp.reg_base + LBP_SEL);
+	paintbox_lb_select(pb, lbp->pool_id, lb->lb_id);
 	val = readq(pb->lbp.reg_base + LB_BLOCK_START + reg_entry->reg_offset);
 
 	mutex_unlock(&pb->lock);
@@ -91,8 +91,7 @@ static void paintbox_lb_reg_entry_write(
 
 	mutex_lock(&pb->lock);
 
-	writel(lbp->pool_id | (lb->lb_id << LBP_SEL_LB_SEL_SHIFT),
-			pb->lbp.reg_base + LBP_SEL);
+	paintbox_lb_select(pb, lbp->pool_id, lb->lb_id);
 	writeq(val, pb->lbp.reg_base + LB_BLOCK_START + reg_entry->reg_offset);
 
 	mutex_unlock(&pb->lock);
@@ -360,9 +359,7 @@ void paintbox_log_lbp_registers(struct paintbox_data *pb,
 		struct paintbox_lbp *lbp, struct paintbox_lb *lb,
 		const char *msg)
 {
-	writel(lbp->pool_id | lb->lb_id << LBP_SEL_LB_SEL_SHIFT,
-			pb->lbp.reg_base + LBP_SEL);
-
+	paintbox_lb_select(pb, lbp->pool_id, lb->lb_id);
 	paintbox_dump_lbp_sel_register(pb, NULL, NULL, 0);
 	paintbox_dump_lbp_ctrl_register(pb, NULL, NULL, 0);
 	paintbox_dump_lbp_stat_register(pb, NULL, NULL, 0);
@@ -389,7 +386,7 @@ int paintbox_dump_lbp_registers(struct paintbox_debug *debug, char *buf,
 	unsigned int reg_offset;
 	int ret, written = 0;
 
-	writel(lbp->pool_id, pb->lbp.reg_base + LBP_SEL);
+	paintbox_lbp_select(pb, lbp->pool_id);
 
 	ret = paintbox_dump_lbp_sel_register(pb, buf, &written, len);
 	if (ret < 0)
@@ -433,8 +430,7 @@ int paintbox_dump_lb_registers(struct paintbox_debug *debug, char *buf,
 	struct paintbox_data *pb = debug->pb;
 	int ret, written = 0;
 
-	writel(lbp->pool_id | (lb->lb_id << LBP_SEL_LB_SEL_SHIFT),
-			pb->lbp.reg_base + LBP_SEL);
+	paintbox_lb_select(pb, lbp->pool_id, lb->lb_id);
 
 	ret = paintbox_dump_lb_ctrl0_register(pb, buf, &written, len);
 	if (ret < 0)

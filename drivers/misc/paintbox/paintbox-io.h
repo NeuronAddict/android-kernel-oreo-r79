@@ -20,34 +20,91 @@
 
 #include "paintbox-common.h"
 #include "paintbox-regs.h"
-
-void io_enable_dma_channel_interrupt(struct paintbox_data *pb,
-		unsigned int channel_id);
-void io_disable_dma_channel_interrupt(struct paintbox_data *pb,
-		unsigned int channel_id);
-void io_enable_stp_interrupt(struct paintbox_data *pb, unsigned int stp_id);
-void io_disable_stp_interrupt(struct paintbox_data *pb, unsigned int stp_id);
+#include "paintbox-stp.h"
 
 bool get_mipi_input_interface_interrupt_state(struct paintbox_data *pb,
 		unsigned int interface_id);
 bool get_mipi_output_interface_interrupt_state(struct paintbox_data *pb,
 		unsigned int interface_id);
-void io_enable_mipi_input_interface_interrupt(struct paintbox_data *pb,
-		unsigned int interface_id);
-void io_disable_mipi_input_interface_interrupt(struct paintbox_data *pb,
-		unsigned int interface_id);
-void io_enable_mipi_output_interface_interrupt(struct paintbox_data *pb,
-		unsigned int interface_id);
-void io_disable_mipi_output_interface_interrupt(struct paintbox_data *pb,
-		unsigned int interface_id);
-void paintbox_enable_mmu_interrupt(struct paintbox_data *pb);
-void paintbox_disable_mmu_interrupt(struct paintbox_data *pb);
-void paintbox_enable_bif_interrupt(struct paintbox_data *pb);
-void paintbox_disable_bif_interrupt(struct paintbox_data *pb);
 
-/* The caller to these functions must hold pb->lock */
-void io_enable_dma_channel(struct paintbox_data *pb, unsigned int channel_id);
-void io_disable_dma_channel(struct paintbox_data *pb, unsigned int channel_id);
+void paintbox_io_enable_interrupt(struct paintbox_data *pb,
+		uint32_t enable_mask);
+void paintbox_io_disable_interrupt(struct paintbox_data *pb,
+		uint32_t disable_mask);
+
+static inline void paintbox_enable_dma_channel_interrupt(
+		struct paintbox_data *pb, unsigned int channel_id)
+{
+	paintbox_io_enable_interrupt(pb, 1 << channel_id);
+}
+
+static inline void paintbox_disable_dma_channel_interrupt(
+		struct paintbox_data *pb, unsigned int channel_id)
+{
+	paintbox_io_disable_interrupt(pb, 1 << channel_id);
+}
+
+static inline void paintbox_enable_stp_interrupt(struct paintbox_data *pb,
+		unsigned int stp_id)
+{
+	paintbox_io_enable_interrupt(pb, 1 << (stp_id_to_index(stp_id) +
+			IPU_IMR_STP_INTR_SHIFT));
+}
+
+static inline void paintbox_disable_stp_interrupt(struct paintbox_data *pb,
+		unsigned int stp_id)
+{
+	paintbox_io_disable_interrupt(pb, 1 << (stp_id_to_index(stp_id) +
+			IPU_IMR_STP_INTR_SHIFT));
+}
+
+static inline void paintbox_enable_bif_interrupt(struct paintbox_data *pb)
+{
+	paintbox_io_enable_interrupt(pb, IPU_IMR_BIF_INTR_MASK);
+}
+
+static inline void paintbox_disable_bif_interrupt(struct paintbox_data *pb)
+{
+	paintbox_io_disable_interrupt(pb, IPU_IMR_BIF_INTR_MASK);
+}
+
+static inline void paintbox_enable_mmu_interrupt(struct paintbox_data *pb)
+{
+	paintbox_io_enable_interrupt(pb, IPU_IMR_MMU_INTR_MASK);
+}
+
+static inline void paintbox_disable_mmu_interrupt(struct paintbox_data *pb)
+{
+	paintbox_io_disable_interrupt(pb, IPU_IMR_MMU_INTR_MASK);
+}
+
+static inline void paintbox_enable_mipi_input_interface_interrupt(
+		struct paintbox_data *pb, unsigned int interface_id)
+{
+	paintbox_io_enable_interrupt(pb, 1 << (interface_id +
+			IPU_IMR_MPI_INTR_SHIFT));
+}
+
+static inline void paintbox_disable_mipi_input_interface_interrupt(
+		struct paintbox_data *pb, unsigned int interface_id)
+{
+	paintbox_io_disable_interrupt(pb, 1 << (interface_id +
+			IPU_IMR_MPI_INTR_SHIFT));
+}
+
+static inline void paintbox_enable_mipi_output_interface_interrupt(
+		struct paintbox_data *pb, unsigned int interface_id)
+{
+	paintbox_io_enable_interrupt(pb, 1 << (interface_id +
+			IPU_IMR_MPO_INTR_SHIFT));
+}
+
+static inline void paintbox_disable_mipi_output_interface_interrupt(
+		struct paintbox_data *pb, unsigned int interface_id)
+{
+	paintbox_io_disable_interrupt(pb, 1 << (interface_id +
+			IPU_IMR_MPO_INTR_SHIFT));
+}
 
 int paintbox_io_apb_init(struct paintbox_data *pb);
 

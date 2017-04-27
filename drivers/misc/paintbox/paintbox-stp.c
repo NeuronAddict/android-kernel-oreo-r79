@@ -105,7 +105,8 @@ void enable_stp_access_to_lbp(struct paintbox_data *pb,
 
 		spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-		writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
+		paintbox_stp_select(pb, stp->stp_id);
+
 		ctrl = readl(pb->stp.reg_base + STP_CTRL);
 		ctrl |= 1 << (lbp->pool_id + STP_CTRL_LBP_MASK_SHIFT);
 		stp_ctrl_write(pb, stp, ctrl);
@@ -131,7 +132,8 @@ void disable_stp_access_to_lbp(struct paintbox_data *pb,
 
 		spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-		writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
+		paintbox_stp_select(pb, stp->stp_id);
+
 		ctrl = readl(pb->stp.reg_base + STP_CTRL);
 		ctrl &= ~(1 << (lbp->pool_id + STP_CTRL_LBP_MASK_SHIFT));
 		stp_ctrl_write(pb, stp, ctrl);
@@ -149,7 +151,7 @@ static void set_lbp_access_mask(struct paintbox_data *pb,
 
 	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-	writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
+	paintbox_stp_select(pb, stp->stp_id);
 
 	/* Grant access to all LBPs associated with this session */
 	lbp_mask = 0;
@@ -210,7 +212,9 @@ int allocate_stp_ioctl(struct paintbox_data *pb,
 		pb->stp.caps_inited = true;
 
 		spin_lock_irqsave(&pb->stp.lock, irq_flags);
-		writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
+
+		paintbox_stp_select(pb, stp->stp_id);
+
 		caps = readq(pb->stp.reg_base + STP_CAP);
 		spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 
@@ -255,7 +259,8 @@ void release_stp(struct paintbox_data *pb, struct paintbox_session *session,
 
 	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-	writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
+	paintbox_stp_select(pb, stp->stp_id);
+
 	stp_ctrl_write(pb, stp, STP_CTRL_RESET_MASK);
 	stp_ctrl_write(pb, stp, 0);
 
@@ -308,7 +313,7 @@ int stp_ctrl_set(struct paintbox_data *pb,
 
 	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-	writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
+	paintbox_stp_select(pb, stp->stp_id);
 
 	ctrl = readl(pb->stp.reg_base + STP_CTRL);
 	ctrl |= set_mask;
@@ -341,7 +346,7 @@ int start_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 
 	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-	writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
+	paintbox_stp_select(pb, stp->stp_id);
 
 	ctrl = readl(pb->stp.reg_base + STP_CTRL);
 	ctrl |= STP_CTRL_ENA_MASK;
@@ -388,7 +393,7 @@ int stop_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 
 	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-	writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
+	paintbox_stp_select(pb, stp->stp_id);
 
 	ctrl = readl(pb->stp.reg_base + STP_CTRL);
 	ctrl &= ~STP_CTRL_ENA_MASK;
@@ -433,7 +438,7 @@ int paintbox_stp_reset(struct paintbox_data *pb, struct paintbox_stp *stp)
 
 	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-	writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
+	paintbox_stp_select(pb, stp->stp_id);
 
 	/* Stop and reset the processor */
 	ctrl = readl(pb->stp.reg_base + STP_CTRL);
@@ -586,7 +591,7 @@ int get_program_state_ioctl(struct paintbox_data *pb,
 
 	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-	writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
+	paintbox_stp_select(pb, stp->stp_id);
 	stat = readq(pb->stp.reg_base + STP_STAT);
 
 	program_state.enabled = stp->enabled;
@@ -632,7 +637,7 @@ int paintbox_get_all_processor_states(struct paintbox_data *pb,
 			session_entry) {
 		uint64_t stp_mask = 1ULL << stp->stp_id;
 
-		writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
+		paintbox_stp_select(pb, stp->stp_id);
 		stat = readq(pb->stp.reg_base + STP_STAT);
 
 		if (stp->enabled)
@@ -682,7 +687,7 @@ int bind_stp_interrupt_ioctl(struct paintbox_data *pb,
 		return ret;
 	}
 
-	io_enable_stp_interrupt(pb, stp->stp_id);
+	paintbox_enable_stp_interrupt(pb, stp->stp_id);
 
 	mutex_unlock(&pb->lock);
 
@@ -703,7 +708,7 @@ int unbind_stp_interrupt_ioctl(struct paintbox_data *pb,
 		return ret;
 	}
 
-	io_disable_stp_interrupt(pb, stp_id);
+	paintbox_disable_stp_interrupt(pb, stp_id);
 
 	ret = unbind_stp_interrupt(pb, session, stp);
 	if (ret < 0) {
@@ -739,7 +744,7 @@ irqreturn_t paintbox_stp_interrupt(struct paintbox_data *pb, uint64_t stp_mask,
 
 		spin_lock(&pb->stp.lock);
 
-		writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
+		paintbox_stp_select(pb, stp->stp_id);
 		ctrl = readl(pb->stp.reg_base + STP_CTRL);
 
 		if (!(ctrl & STP_CTRL_INT_MASK)) {
@@ -786,6 +791,8 @@ int paintbox_stp_init(struct paintbox_data *pb)
 			GFP_KERNEL);
 	if (!pb->stp.stps)
 		return -ENOMEM;
+
+	pb->stp.selected_stp_id = STP_SEL_DEF & STP_SEL_STP_SEL_M;
 
 	for (stp_index = 0; stp_index < pb->stp.num_stps; stp_index++)
 		init_stp_entry(pb, stp_index);

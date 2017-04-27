@@ -219,8 +219,7 @@ static void reset_line_buffer(struct paintbox_data *pb, struct paintbox_lb *lb)
 /* The caller to this function must hold pb->lock */
 void reset_lb(struct paintbox_data *pb, unsigned int lbp_id, unsigned int lb_id)
 {
-	writel(lbp_id | lb_id << LBP_SEL_LB_SEL_SHIFT, pb->lbp.reg_base +
-			LBP_SEL);
+	paintbox_lb_select(pb, lbp_id, lb_id);
 	reset_line_buffer(pb, &pb->lbp.lbps[lbp_id].lbs[lb_id]);
 }
 
@@ -236,7 +235,7 @@ void release_lbp(struct paintbox_data *pb, struct paintbox_session *session,
 	disable_stp_access_to_lbp(pb, session, lbp);
 #endif
 	/* Disable all line buffers within the pool. */
-	writel(lbp->pool_id, pb->lbp.reg_base + LBP_SEL);
+	paintbox_lbp_select(pb, lbp->pool_id);
 	writeq(0, pb->lbp.reg_base + LBP_CTRL);
 
 #ifndef CONFIG_PAINTBOX_FPGA_SUPPORT
@@ -277,7 +276,7 @@ int allocate_lbp_ioctl(struct paintbox_data *pb,
 	paintbox_pm_lbp_enable(pb, lbp);
 #endif
 
-	writel(pool_id, pb->lbp.reg_base + LBP_SEL);
+	paintbox_lbp_select(pb, pool_id);
 	writeq(LBP_CTRL_LBP_RESET_MASK, pb->lbp.reg_base + LBP_CTRL);
 	writeq(0, pb->lbp.reg_base + LBP_CTRL);
 
@@ -418,8 +417,7 @@ int setup_lb_ioctl(struct paintbox_data *pb,
 	lb->sb_cols = lb_config.sb_cols;
 	lb->sb_rows = lb_config.sb_rows;
 
-	writel(lb_config.lb_pool_id | lb_config.lb_id << LBP_SEL_LB_SEL_SHIFT,
-			pb->lbp.reg_base + LBP_SEL);
+	paintbox_lb_select(pb, lb_config.lb_pool_id, lb_config.lb_id);
 
 	/* Disable the line buffer before configuring it in case there is an
 	 * active configuration.  Setting the ENA count to the line buffer id
@@ -427,8 +425,12 @@ int setup_lb_ioctl(struct paintbox_data *pb,
 	 * enabled.
 	 */
 	ctrl = readq(pb->lbp.reg_base + LBP_CTRL);
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	ctrl &= ~(1ULL << lb_config.lb_id);
+#else
 	ctrl &= ~LBP_CTRL_LB_ENA_MASK;
 	ctrl |= lb_config.lb_id;
+#endif
 	writeq(ctrl, pb->lbp.reg_base + LBP_CTRL);
 
 	reset_line_buffer(pb, lb);
@@ -483,8 +485,12 @@ int setup_lb_ioctl(struct paintbox_data *pb,
 	 * The init bit is not self clearing, we need to clear the init bit.
 	 */
 	ctrl = readq(pb->lbp.reg_base + LBP_CTRL);
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	ctrl |= 1ULL << lb_config.lb_id;
+#else
 	ctrl &= ~LBP_CTRL_LB_ENA_MASK;
 	ctrl |= lb_config.lb_id + 1;
+#endif
 	ctrl |= 1ULL << (lb_config.lb_id + LBP_CTRL_LB_INIT_SHIFT);
 	writeq(ctrl, pb->lbp.reg_base + LBP_CTRL);
 	ctrl &= ~(1ULL << (lb_config.lb_id + LBP_CTRL_LB_INIT_SHIFT));
@@ -508,8 +514,7 @@ static int lbp_sram_write_word(struct paintbox_data *pb,
 {
 	unsigned int attempts = 0;
 
-	writel(sram_config->core_id & LBP_SEL_LBP_SEL_MASK, pb->lbp.reg_base +
-			LBP_SEL);
+	paintbox_lbp_select(pb, sram_config->core_id);
 
 	write_ram_data_registers(pb, buf, pb->lbp.reg_base + LBP_RAM_DATA0,
 			LBP_DATA_REG_COUNT);
@@ -537,8 +542,7 @@ static int lbp_sram_read_word(struct paintbox_data *pb,
 {
 	unsigned int attempts = 0;
 
-	writel(sram_config->core_id & LBP_SEL_LBP_SEL_MASK, pb->lbp.reg_base +
-			LBP_SEL);
+	paintbox_lbp_select(pb, sram_config->core_id);
 
 	writel(LBP_RAM_CTRL_RUN_MASK | ram_ctrl_addr, pb->lbp.reg_base +
 			LBP_RAM_CTRL);
@@ -686,7 +690,7 @@ int reset_lbp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 
 	dev_dbg(&pb->pdev->dev, "lbp%u reset\n", lbp->pool_id);
 
-	writel(lbp->pool_id, pb->lbp.reg_base + LBP_SEL);
+	paintbox_lbp_select(pb, lbp->pool_id);
 
 	ctrl = readq(pb->lbp.reg_base + LBP_CTRL);
 	ctrl |= LBP_CTRL_LBP_RESET_MASK;
@@ -729,7 +733,7 @@ int reset_lb_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 
 	dev_dbg(&pb->pdev->dev, "lbp%u lb%u reset\n",  lbp->pool_id, req.lb_id);
 
-	writel(lbp->pool_id, pb->lbp.reg_base + LBP_SEL);
+	paintbox_lbp_select(pb, lbp->pool_id);
 
 	ctrl = readq(pb->lbp.reg_base + LBP_CTRL);
 	ctrl |= 1ULL << req.lb_id << LBP_CTRL_LB_RESET_SHIFT;
@@ -784,11 +788,14 @@ int paintbox_lbp_init(struct paintbox_data *pb)
 	if (!pb->lbp.lbps)
 		return -ENOMEM;
 
+	pb->lbp.selected_lbp_id = LBP_SEL_DEF & LBP_SEL_LBP_SEL_M;
+	pb->lbp.selected_lb_id = (LBP_SEL_DEF & LBP_SEL_LB_SEL_MASK) >>
+			LBP_SEL_LB_SEL_SHIFT;
 
 	/* Read LBP/LB capabilities from LBP0 since that is always powered.
 	 * The capabilities are the same for the other LBPs.
 	 */
-	writel(0, pb->lbp.reg_base + LBP_SEL);
+	paintbox_lbp_select(pb, 0);
 	caps = readl(pb->lbp.reg_base + LBP_CAP0);
 
 	pb->lbp.max_lbs = caps & LBP_CAP0_MAX_LB_MASK;

@@ -24,6 +24,7 @@
 #include <uapi/paintbox.h>
 
 #include "paintbox-common.h"
+#include "paintbox-debug.h"
 #include "paintbox-irq.h"
 #include "paintbox-dma.h"
 #include "paintbox-stp.h"
@@ -573,6 +574,12 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 	unsigned long start = jiffies;
 	int copy_ret, ret;
 	unsigned int irq_index;
+#ifdef CONFIG_PAINTBOX_DEBUG
+	ktime_t start_time;
+
+	if (pb->stats.ioctl_time_enabled)
+		start_time = ktime_get_boottime();
+#endif
 
 	user_wait = (struct paintbox_irq_group_wait __user *)arg;
 
@@ -654,6 +661,12 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 	spin_unlock_irqrestore(&pb->irq_lock, irq_flags);
 	mutex_unlock(&pb->lock);
 
+#ifdef CONFIG_PAINTBOX_DEBUG
+	if (pb->stats.ioctl_time_enabled)
+		paintbox_debug_log_wait_for_interrupt_pre_stats(pb, start_time,
+				ktime_get_boottime());
+#endif
+
 	if (wait->base.timeout_ns == LONG_MAX)
 		ret = wait_for_completion_interruptible(&waiter.completion);
 	else {
@@ -688,6 +701,10 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 		}
 	}
 
+#ifdef CONFIG_PAINTBOX_DEBUG
+	start_time = ktime_get_boottime();
+#endif
+
 	mutex_lock(&pb->lock);
 	spin_lock_irqsave(&pb->irq_lock, irq_flags);
 
@@ -712,6 +729,12 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 
 cleanup_and_exit:
 	copy_ret = paintbox_irq_group_wait_copy_to_user(pb, user_wait, wait);
+
+#ifdef CONFIG_PAINTBOX_DEBUG
+	if (pb->stats.ioctl_time_enabled)
+		paintbox_debug_log_wait_for_interrupt_post_stats(pb, start_time,
+				ktime_get_boottime());
+#endif
 
 	/* Copy errors take precedence over any other errors. */
 	return copy_ret ? copy_ret : ret;

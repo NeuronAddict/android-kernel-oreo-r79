@@ -39,7 +39,7 @@ static uint64_t paintbox_stp_reg_entry_read(
 
 	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-	writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
+	paintbox_stp_select(pb, stp->stp_id);
 	val = readq(pb->stp.reg_base + reg_entry->reg_offset);
 
 	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
@@ -62,7 +62,7 @@ static void paintbox_stp_reg_entry_write(
 
 	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-	writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
+	paintbox_stp_select(pb, stp->stp_id);
 	writeq(val, pb->stp.reg_base + reg_entry->reg_offset);
 
 	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
@@ -131,7 +131,7 @@ int paintbox_dump_stp_registers(struct paintbox_debug *debug, char *buf,
 
 	spin_lock_irqsave(&pb->stp.lock, irq_flags);
 
-	writel(stp->stp_id, pb->stp.reg_base + STP_SEL);
+	paintbox_stp_select(pb, stp->stp_id);
 
 	for (reg_offset = 0; reg_offset < STP_BLOCK_LEN; reg_offset +=
 			IPU_REG_WIDTH) {
