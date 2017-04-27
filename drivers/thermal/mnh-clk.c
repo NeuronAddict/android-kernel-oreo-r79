@@ -736,31 +736,17 @@ int mnh_clock_init_gating(int enabled)
 			enabled);
 		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, LP4C_MEM_DS,
 			enabled);
-		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_CPUMEM_PD_EN,
-			enabled);
-		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, CPU_L2MEM_DS,
-			enabled);
-		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, CPU_L1MEM_DS,
-			enabled);
 	} else {
 		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, LP4C_MEM_DS,
 			enabled);
 		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_LP4CMEM_PD_EN,
-			enabled);
-		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, CPU_L2MEM_DS,
-			enabled);
-		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, CPU_L1MEM_DS,
-			enabled);
-		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_CPUMEM_PD_EN,
 			enabled);
 	}
 	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_BTROM_PD_EN, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_BTSRAM_PD_EN, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, BTROM_SLP, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, BTSRAM_DS, enabled);
-	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_AXICG_EN, enabled);
 	/* HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_AHBCG_EN, enabled); */
-	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_CPUCG_EN, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_BTSRAMCG_EN, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_BTROMCG_EN, enabled);
 
@@ -774,6 +760,40 @@ int mnh_clock_init_gating(int enabled)
 }
 EXPORT_SYMBOL(mnh_clock_init_gating);
 
+int mnh_bypass_clock_gating(int enabled)
+{
+	dev_dbg(mnh_dev->dev, "%s:%d\n", __func__, __LINE__);
+
+	if (enabled != 1 && enabled != 0)
+		return -EINVAL;
+
+	if (enabled) {
+		HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_CPUCG_EN, enabled);
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_CPUMEM_PD_EN,
+			enabled);
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, CPU_L2MEM_DS,
+			enabled);
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, CPU_L1MEM_DS,
+			enabled);
+	} else {
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, CPU_L2MEM_DS,
+			enabled);
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, CPU_L1MEM_DS,
+			enabled);
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_CPUMEM_PD_EN,
+			enabled);
+		HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_CPUCG_EN, enabled);
+	}
+
+	HW_OUTf(mnh_dev->regs, SCU, RSTC, WDT_RST, enabled);
+
+	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, PVT_CLKEN, !enabled);
+	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, WDT_CLKEN_SW, !enabled);
+
+	return 0;
+}
+EXPORT_SYMBOL(mnh_bypass_clock_gating);
+
 /**
  * Set the SCU clock gating for bypass mode
  * Return: 0 on success, an error code otherwise.
@@ -781,7 +801,7 @@ EXPORT_SYMBOL(mnh_clock_init_gating);
  * enable == 1 sets the SCU to enable clock gating in general when CPU enters
  * L2 WFI state.
  */
-int mnh_clock_bypass_gating(int enabled)
+int mnh_ipu_clock_gating(int enabled)
 {
 	dev_dbg(mnh_dev->dev, "%s\n", __func__);
 
@@ -802,7 +822,7 @@ int mnh_clock_bypass_gating(int enabled)
 
 	return 0;
 }
-EXPORT_SYMBOL(mnh_clock_bypass_gating);
+EXPORT_SYMBOL(mnh_ipu_clock_gating);
 
 
 /* Frequency calculation by PLL configuration
@@ -1034,18 +1054,18 @@ static ssize_t sys200_freq_set(struct device *dev,
 	return -EIO;
 }
 
-static ssize_t clock_gating_get(struct device *dev,
+static ssize_t ipu_clock_gating_get(struct device *dev,
 				struct device_attribute *attr,
 				char *buf)
 {
 	int clk_gated;
 
-	clk_gated = HW_INf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_CPUCG_EN);
+	clk_gated = HW_INf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLKEN);
 
 	return sprintf(buf, "%d\n", clk_gated);
 }
 
-static ssize_t clock_gating_set(struct device *dev,
+static ssize_t ipu_clock_gating_set(struct device *dev,
 				  struct device_attribute *attr,
 				  const char *buf,
 				  size_t count)
@@ -1059,7 +1079,38 @@ static ssize_t clock_gating_set(struct device *dev,
 
 	if (var == 1 || var == 0) {
 		dev_info(mnh_dev->dev, "%s: %d\n", __func__, var);
-		if (!mnh_clock_bypass_gating(var))
+		if (!mnh_ipu_clock_gating(var))
+			return count;
+	}
+	return -EIO;
+}
+
+static ssize_t bypass_clock_gating_get(struct device *dev,
+				struct device_attribute *attr,
+				char *buf)
+{
+	int clk_gated;
+
+	clk_gated = HW_INf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_CPUCG_EN);
+
+	return sprintf(buf, "%d\n", clk_gated);
+}
+
+static ssize_t bypass_clock_gating_set(struct device *dev,
+				      struct device_attribute *attr,
+				      const char *buf,
+				      size_t count)
+{
+	int var = 0;
+	int ret;
+
+	ret = kstrtoint(buf, 10, &var);
+	if (ret < 0)
+		return ret;
+
+	if (var == 1 || var == 0) {
+		dev_info(mnh_dev->dev, "%s: %d\n", __func__, var);
+		if (!mnh_bypass_clock_gating(var))
 			return count;
 	}
 	return -EIO;
@@ -1148,8 +1199,10 @@ static DEVICE_ATTR(ipu_clk_src, S_IRUGO,
 		ipu_clk_src_get, NULL);
 static DEVICE_ATTR(sys200, S_IWUSR | S_IRUGO,
 		sys200_freq_get, sys200_freq_set);
-static DEVICE_ATTR(clock_gating, S_IWUSR | S_IRUGO,
-		clock_gating_get, clock_gating_set);
+static DEVICE_ATTR(ipu_clock_gating, S_IWUSR | S_IRUGO,
+		ipu_clock_gating_get, ipu_clock_gating_set);
+static DEVICE_ATTR(bypass_clock_gating, S_IWUSR | S_IRUGO,
+		bypass_clock_gating_get, bypass_clock_gating_set);
 static DEVICE_ATTR(lpddr_lp, S_IWUSR | S_IRUGO,
 		lpddr_lp_get, lpddr_lp_set);
 static DEVICE_ATTR(lpddr_sys200, S_IWUSR | S_IRUGO,
@@ -1162,7 +1215,8 @@ static struct attribute *freq_dev_attributes[] = {
 	&dev_attr_lpddr_freq.attr,
 	&dev_attr_ipu_clk_src.attr,
 	&dev_attr_sys200.attr,
-	&dev_attr_clock_gating.attr,
+	&dev_attr_ipu_clock_gating.attr,
+	&dev_attr_bypass_clock_gating.attr,
 	&dev_attr_lpddr_lp.attr,
 	&dev_attr_lpddr_sys200.attr,
 	NULL
