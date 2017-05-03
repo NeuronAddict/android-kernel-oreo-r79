@@ -50,8 +50,6 @@ HW_OUTf(mnh_dev->ddraddr, DDR_CTL, reg, fld, val)
 #define MNH_DDR_CTL_OUT(reg, val) \
 HW_OUT(mnh_dev->ddraddr, DDR_CTL, reg, val)
 
-int mnh_ddr_clr_int_status(void);
-
 /* If IPU clock is driven by CPU_IPU PLL
  * calculate IPU divider based on CPU clk and divider
  * CPU CLK < 850: IPU_CLK_DIV = ((CPU_CLK_DIV+1)*2-1)
@@ -59,6 +57,8 @@ int mnh_ddr_clr_int_status(void);
  */
 #define IPU_DIV_BY_CPU(freq, div) \
 	((freq < 850) ? ((div+1)*2-1):((div+1)*2))
+
+int mnh_ddr_clr_int_status(void);
 
 enum mnh_refclk_type {
 	REFCLK_KHZ_19200 = 0,
@@ -149,6 +149,8 @@ struct mnh_freq_cooling_device {
 	struct device *dev;
 	void __iomem *regs;
 	void __iomem *ddraddr;
+	void __iomem *cpuaddr;
+	int ddr_irq;
 	enum mnh_ipu_clk_src ipu_clk_src;
 	enum mnh_cpu_freq_type cpu_freq;
 	enum mnh_ipu_freq_type ipu_freq;
@@ -1261,7 +1263,7 @@ static irqreturn_t mnh_pm_handle_ddr_irq(int irq, void *dev_id)
 
 	//spin_unlock(&mnh_dev->irqlock);
 
-	dev_dbg(mnh_dev->dev, "%s status=0x%llx\n", __func__, status);
+	dev_info(mnh_dev->dev, "%s status=0x%llx\n", __func__, status);
 	/* return interrupt handled */
 	return IRQ_HANDLED;
 }
@@ -1294,6 +1296,28 @@ int mnh_clk_init(struct platform_device *pdev, void __iomem *baseadress)
 	if (!mnh_dev->ddraddr) {
 		dev_err(mnh_dev->dev, "unable to remap resources\n");
 		ret = -ENOMEM;
+		goto mnh_probe_err;
+	}
+
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 2);
+	if (!res) {
+		dev_err(mnh_dev->dev, "cannot get platform resources\n");
+		ret = -ENOENT;
+		goto mnh_probe_err;
+	}
+	mnh_dev->cpuaddr = ioremap_nocache(res->start, resource_size(res));
+	if (!mnh_dev->cpuaddr) {
+		dev_err(mnh_dev->dev, "unable to remap resources\n");
+		ret = -ENOMEM;
+		goto mnh_probe_err;
+	}
+	mnh_dev->ddr_irq = platform_get_irq(pdev, 0);
+	dev_dbg(mnh_dev->dev, "Allocate ddr irq %d\n", mnh_dev->ddr_irq);
+	err = request_irq(mnh_dev->ddr_irq, mnh_pm_handle_ddr_irq,
+	       IRQF_SHARED, DEVICE_NAME, mnh_dev->dev);
+	if (err) {
+		dev_err(mnh_dev->dev, "Could not allocated ddr irq\n");
+		ret = -EINVAL;
 		goto mnh_probe_err;
 	}
 
