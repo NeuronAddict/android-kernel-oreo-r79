@@ -26,6 +26,7 @@
 #include <linux/gpio.h>
 #include <linux/intel-hwio.h>
 #include <soc/mnh/mnh-hwio-scu.h>
+#include <soc/mnh/mnh-hwio-cpu.h>
 #include <soc/mnh/mnh-hwio-ddr-ctl.h>
 #include "mnh-clk.h"
 
@@ -41,6 +42,8 @@
 #define LP_CMD_EXIT_LP 0x81
 #define LP_CMD_SBIT 5
 
+#define MNH_CPU_IN(reg) \
+HW_IN(mnh_dev->cpuaddr, CPU, reg)
 #define MNH_DDR_CTL_IN(reg) \
 HW_IN(mnh_dev->ddraddr, DDR_CTL, reg)
 #define MNH_DDR_CTL_INf(reg, fld) \
@@ -1191,6 +1194,62 @@ static ssize_t lpddr_sys200_set(struct device *dev,
 	return count;
 }
 
+
+static ssize_t dump_powerregs_get(struct device *dev,
+				struct device_attribute *attr,	
+				char *buf)
+{
+	int val = 0;
+       	const char* origbuf = buf;
+	val = HW_IN(mnh_dev->regs, SCU, GLOBAL_IRQ_STATUS_SET0);
+	buf += sprintf(buf, "GLOBAL_IRQ_STATUS_SET0\t\t0x%x\n", val);
+	val = HW_IN(mnh_dev->regs, SCU, GLOBAL_IRQ_STATUS_SET1);
+	buf += sprintf(buf, "GBOBAL_IRQ_STATUS_SET1\t\t0x%x\n", val);
+
+	val = HW_IN(mnh_dev->regs, SCU, GLOBAL_IRQ_HLT_RST_EN_SET0);
+	buf += sprintf(buf, "GLOBAL_IRQ_HLT_RST_EN_SET0\t0x%x\n", val);
+	val = HW_IN(mnh_dev->regs, SCU, GLOBAL_IRQ_HLT_RST_EN_SET1);
+	buf += sprintf(buf, "GLOBAL_IRQ_HLT_RST_EN_SET1\t0x%x\n", val);
+
+	val = HW_IN(mnh_dev->regs, SCU, GLOBAL_WAKE_EN_SET0);
+	buf += sprintf(buf, "GLOBAL_WAKE_EN_SET0\t\t0x%x\n", val);
+	val = HW_IN(mnh_dev->regs, SCU, GLOBAL_WAKE_EN_SET1);
+	buf += sprintf(buf, "GLOBAL_WAKE_EN_SET1\t\t0x%x\n", val);
+
+	val = HW_IN(mnh_dev->regs, SCU, SCU_IRQ_STATUS);
+	buf += sprintf(buf, "SCU_IRQ_STATUS\t\t\t0x%x\n", val);
+	val = HW_IN(mnh_dev->regs, SCU, SCU_IRQ_ENABLE);
+	buf += sprintf(buf, "SCU_IRQ_ENABLE\t\t\t0x%x\n", val);
+
+	val = HW_IN(mnh_dev->regs, SCU, CCU_CLK_CTL);
+	buf += sprintf(buf, "CCU_CLK_CTL\t\t\t0x%x\n", val);
+
+	val = HW_IN(mnh_dev->regs, SCU, PERIPH_CLK_CTRL);
+	buf += sprintf(buf, "PERIPH_CLK_CTRL\t\t\t0x%x\n", val);
+
+	val = HW_IN(mnh_dev->regs, SCU, RSTC);
+	buf += sprintf(buf, "RSTC\t\t\t\t0x%x\n", val);
+
+	val = HW_IN(mnh_dev->regs, SCU, MEM_PWR_MGMNT);
+	buf += sprintf(buf, "MEM_PWR_MGMNT\t\t\t0x%x\n", val);
+
+	/* cpu for now */	
+	val = MNH_CPU_IN(STS);
+	buf += sprintf(buf, "CPU STS\t\t\t\t0x%x\n", val);
+
+	val = MNH_CPU_IN(PWR_MGMT_STS);
+	buf += sprintf(buf, "CPU PWR_MGMT_STS\t\t0x%x\n", val);
+
+	val = MNH_DDR_CTL_IN(227);
+	buf += sprintf(buf, "DDR_CTL 227\t\t\t0x%x\n", val);
+
+	val = MNH_DDR_CTL_IN(228);
+	buf += sprintf(buf, "DDR_CTL 228\t\t\t0x%x\n", val);
+
+
+	return (ssize_t) (buf - origbuf);
+}
+
 static DEVICE_ATTR(cpu_freq, S_IWUSR | S_IRUGO,
 		cpu_freq_get, cpu_freq_set);
 static DEVICE_ATTR(ipu_freq, S_IWUSR | S_IRUGO,
@@ -1210,6 +1269,8 @@ static DEVICE_ATTR(lpddr_lp, S_IWUSR | S_IRUGO,
 static DEVICE_ATTR(lpddr_sys200, S_IWUSR | S_IRUGO,
 		lpddr_sys200_get, lpddr_sys200_set);
 
+static DEVICE_ATTR(dump_powerregs, S_IRUGO,
+		dump_powerregs_get, NULL);
 
 static struct attribute *freq_dev_attributes[] = {
 	&dev_attr_cpu_freq.attr,
@@ -1221,6 +1282,7 @@ static struct attribute *freq_dev_attributes[] = {
 	&dev_attr_bypass_clock_gating.attr,
 	&dev_attr_lpddr_lp.attr,
 	&dev_attr_lpddr_sys200.attr,
+	&dev_attr_dump_powerregs.attr,
 	NULL
 };
 
@@ -1311,6 +1373,7 @@ int mnh_clk_init(struct platform_device *pdev, void __iomem *baseadress)
 		ret = -ENOMEM;
 		goto mnh_probe_err;
 	}
+	
 	mnh_dev->ddr_irq = platform_get_irq(pdev, 0);
 	dev_dbg(mnh_dev->dev, "Allocate ddr irq %d\n", mnh_dev->ddr_irq);
 	err = request_irq(mnh_dev->ddr_irq, mnh_pm_handle_ddr_irq,
@@ -1320,7 +1383,6 @@ int mnh_clk_init(struct platform_device *pdev, void __iomem *baseadress)
 		ret = -EINVAL;
 		goto mnh_probe_err;
 	}
-
 	/* Check IPU_CLK src */
 	mnh_dev->ipu_clk_src =
 		HW_INf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLK_SRC);
