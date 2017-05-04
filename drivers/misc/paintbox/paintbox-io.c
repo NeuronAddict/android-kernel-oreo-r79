@@ -258,15 +258,15 @@ void paintbox_io_disable_interrupt(struct paintbox_data *pb,
 bool get_mipi_input_interface_interrupt_state(struct paintbox_data *pb,
 		unsigned int interface_id)
 {
-	return !!(readl(pb->io.apb_base + IPU_ISR) & (IPU_IMR_MPI_INTR_SHIFT +
-			interface_id));
+	return !!(readl(pb->io.apb_base + IPU_ISR) &
+			(1 << (interface_id + IPU_IMR_MPI_INTR_SHIFT)));
 }
 
 bool get_mipi_output_interface_interrupt_state(struct paintbox_data *pb,
 		unsigned int interface_id)
 {
-	return !!(readl(pb->io.apb_base + IPU_ISR) & (IPU_IMR_MPO_INTR_SHIFT +
-			interface_id));
+	return !!(readl(pb->io.apb_base + IPU_ISR) &
+			(1 << (interface_id + IPU_IMR_MPO_INTR_SHIFT)));
 }
 
 int paintbox_io_apb_init(struct paintbox_data *pb)

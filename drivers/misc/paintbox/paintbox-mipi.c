@@ -32,28 +32,35 @@
 #include "paintbox-mipi.h"
 #include "paintbox-mipi-debug.h"
 #include "paintbox-mipi-v0.h"
+#include "paintbox-power.h"
 #include "paintbox-regs.h"
 
 /* The caller to this function must hold pb->io_ipu.mipi_lock. */
-static void enable_mipi_interface_interrupt(struct paintbox_data *pb,
+static void enable_mipi_interface(struct paintbox_data *pb,
 		struct paintbox_mipi_stream *stream)
 {
 	struct paintbox_mipi_interface *interface = stream->interface;
 
 	if (interface->active_stream_mask == 0) {
-		if (stream->is_input)
+		if (stream->is_input) {
+			paintbox_pm_enable_mipi_input_interface(pb,
+					interface->interface_id);
 			paintbox_enable_mipi_input_interface_interrupt(pb,
 					interface->interface_id);
-		else
+		}
+		else {
+			paintbox_pm_enable_mipi_output_interface(pb,
+					interface->interface_id);
 			paintbox_enable_mipi_output_interface_interrupt(pb,
 					interface->interface_id);
+		}
 	}
 
 	interface->active_stream_mask |= 1 << stream->stream_id;
 }
 
 /* The caller to this function must hold pb->io_ipu.mipi_lock. */
-static void disable_mipi_interface_interrupt(struct paintbox_data *pb,
+static void disable_mipi_interface(struct paintbox_data *pb,
 		struct paintbox_mipi_stream *stream)
 {
 	struct paintbox_mipi_interface *interface = stream->interface;
@@ -67,12 +74,18 @@ static void disable_mipi_interface_interrupt(struct paintbox_data *pb,
 	interface->active_stream_mask &= ~(1 << stream->stream_id);
 
 	if (interface->active_stream_mask == 0) {
-		if (stream->is_input)
+		if (stream->is_input) {
 			paintbox_disable_mipi_input_interface_interrupt(pb,
 					interface->interface_id);
-		else
+			paintbox_pm_disable_mipi_input_interface(pb,
+					interface->interface_id);
+		}
+		else {
 			paintbox_disable_mipi_output_interface_interrupt(pb,
 					interface->interface_id);
+			paintbox_pm_disable_mipi_output_interface(pb,
+					interface->interface_id);
+		}
 	}
 }
 
@@ -259,7 +272,7 @@ void release_mipi_stream(struct paintbox_data *pb,
 	writel(stream->stream_id, pb->io_ipu.ipu_base + stream->select_offset);
 	writel(0, pb->io_ipu.ipu_base + stream->ctrl_offset);
 
-	disable_mipi_interface_interrupt(pb, stream);
+	disable_mipi_interface(pb, stream);
 
 	stream->free_running = false;
 	stream->frame_count = 0;
@@ -313,7 +326,7 @@ void mipi_handle_dma_channel_released(struct paintbox_data *pb,
 	writel(stream->stream_id, pb->io_ipu.ipu_base + stream->select_offset);
 	writel(0, pb->io_ipu.ipu_base + stream->ctrl_offset);
 
-	disable_mipi_interface_interrupt(pb, stream);
+	disable_mipi_interface(pb, stream);
 
 	stream->free_running = false;
 	stream->frame_count = 0;
@@ -419,7 +432,7 @@ int release_mipi_stream_ioctl(struct paintbox_data *pb,
  */
 static int enable_mipi_input_stream(struct paintbox_data *pb,
 		struct paintbox_mipi_stream *stream, bool free_running,
-		int32_t frame_count)
+		bool disable_on_error, int32_t frame_count)
 {
 	/* frame count is zero when in free running mode. */
 	stream->frame_count = free_running ? 0 : frame_count;
@@ -427,8 +440,9 @@ static int enable_mipi_input_stream(struct paintbox_data *pb,
 	stream->is_clean = false;
 	stream->last_frame = false;
 	stream->enabled = true;
+	stream->disable_on_error = disable_on_error;
 
-	enable_mipi_interface_interrupt(pb, stream);
+	enable_mipi_interface(pb, stream);
 
 	return mipi_input_set_control(pb, stream, MPI_STRM_CTRL_EN_MASK |
 			MPI_STRM_CTRL_SOF_IMR_MASK |
@@ -456,7 +470,7 @@ static int enable_mipi_output_stream(struct paintbox_data *pb,
 	stream->is_clean = false;
 	stream->enabled = true;
 
-	enable_mipi_interface_interrupt(pb, stream);
+	enable_mipi_interface(pb, stream);
 
 	if (enable_row_sync)
 		ctrl_set_mask |= MPO_STRM_CTRL_RSYNC_EN_MASK;
@@ -559,7 +573,7 @@ int enable_mipi_stream_ioctl(struct paintbox_data *pb,
 
 	if (is_input)
 		ret = enable_mipi_input_stream(pb, stream, req.free_running,
-				req.frame_count);
+				req.frame_count, req.input.disable_on_error);
 	else
 		ret = enable_mipi_output_stream(pb, stream, req.free_running,
 				req.frame_count, req.output.enable_row_sync);
@@ -925,7 +939,8 @@ int setup_mipi_input_stream(struct paintbox_data *pb,
 	 */
 	if (setup->enable_on_setup)
 		ret |= enable_mipi_input_stream(pb, stream, setup->free_running,
-				setup->frame_count);
+				setup->frame_count,
+				setup->input.disable_on_error);
 	else if (stream->enabled)
 		ret |= mipi_input_set_control(pb, stream,
 				MPI_STRM_CTRL_EN_MASK);
@@ -1476,6 +1491,14 @@ static void paintbox_mipi_input_ovf_interrupt(struct paintbox_data *pb,
 	 * be reported on the DMA EOF interrupt.
 	 */
 	dma_set_mipi_error(pb, stream->dma_channel, -EIO);
+
+	if (stream->disable_on_error) {
+		mipi_input_clear_control(pb, stream, MPI_STRM_CTRL_EN_MASK |
+				MPI_STRM_CTRL_SOF_IMR_MASK);
+		stream->free_running = false;
+		stream->frame_count = 0;
+		stream->enabled = false;
+	}
 }
 
 /* This function must be called in an interrupt context */

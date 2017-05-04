@@ -67,7 +67,10 @@ static const char *io_pm_reg_names[IO_AON_NUM_REGS] = {
 	REG_NAME_ENTRY(CORE_POWER_ON_N),
 	REG_NAME_ENTRY(CORE_ISO_ON),
 	REG_NAME_ENTRY(CORE_RAM_ON_N),
-	REG_NAME_ENTRY(IPU_DMA_CHAN_EN)
+	REG_NAME_ENTRY(IPU_DMA_CHAN_EN),
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	REG_NAME_ENTRY(IPU_MIF_CLK_EN),
+#endif
 };
 
 static inline int paintbox_pm_dump_reg(struct paintbox_data *pb,
@@ -130,6 +133,12 @@ int paintbox_pm_dump_registers(struct paintbox_debug *debug, char *buf,
 	ret = paintbox_pm_dump_reg(pb, IPU_DMA_CHAN_EN, buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
+
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	ret = paintbox_pm_dump_reg(pb, IPU_MIF_CLK_EN, buf, &written, len);
+	if (ret < 0)
+		goto err_exit;
+#endif
 
 	return written;
 
@@ -455,6 +464,62 @@ void paintbox_pm_lbp_disable(struct paintbox_data *pb, struct paintbox_lbp *lbp)
 
 	paintbox_core_power_down_walk(pb);
 }
+
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+static void enable_mipi_interface(struct paintbox_data *pb,
+		uint32_t enable_mask)
+{
+	uint32_t val;
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&pb->power.power_lock, irq_flags);
+	val = readl(pb->io.aon_base + IPU_MIF_CLK_EN);
+	val |= enable_mask;
+	writel(val, pb->io.aon_base + IPU_MIF_CLK_EN);
+	spin_unlock_irqrestore(&pb->power.power_lock, irq_flags);
+}
+
+static void disable_mipi_interface(struct paintbox_data *pb,
+		uint32_t disable_mask)
+{
+	uint32_t val;
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&pb->power.power_lock, irq_flags);
+	val = readl(pb->io.aon_base + IPU_MIF_CLK_EN);
+	val &= ~disable_mask;
+	writel(val, pb->io.aon_base + IPU_MIF_CLK_EN);
+	spin_unlock_irqrestore(&pb->power.power_lock, irq_flags);
+}
+
+void paintbox_pm_enable_mipi_input_interface(struct paintbox_data *pb,
+		unsigned int interface_id)
+{
+	enable_mipi_interface(pb, 1 << (interface_id +
+			IPU_MIF_CLK_EN_MPI_SHIFT));
+}
+
+void paintbox_pm_disable_mipi_input_interface(struct paintbox_data *pb,
+		unsigned int interface_id)
+{
+	disable_mipi_interface(pb, 1 << (interface_id +
+			IPU_MIF_CLK_EN_MPI_SHIFT));
+}
+
+void paintbox_pm_enable_mipi_output_interface(struct paintbox_data *pb,
+		unsigned int interface_id)
+{
+	enable_mipi_interface(pb, 1 << (interface_id +
+			IPU_MIF_CLK_EN_MPO_SHIFT));
+}
+
+void paintbox_pm_disable_mipi_output_interface(struct paintbox_data *pb,
+		unsigned int interface_id)
+{
+	disable_mipi_interface(pb, 1 << (interface_id +
+			IPU_MIF_CLK_EN_MPO_SHIFT));
+}
+#endif
 
 int paintbox_pm_init(struct paintbox_data *pb)
 {

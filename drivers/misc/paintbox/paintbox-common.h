@@ -241,6 +241,7 @@ struct paintbox_mipi_stream {
 	bool is_input;
 
 	/* protected by pb->io_ipu.mipi_lock */
+	bool disable_on_error;
 	bool cleanup_in_progress;
 	bool free_running;
 	bool last_frame;
@@ -451,6 +452,7 @@ struct paintbox_dma {
 
 	/* Protected by dma_lock */
 	unsigned int selected_dma_channel_id;
+	uint64_t chan_ctrl;
 };
 
 /* Data structure for information specific to a Stencil Processor.

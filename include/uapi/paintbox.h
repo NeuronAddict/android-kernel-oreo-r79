@@ -366,6 +366,16 @@ struct sram_vector_coordinate_read {
 struct mipi_input_stream_setup {
 	uint32_t seg_start;
 	uint32_t seg_words_per_row;
+
+	/* Note that this field is only evaluated if enable_on_setup in
+	 * struct mipi_stream_setup is true.
+	 *
+	 * If disable_on_error is true then the stream will be disabled if an
+	 * overflow error occurs.  If it is false then the stream will continue
+	 * to run for the confgured number of frames or indefinitely if
+	 * configured for free running.
+	 */
+	bool disable_on_error;
 };
 
 struct mipi_output_stream_setup {
@@ -421,10 +431,21 @@ struct mipi_stream_enable {
 	 */
 	int32_t frame_count;
 
-	/* enable_row_sync is only used for output streams. */
-	struct {
-		bool enable_row_sync;
-	} output;
+	union {
+		struct {
+			/* enable_row_sync is only used for output streams. */
+			bool enable_row_sync;
+		} output;
+		struct {
+			/* If disable_on_error is true then the stream will be
+			 * disabled if an overflow error occurs.  If it is false
+			 * then the stream will continue to run for the
+			 * confgured number of frames or indefinitely if
+			 * configured for free running.
+			 */
+			bool disable_on_error;
+		} input;
+	};
 };
 
 struct mipi_interrupt_config {

@@ -52,10 +52,10 @@ static inline bool paintbox_dma_src_is_mipi(uint32_t mode)
 			DMA_CHAN_MODE_SRC_MIPI_IN;
 }
 
-static inline bool paintbox_dma_src_is_dram(uint32_t mode)
+static inline bool paintbox_dma_src_is_lbp(uint32_t mode)
 {
 	return ((mode & DMA_CHAN_MODE_SRC_MASK) >> DMA_CHAN_MODE_SRC_SHIFT) ==
-			DMA_CHAN_MODE_SRC_DRAM;
+			DMA_CHAN_MODE_SRC_LBP;
 }
 
 static inline bool paintbox_dma_dst_is_mipi(uint32_t mode)
@@ -99,6 +99,14 @@ static inline void paintbox_dma_disable_channel_interrupts(
 		writel(0, pb->dma.dma_base + DMA_CHAN_IMR);
 		paintbox_disable_dma_channel_interrupt(pb, channel->channel_id);
 	}
+}
+
+static inline void paintbox_dma_chan_ctrl_set(struct paintbox_data *pb,
+		uint64_t mask, uint64_t value)
+{
+	pb->dma.chan_ctrl &= ~mask;
+	pb->dma.chan_ctrl |= value;
+	writeq(pb->dma.chan_ctrl, pb->dma.dma_base + DMA_CHAN_CTRL);
 }
 
 /* The caller to this function must hold pb->lock */
@@ -299,9 +307,8 @@ int unbind_dma_interrupt_ioctl(struct paintbox_data *pb,
 static void dma_reset_channel_locked(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel, bool force)
 {
-	struct paintbox_dma *dma = &pb->dma;
+	uint64_t reset_mask = 1ULL << channel->channel_id;
 	struct paintbox_dma_transfer *transfer;
-	uint64_t chan_ctrl;
 
 	/* If there are no active transfers and a reset is not being forced then
 	 * there is no need to reset the channel.
@@ -313,12 +320,10 @@ static void dma_reset_channel_locked(struct paintbox_data *pb,
 	}
 
 	paintbox_dma_select_channel(pb, channel->channel_id);
+	paintbox_dma_chan_ctrl_set(pb, reset_mask, reset_mask);
 
-	chan_ctrl = readq(dma->dma_base + DMA_CHAN_CTRL);
-	chan_ctrl |= 1 << channel->channel_id;
-	writeq(chan_ctrl, dma->dma_base + DMA_CHAN_CTRL);
-	chan_ctrl &= ~(1 << channel->channel_id);
-	writeq(chan_ctrl, dma->dma_base + DMA_CHAN_CTRL);
+	/* Reset bits are not self-clearing so clear it here. */
+	paintbox_dma_chan_ctrl_set(pb, reset_mask, 0);
 
 	if (channel->active_count > 0) {
 		channel->active_count--;
@@ -351,9 +356,10 @@ void dma_stop_transfer(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel)
 {
 	struct paintbox_dma *dma = &pb->dma;
-	uint32_t mode;
-	uint64_t chan_ctrl;
 	unsigned long irq_flags;
+	uint32_t mode;
+	uint64_t stop_mask = 1ULL << (channel->channel_id +
+			DMA_CHAN_CTRL_STOP_SHIFT);
 
 	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
 
@@ -398,9 +404,7 @@ void dma_stop_transfer(struct paintbox_data *pb,
 	}
 
 	/* If there is an active transfer then issue a stop request. */
-	chan_ctrl = readq(dma->dma_base + DMA_CHAN_CTRL);
-	chan_ctrl |= 1 << (channel->channel_id + DMA_CHAN_CTRL_STOP_SHIFT);
-	writeq(chan_ctrl, dma->dma_base + DMA_CHAN_CTRL);
+	paintbox_dma_chan_ctrl_set(pb, stop_mask, stop_mask);
 
 	reinit_completion(&channel->stop_completion);
 
@@ -422,21 +426,18 @@ void dma_stop_transfer(struct paintbox_data *pb,
 	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
 
 	/* Re-select the channel, the DMA_SEL field might have changed while the
-	 * lock was not held.
+	 * pb->dma.dma_lock spinlock was not held.
 	 */
 	paintbox_dma_select_channel(pb, channel->channel_id);
 
 	/* Stop bits are not self-clearing so clear it here. */
-	chan_ctrl = readq(dma->dma_base + DMA_CHAN_CTRL);
-	chan_ctrl &= ~(1 << (channel->channel_id + DMA_CHAN_CTRL_STOP_SHIFT));
-	writeq(chan_ctrl, dma->dma_base + DMA_CHAN_CTRL);
-
+	paintbox_dma_chan_ctrl_set(pb, stop_mask, 0);
 	paintbox_dma_disable_channel_interrupts(pb, channel);
 
 	/* If the transfer was to or from a line buffer then reset the
 	 * line buffer too.
 	 */
-	if (paintbox_dma_src_is_dram(mode) || paintbox_dma_dst_is_lbp(mode)) {
+	if (paintbox_dma_src_is_lbp(mode) || paintbox_dma_dst_is_lbp(mode)) {
 		uint32_t chan_node = readl(dma->dma_base + DMA_CHAN_NODE_RO);
 
 		reset_lb(pb, chan_node & DMA_CHAN_NODE_RO_CORE_ID_MASK,
@@ -1456,6 +1457,8 @@ int paintbox_dma_init(struct paintbox_data *pb)
 	pb->dma.selected_dma_channel_id = (DMA_CTRL_DEF &
 			DMA_CTRL_DMA_CHAN_SEL_MASK) >>
 			DMA_CTRL_DMA_CHAN_SEL_SHIFT;
+
+	pb->dma.chan_ctrl = DMA_CHAN_CTRL_DEF;
 
 	spin_lock_init(&pb->dma.dma_lock);
 	INIT_LIST_HEAD(&pb->dma.discard_list);
