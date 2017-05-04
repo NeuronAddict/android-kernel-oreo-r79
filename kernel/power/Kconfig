@@ -9,7 +9,7 @@ config SUSPEND
 
 config SUSPEND_FREEZER
 	bool "Enable freezer for suspend to RAM/standby" \
-		#if ARCH_WANTS_FREEZER_CONTROL || BROKEN
+		if ARCH_WANTS_FREEZER_CONTROL || BROKEN
 	depends on SUSPEND
 	default y
 	help
