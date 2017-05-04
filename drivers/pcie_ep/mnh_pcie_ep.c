@@ -54,6 +54,7 @@
 #include <soc/mnh/mnh-hwio-scu.h>
 #include <linux/pagemap.h>
 #include <linux/dma-buf.h>
+#include <linux/jiffies.h>
 
 
 #define VENDOR_ID				0x8086
@@ -66,18 +67,22 @@ int (*irq_callback)(struct mnh_pcie_irq *irq);
 int (*dma_callback)(struct mnh_dma_irq *irq);
 struct mnh_pcie_ep_device *pcie_ep_dev;
 struct delayed_work msi_work;
+struct delayed_work power_state_work;
 struct work_struct msi_rx_work, vm0_work, vm1_work, wake_work;
 #define DEVICE_NAME "mnh_pcie_ep"
 #define CLASS_NAME "pcie_ep"
 #define MSI_DELAY (HZ/20) /* TODO: Need to understand what this should be */
+#define POWER_DELAY (1000*1000) /* delay between L-power state checks, usecs */
 #define MAX_STR_COPY	32
 uint32_t rw_address_sysfs, rw_size_sysfs;
 struct mnh_pcie_irq sysfs_irq;
 
 static int pcie_ll_destroy(struct mnh_dma_ll *ll);
 static int pcie_set_l_one(uint32_t enable, uint32_t clkpm);
-static void pcie_set_power_mode_state(uint32_t l1state, uint32_t clkpm);
-static void pcie_get_power_mode_state(uint32_t *l1state, uint32_t *clkpm);
+static void pcie_set_power_mode_state(
+	struct mnh_pcie_ep_power_state *power_state);
+static void pcie_get_power_mode_state(
+	struct mnh_pcie_ep_power_state *power_state);
 
 #if MNH_PCIE_DEBUG_ENABLE
 
@@ -183,8 +188,9 @@ static int pcie_link_init(void)
 	/*enable L1 entry */
 	PCIECAP_OUTf(PCIE_CAP_LINK_CONTROL_LINK_STATUS,
 			PCIE_CAP_ACTIVE_STATE_LINK_PM_CONTROL, 0x2);
-	pcie_get_power_mode_state(&pcie_ep_dev->l1state, &pcie_ep_dev->clkpm);
-	pcie_set_l_one(pcie_ep_dev->l1state, pcie_ep_dev->clkpm);
+	pcie_get_power_mode_state(&pcie_ep_dev->power_state);
+	pcie_set_l_one(pcie_ep_dev->power_state.l1state,
+		       pcie_ep_dev->power_state.clkpm);
 
 	/* Enable interupts */
 	CSR_OUT(PCIE_SS_INTR_EN, PCIE_SS_IRQ_MASK);
@@ -194,8 +200,29 @@ static int pcie_link_init(void)
 	return  CSR_INx(PCIE_GP, 0);
 }
 
+static void pcie_set_low_power(unsigned int enabled)
+{
+	if (!enabled && pcie_ep_dev->power_state.axi_gating) {
+		/* Shedule a worklet to get back to low power state in L1 */
+		cancel_delayed_work(&power_state_work);
+		schedule_delayed_work(&power_state_work,
+			usecs_to_jiffies(POWER_DELAY));
+	}
+	dev_dbg(pcie_ep_dev->dev, "%s enabled=%d\n", __func__, enabled);
+
+	SCUS_OUTf(CCU_CLK_CTL, HALT_AXICG_EN, enabled);
+	SCUS_OUTf(CCU_CLK_CTL, PCIE_AXI_CLKEN, !enabled);
+	/*
+	 * SCUS_OUTf(PERIPH_CLK_CTRL, PCIE_CLK_MODE, !enabled);
+	 * SCUS_OUTf(PERIPH_CLK_CTRL, PCIE_REFCLKEN, !enabled);
+	 * SCUS_OUTf(MEM_PWR_MGMNT, PCIE_MEM_DS, enabled);
+	 */
+}
+
 static void force_link_up(void)
 {
+	pcie_set_low_power(0);
+
 	if (CSR_INf(PCIE_APP_CTRL, PCIE_APP_REQ_EXIT_L1))
 		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_REQ_EXIT_L1, 0);
 	CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_REQ_EXIT_L1, 1);
@@ -316,6 +343,26 @@ static void pcie_msi_worker(struct work_struct *work)
 		cancel_delayed_work(&msi_work);
 		schedule_delayed_work(&msi_work, MSI_DELAY);
 	}
+
+}
+
+static void pcie_power_state_worker(struct work_struct *work)
+{
+	uint32_t l1state;
+
+	/* Check the l1 state and turn PCIe power savings on when we enter L1 */
+	l1state = CSR_INf(PCIE_APP_STS, PCIE_PM_LINKST_IN_L1);
+	dev_dbg(pcie_ep_dev->dev, "%s l1state=%d\n", __func__, l1state);
+
+	if (!l1state) {
+		cancel_delayed_work(&power_state_work);
+		schedule_delayed_work(&power_state_work,
+			usecs_to_jiffies(POWER_DELAY));
+	} else {
+		/* Enable PCIe power savings */
+		pcie_set_low_power(1);
+	}
+
 
 }
 
@@ -675,20 +722,35 @@ static int pcie_write_data(uint8_t *buff, uint32_t size, uint64_t adr)
 	return 0;
 }
 
-static void pcie_set_power_mode_state(uint32_t l1state, uint32_t clkpm)
+static void pcie_set_power_mode_state(
+	struct mnh_pcie_ep_power_state *power_state)
 {
-	dev_dbg(pcie_ep_dev->dev, "%s l1state=%d, clkpm=%d\n", __func__,
-		l1state, clkpm);
-	SCUS_OUTf(GP_POWER_MODE, PCIE_L1_2_EN, l1state);
-	SCUS_OUTf(GP_POWER_MODE, PCIE_CLKPM_EN, clkpm);
+	dev_dbg(pcie_ep_dev->dev, "%s axi_gating=%d, l1state=%d, clkpm=%d\n",
+		 __func__,
+		power_state->axi_gating,
+		power_state->l1state,
+		power_state->clkpm);
+	pcie_set_low_power(0);
+	SCUS_OUTf(GP_POWER_MODE, PCIE_AXI_CG_EN,
+		power_state->axi_gating);
+	SCUS_OUTf(GP_POWER_MODE, PCIE_L1_2_EN,
+		power_state->l1state);
+	SCUS_OUTf(GP_POWER_MODE, PCIE_CLKPM_EN,
+		power_state->clkpm);
 }
 
-static void pcie_get_power_mode_state(uint32_t *l1state, uint32_t *clkpm)
+static void pcie_get_power_mode_state(
+	struct mnh_pcie_ep_power_state *power_state)
 {
-	*l1state = SCUS_INf(GP_POWER_MODE, PCIE_L1_2_EN);
-	*clkpm =SCUS_INf(GP_POWER_MODE, PCIE_CLKPM_EN);
-	dev_dbg(pcie_ep_dev->dev, "%s l1state=%d, clkpm=%d\n", __func__,
-		*l1state, *clkpm);
+	pcie_set_low_power(0);
+	power_state->axi_gating = SCUS_INf(GP_POWER_MODE, PCIE_AXI_CG_EN);
+	power_state->l1state = SCUS_INf(GP_POWER_MODE, PCIE_L1_2_EN);
+	power_state->clkpm = SCUS_INf(GP_POWER_MODE, PCIE_CLKPM_EN);
+	dev_dbg(pcie_ep_dev->dev, "%s axi_gating=%d, l1state=%d, clkpm=%d\n",
+		__func__,
+		power_state->axi_gating,
+		power_state->l1state,
+		power_state->clkpm);
 }
 
 static int pcie_set_l_one(uint32_t enable, uint32_t clkpm)
@@ -696,14 +758,16 @@ static int pcie_set_l_one(uint32_t enable, uint32_t clkpm)
 	dev_dbg(pcie_ep_dev->dev, "%s:%d enable=%d clkpm=%d\n",
 		__func__, __LINE__, enable, clkpm);
 
-	pcie_ep_dev->clkpm = clkpm;
-	pcie_ep_dev->l1state = enable;
-	if (pcie_ep_dev->clkpm == 1) {
+	pcie_set_low_power(0);
+
+	pcie_ep_dev->power_state.clkpm = clkpm;
+	pcie_ep_dev->power_state.l1state = enable;
+	if (pcie_ep_dev->power_state.clkpm == 1) {
 		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_CLK_PM_EN, 1);
 	} else {
 		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_CLK_PM_EN, 0);
 	}
-	if (pcie_ep_dev->l1state == 1) {
+	if (pcie_ep_dev->power_state.l1state == 1) {
 		PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CONTROL1,
 				L1_1_ASPM_EN, 0x1);
 		PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CONTROL1,
@@ -716,23 +780,26 @@ static int pcie_set_l_one(uint32_t enable, uint32_t clkpm)
 					L1_2_ASPM_EN, 0x0);
 		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_REQ_EXIT_L1, 1);
 	}
-	pcie_set_power_mode_state(pcie_ep_dev->l1state, pcie_ep_dev->clkpm);
+	pcie_set_power_mode_state(&pcie_ep_dev->power_state);
 	/* send an msi just to wake up AP and notice the L1.2 state change */
 	mnh_send_msi(PET_WATCHDOG);
 	return 0;
 }
 
+
 static void pcie_wake_worker(struct work_struct *work) {
-	int l1state = 0, clkpm = 0;
+	int l1state = pcie_ep_dev->power_state.l1state;
+	int clkpm = pcie_ep_dev->power_state.clkpm;
+
+	pcie_set_low_power(0);
 
 	/* read pcie target state from the gp reg */
-	pcie_get_power_mode_state(&l1state, &clkpm);
-	udelay(100);
-
+	pcie_get_power_mode_state(&pcie_ep_dev->power_state);
 	dev_dbg(pcie_ep_dev->dev, "%s:%d curstate=%d target state=%d\n",
-		__func__, __LINE__, pcie_ep_dev->l1state, l1state);
-	if (	pcie_ep_dev->l1state != l1state ||
-		pcie_ep_dev->clkpm != clkpm) {
+		__func__, __LINE__, pcie_ep_dev->power_state.l1state, l1state);
+
+	if (pcie_ep_dev->power_state.l1state != l1state ||
+		pcie_ep_dev->power_state.clkpm != clkpm) {
 		pcie_set_l_one(l1state, clkpm);
 	}
 }
@@ -1238,6 +1305,22 @@ int mnh_set_l_one(uint32_t enable, uint32_t clkpm)
 	return pcie_set_l_one(enable, clkpm);
 }
 EXPORT_SYMBOL(mnh_set_l_one);
+
+/* API to get PCIE power saving settings  */
+int mnh_get_power_mode(struct mnh_pcie_ep_power_state *power_state)
+{
+	pcie_get_power_mode_state(power_state);
+	return 0;
+}
+EXPORT_SYMBOL(mnh_get_power_mode);
+
+/* API to set PCIE power saving settings  */
+int mnh_set_power_mode(struct mnh_pcie_ep_power_state *power_state)
+{
+	pcie_set_power_mode_state(power_state);
+	return 0;
+}
+EXPORT_SYMBOL(mnh_set_power_mode);
 
 /* API to send Vendor message to AP */
 int mnh_send_vm(struct mnh_pcie_vm *vm)
@@ -1805,191 +1888,52 @@ static ssize_t sysfs_set_lone(struct device *dev,
 static DEVICE_ATTR(set_lone, S_IRUGO | S_IWUSR | S_IWGRP,
 			show_sysfs_set_lone, sysfs_set_lone);
 
-static int init_sysfs(void)
+static ssize_t show_sysfs_set_power_mode(struct device *dev,
+				struct device_attribute *attr,
+				char *buf)
 {
-	int ret;
+	uint32_t mode = 0;
+	struct mnh_pcie_ep_power_state power_state;
 
-	ret = device_create_file(pcie_ep_dev->dev,
-			&dev_attr_send_msi);
-	if (ret) {
-		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: send_msi\n");
-		return -EINVAL;
-	}
-	ret = device_create_file(pcie_ep_dev->dev,
-			&dev_attr_send_vm);
-	if (ret) {
-		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: send_vm\n");
-		device_remove_file(pcie_ep_dev->dev,
-			&dev_attr_send_msi);
-		return -EINVAL;
-	}
-	ret = device_create_file(pcie_ep_dev->dev,
-			&dev_attr_rb_base);
-	if (ret) {
-		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: rb_base\n");
-		device_remove_file(pcie_ep_dev->dev,
-			&dev_attr_send_msi);
-		device_remove_file(pcie_ep_dev->dev,
-			&dev_attr_send_vm);
-		return -EINVAL;
-	}
-	rw_address_sysfs = 0x0;
-	ret = device_create_file(pcie_ep_dev->dev,
-			&dev_attr_rw_address);
-	if (ret) {
-		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: rw_address\n");
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_send_msi);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_send_vm);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rb_base);
-		return -EINVAL;
-	}
-	rw_size_sysfs = 0x1;
-	ret = device_create_file(pcie_ep_dev->dev,
-			&dev_attr_rw_size);
-	if (ret) {
-		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: rw_size\n");
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_send_msi);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_send_vm);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rb_base);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_address);
-		return -EINVAL;
-	}
-	ret = device_create_file(pcie_ep_dev->dev,
-			&dev_attr_rw_cluster);
-	if (ret) {
-		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: rw_cluster\n");
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_send_msi);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_send_vm);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rb_base);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_address);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_size);
-		return -EINVAL;
-	}
-	ret = device_create_file(pcie_ep_dev->dev,
-			&dev_attr_rw_config);
-	if (ret) {
-		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: rw_config\n");
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_send_msi);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_send_vm);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rb_base);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_address);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_size);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_cluster);
-		return -EINVAL;
-	}
-	ret = device_create_file(pcie_ep_dev->dev,
-			&dev_attr_rw_data);
-	if (ret) {
-		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: rw_data\n");
-				device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_send_msi);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_send_vm);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rb_base);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_address);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_size);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_cluster);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_config);
-		return -EINVAL;
-	}
-	ret = device_create_file(pcie_ep_dev->dev,
-			&dev_attr_test_callback);
-	if (ret) {
-		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: test_callback\n");
-				device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_send_msi);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_send_vm);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rb_base);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_address);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_size);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_cluster);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_config);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_data);
-		return -EINVAL;
-	}
-	ret = device_create_file(pcie_ep_dev->dev,
-			&dev_attr_send_ltr);
-	if (ret) {
-		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: send_ltr\n");
-				device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_send_msi);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_send_vm);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rb_base);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_address);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_size);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_cluster);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_config);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_data);
-		device_remove_file(pcie_ep_dev->dev,
-			&dev_attr_test_callback);
-		return -EINVAL;
-	}
-	ret = device_create_file(pcie_ep_dev->dev,
-			&dev_attr_set_lone);
-	if (ret) {
-		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: set_lone\n");
-				device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_send_msi);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_send_vm);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rb_base);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_address);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_size);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_cluster);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_config);
-		device_remove_file(pcie_ep_dev->dev,
-				&dev_attr_rw_data);
-		device_remove_file(pcie_ep_dev->dev,
-			&dev_attr_test_callback);
-		device_remove_file(pcie_ep_dev->dev,
-			&dev_attr_send_ltr);
-		return -EINVAL;
-	}
+	mnh_get_power_mode(&power_state);
+	mode = power_state.clkpm <<
+		HWIO_SCU_GP_POWER_MODE_PCIE_CLKPM_EN_FLDSHFT;
+	mode |= power_state.l1state <<
+		HWIO_SCU_GP_POWER_MODE_PCIE_L1_2_EN_FLDSHFT;
+	mode |= power_state.axi_gating <<
+		HWIO_SCU_GP_POWER_MODE_PCIE_AXI_CG_EN_FLDSHFT;
 
-	return 0;
+	return snprintf(buf, MAX_STR_COPY, "0x%x\n", mode);
 }
+
+static ssize_t sysfs_set_power_mode(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf,
+				size_t count)
+{
+	unsigned long val = 0;
+
+	if (kstrtoul(buf, 0, &val))
+		return -EINVAL;
+	dev_dbg(pcie_ep_dev->dev, "Setting power_mode 0x%x, 0x%x\n", val,
+		val & HWIO_SCU_GP_POWER_MODE_PCIE_L1_2_EN_FLDMASK);
+
+	pcie_ep_dev->power_state.clkpm =
+		(val & HWIO_SCU_GP_POWER_MODE_PCIE_CLKPM_EN_FLDMASK) >>
+		HWIO_SCU_GP_POWER_MODE_PCIE_CLKPM_EN_FLDSHFT;
+	pcie_ep_dev->power_state.l1state =
+		(val & HWIO_SCU_GP_POWER_MODE_PCIE_L1_2_EN_FLDMASK) >>
+		HWIO_SCU_GP_POWER_MODE_PCIE_L1_2_EN_FLDSHFT;
+	pcie_ep_dev->power_state.axi_gating =
+		(val &	HWIO_SCU_GP_POWER_MODE_PCIE_AXI_CG_EN_FLDMASK) >>
+		HWIO_SCU_GP_POWER_MODE_PCIE_AXI_CG_EN_FLDSHFT;
+
+	mnh_set_power_mode(&pcie_ep_dev->power_state);
+	return count;
+}
+
+static DEVICE_ATTR(power_mode, S_IRUGO | S_IWUSR | S_IWGRP,
+			show_sysfs_set_power_mode, sysfs_set_power_mode);
 
 static void clean_sysfs(void)
 {
@@ -2016,6 +1960,105 @@ static void clean_sysfs(void)
 	device_remove_file(pcie_ep_dev->dev,
 			&dev_attr_set_lone);
 }
+
+static int init_sysfs(void)
+{
+	int ret;
+
+	ret = device_create_file(pcie_ep_dev->dev,
+			&dev_attr_send_msi);
+	if (ret) {
+		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: send_msi\n");
+		return -EINVAL;
+	}
+	ret = device_create_file(pcie_ep_dev->dev,
+			&dev_attr_send_vm);
+	if (ret) {
+		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: send_vm\n");
+		clean_sysfs();
+		return -EINVAL;
+	}
+	ret = device_create_file(pcie_ep_dev->dev,
+			&dev_attr_rb_base);
+	if (ret) {
+		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: rb_base\n");
+		clean_sysfs();
+		return -EINVAL;
+	}
+	rw_address_sysfs = 0x0;
+	ret = device_create_file(pcie_ep_dev->dev,
+			&dev_attr_rw_address);
+	if (ret) {
+		dev_err(pcie_ep_dev->dev,
+			"Failed to create sysfs: rw_address\n");
+		clean_sysfs();
+		return -EINVAL;
+	}
+	rw_size_sysfs = 0x1;
+	ret = device_create_file(pcie_ep_dev->dev,
+			&dev_attr_rw_size);
+	if (ret) {
+		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: rw_size\n");
+		clean_sysfs();
+		return -EINVAL;
+	}
+	ret = device_create_file(pcie_ep_dev->dev,
+			&dev_attr_rw_cluster);
+	if (ret) {
+		dev_err(pcie_ep_dev->dev,
+			"Failed to create sysfs: rw_cluster\n");
+		clean_sysfs();
+		return -EINVAL;
+	}
+	ret = device_create_file(pcie_ep_dev->dev,
+			&dev_attr_rw_config);
+	if (ret) {
+		dev_err(pcie_ep_dev->dev,
+			"Failed to create sysfs: rw_config\n");
+		clean_sysfs();
+		return -EINVAL;
+	}
+	ret = device_create_file(pcie_ep_dev->dev,
+			&dev_attr_rw_data);
+	if (ret) {
+		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: rw_data\n");
+		clean_sysfs();
+		return -EINVAL;
+	}
+	ret = device_create_file(pcie_ep_dev->dev,
+			&dev_attr_test_callback);
+	if (ret) {
+		dev_err(pcie_ep_dev->dev,
+			"Failed to create sysfs: test_callback\n");
+		clean_sysfs();
+		return -EINVAL;
+	}
+	ret = device_create_file(pcie_ep_dev->dev,
+			&dev_attr_send_ltr);
+	if (ret) {
+		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: send_ltr\n");
+		clean_sysfs();
+		return -EINVAL;
+	}
+	ret = device_create_file(pcie_ep_dev->dev,
+			&dev_attr_set_lone);
+	if (ret) {
+		dev_err(pcie_ep_dev->dev, "Failed to create sysfs: set_lone\n");
+		clean_sysfs();
+		return -EINVAL;
+	}
+	ret = device_create_file(pcie_ep_dev->dev,
+			&dev_attr_power_mode);
+	if (ret) {
+		dev_err(pcie_ep_dev->dev,
+			"Failed to create sysfs: power_mode\n");
+		clean_sysfs();
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 
 #endif
 static int mnh_pcie_ep_probe(struct platform_device *pdev)
@@ -2071,6 +2114,7 @@ static int mnh_pcie_ep_probe(struct platform_device *pdev)
 
 /* declare MSI worker */
 	INIT_DELAYED_WORK(&msi_work, pcie_msi_worker);
+	INIT_DELAYED_WORK(&power_state_work, pcie_power_state_worker);
 	INIT_WORK(&wake_work, pcie_wake_worker);
 	INIT_WORK(&msi_rx_work, msi_rx_worker);
 	INIT_WORK(&vm0_work, vm0_worker);
@@ -2107,6 +2151,7 @@ static int mnh_pcie_ep_probe(struct platform_device *pdev)
 static int mnh_pcie_ep_remove(struct platform_device *pdev)
 {
 	cancel_delayed_work_sync(&msi_work);
+	cancel_delayed_work_sync(&power_state_work);
 #if MNH_PCIE_DEBUG_ENABLE
 	clean_sysfs();
 #endif
@@ -2119,6 +2164,7 @@ static int mnh_pcie_ep_remove(struct platform_device *pdev)
 static int mnh_pcie_ep_suspend(struct platform_device *pdev, pm_message_t state)
 {
 	cancel_delayed_work_sync(&msi_work);
+	cancel_delayed_work_sync(&power_state_work);
 	pcie_ep_dev->rb_base = pcie_cluster_read(MNH_PCIE_GP_1);
 
 	return 0;
@@ -2129,8 +2175,10 @@ static int mnh_pcie_ep_resume(struct platform_device *pdev)
 	/*enable L1 entry */
 	PCIECAP_OUTf(PCIE_CAP_LINK_CONTROL_LINK_STATUS,
 			PCIE_CAP_ACTIVE_STATE_LINK_PM_CONTROL, 0x2);
-	pcie_get_power_mode_state(&pcie_ep_dev->l1state, &pcie_ep_dev->clkpm);
-	pcie_set_l_one(pcie_ep_dev->l1state, pcie_ep_dev->clkpm);
+	pcie_get_power_mode_state(&pcie_ep_dev->power_state);
+	pcie_set_l_one(
+		pcie_ep_dev->power_state.l1state,
+		pcie_ep_dev->power_state.clkpm);
 
 	/* Enable interupts */
 	CSR_OUT(PCIE_SS_INTR_EN, PCIE_SS_IRQ_MASK);

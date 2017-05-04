@@ -62,6 +62,12 @@
 #define SGL_BUFFER 256
 #define SGL_SIZE 16384
 
+struct mnh_pcie_ep_power_state {
+	int clkpm;
+	int l1state;
+	int axi_gating;
+};
+
 struct mnh_pcie_ep_device {
 	struct device *dev;
 	char name[64];
@@ -79,8 +85,7 @@ struct mnh_pcie_ep_device {
 	struct resource *cluster_mem;
 	struct resource *outbound_mem;
 	struct resource *scu_mem;
-	int clkpm;
-	int l1state;
+	struct mnh_pcie_ep_power_state power_state;
 };
 
 #endif
