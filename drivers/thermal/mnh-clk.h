@@ -126,6 +126,22 @@ int mnh_clock_init_gating(int enabled);
  */
 int mnh_clk_init(struct platform_device *pdev, void __iomem *baseadress);
 
+
+/**
+ * @enabled: 0 or 1, to enable clock gating via SCU
+ * Return: 0 on success, an error code otherwise.
+ *
+ */
+int mnh_bypass_clock_gating(int enabled);
+
+/**
+ * @enabled: 0 or 1, to enable clock gating via SCU
+ * Return: 0 on success, an error code otherwise.
+ *
+ */
+int mnh_axi_clock_gating(int enabled);
+
+
 /**
  * Clean up the interface
  */

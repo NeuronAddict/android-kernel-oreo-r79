@@ -55,6 +55,7 @@
 #include <linux/pagemap.h>
 #include <linux/dma-buf.h>
 #include <linux/jiffies.h>
+#include <../thermal/mnh-clk.h>
 
 
 #define VENDOR_ID				0x8086
@@ -222,13 +223,7 @@ static int pcie_link_init(void)
 static void pcie_set_low_power(unsigned int enabled)
 {
 	dev_dbg(pcie_ep_dev->dev, "%s enabled=%d\n", __func__, enabled);
-	SCUS_OUTf(CCU_CLK_CTL, HALT_AXICG_EN, enabled);
-	SCUS_OUTf(CCU_CLK_CTL, PCIE_AXI_CLKEN, !enabled);
-	/*
-	 * SCUS_OUTf(PERIPH_CLK_CTRL, PCIE_CLK_MODE, !enabled);
-	 * SCUS_OUTf(PERIPH_CLK_CTRL, PCIE_REFCLKEN, !enabled);
-	 * SCUS_OUTf(MEM_PWR_MGMNT, PCIE_MEM_DS, enabled);
-	 */
+	mnh_axi_clock_gating(enabled);
 }
 
 static void force_link_up(void)

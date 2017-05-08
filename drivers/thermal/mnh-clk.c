@@ -725,17 +725,15 @@ static void mnh_ddr_disable_lp(void)
 int mnh_clock_init_gating(int enabled)
 {
 	dev_dbg(mnh_dev->dev, "%s:%d\n", __func__, __LINE__);
+	if (!mnh_dev)
+		return -ENOENT;
 
 	if (enabled != 1 && enabled != 0)
 		return -EINVAL;
 	/* Add periph clk gates */
-	HW_OUTf(mnh_dev->regs, SCU, RSTC, TIMER_RST, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, RSTC, PERI_DMA_RST, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, PERI_DMA_CLKEN_SW,
 		!enabled);
-	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, TIMER_CLKEN_SW,
-		!enabled);
-
 	if (enabled) {
 		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_LP4CMEM_PD_EN,
 			enabled);
@@ -768,12 +766,15 @@ EXPORT_SYMBOL(mnh_clock_init_gating);
 int mnh_bypass_clock_gating(int enabled)
 {
 	dev_dbg(mnh_dev->dev, "%s:%d\n", __func__, __LINE__);
+	if (!mnh_dev)
+		return -ENOENT;
 
 	if (enabled != 1 && enabled != 0)
 		return -EINVAL;
 
 	if (enabled) {
-		HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_CPUCG_EN, enabled);
+		HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_CPUCG_EN,
+			enabled);
 		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_CPUMEM_PD_EN,
 			enabled);
 		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, CPU_L2MEM_DS,
@@ -787,7 +788,8 @@ int mnh_bypass_clock_gating(int enabled)
 			enabled);
 		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_CPUMEM_PD_EN,
 			enabled);
-		HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_CPUCG_EN, enabled);
+		HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_CPUCG_EN,
+			enabled);
 	}
 
 	HW_OUTf(mnh_dev->regs, SCU, RSTC, WDT_RST, enabled);
@@ -799,6 +801,22 @@ int mnh_bypass_clock_gating(int enabled)
 }
 EXPORT_SYMBOL(mnh_bypass_clock_gating);
 
+int mnh_axi_clock_gating(int enabled)
+{
+	dev_dbg(mnh_dev->dev, "%s:%d\n", __func__, __LINE__);
+	if (!mnh_dev)
+		return -ENOENT;
+
+	if (enabled != 1 && enabled != 0)
+		return -EINVAL;
+
+	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_AXICG_EN, enabled);
+	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, PCIE_AXI_CLKEN, !enabled);
+
+	return 0;
+}
+EXPORT_SYMBOL(mnh_axi_clock_gating);
+
 /**
  * Set the SCU clock gating for bypass mode
  * Return: 0 on success, an error code otherwise.
@@ -809,6 +827,8 @@ EXPORT_SYMBOL(mnh_bypass_clock_gating);
 int mnh_ipu_clock_gating(int enabled)
 {
 	dev_dbg(mnh_dev->dev, "%s\n", __func__);
+	if (!mnh_dev)
+		return -ENOENT;
 
 	if (enabled != 1 && enabled != 0)
 		return -EINVAL;

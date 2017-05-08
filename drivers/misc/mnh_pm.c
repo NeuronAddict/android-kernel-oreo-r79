@@ -40,6 +40,7 @@
 #include <linux/suspend.h>
 #include <linux/pm.h>
 #include <linux/arm-smccc.h>
+#include <linux/delay.h>
 #include <asm/suspend.h>
 #include "../thermal/mnh-clk.h"
 /*
@@ -112,8 +113,10 @@ static void mnh_pm_intr_proc(struct work_struct *work)
 	int error;
 
 	mnh_debug("%s mnh_suspend_start\n", __func__);
-
+	mnh_bypass_clock_gating(CLOCK_GATING_DISABLED);
+	mnh_axi_clock_gating(CLOCK_GATING_DISABLED);
 	mnh_clock_init_gating(CLOCK_GATING_DISABLED);
+	udelay(1);
 
 	error = pm_suspend(PM_SUSPEND_MEM);
 	if (error)

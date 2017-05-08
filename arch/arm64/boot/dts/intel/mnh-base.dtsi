@@ -1,3 +1,4 @@
+	/*
 	timer {
 		compatible = "arm,armv8-timer";
 		interrupts = <GIC_PPI 13 (GIC_CPU_MASK_SIMPLE(6) | IRQ_TYPE_LEVEL_LOW)>,
@@ -5,19 +6,32 @@
 			     <GIC_PPI 11 (GIC_CPU_MASK_SIMPLE(6) | IRQ_TYPE_LEVEL_LOW)>,
 			     <GIC_PPI 10 (GIC_CPU_MASK_SIMPLE(6) | IRQ_TYPE_LEVEL_LOW)>;
 	};
-
+	*/
+	apb_timer {
+		compatible = "snps,dw-apb-timer";
+		interrupts = <GIC_SPI 39 IRQ_TYPE_LEVEL_HIGH>;
+		reg = <0x0 0x04041000 0x0 0x10>;
+		clocks = <&soc_refclk100mhz>;
+		clock-frequency = <100000000>;
+	};
+	apb_clocksource {
+		compatible = "snps,dw-apb-timer";
+		reg = <0x0 0x04041028 0x0 0x10>;
+		clocks = <&soc_refclk100mhz>;
+		clock-frequency = <100000000>;
+	};
 	/include/ "mnh-clocks.dtsi"
 	/*
 	for everyone's sake, lets put the blocks in address order,
 	unless there is some reason not to
 	*/
-
-        mnh-timer {
-		  compatible = "mnh-timer";
-                  reg = <0x0 0x04041000 0x0 0x1000>,
-			<0x0 0x04003000 0x0 0x1000>;
-	};
-
+/*
+*	mnh-timer {
+*		compatible = "mnh-timer";
+*		reg = <0x0 0x04041014 0x0 0x1000>,
+*		      <0x0 0x04003000 0x0 0x1000>;
+*	};
+*/
 	dma0: dma@04000000 {
 		status = "disabled";
 		compatible = "snps,dma-spear1340";

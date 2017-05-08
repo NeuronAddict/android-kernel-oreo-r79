@@ -222,6 +222,21 @@ static int apbt_next_event(unsigned long delta,
 	return 0;
 }
 
+static void dw_apb_clockevent_pm_suspend(struct clock_event_device *evt)
+{
+	struct dw_apb_clock_event_device *dw_ced = ced_to_dw_apb_ced(evt);
+
+	disable_irq(dw_ced->timer.irq);
+}
+
+static void dw_apb_clockevent_pm_resume(struct clock_event_device *evt)
+{
+	struct dw_apb_clock_event_device *dw_ced = ced_to_dw_apb_ced(evt);
+
+	enable_irq(dw_ced->timer.irq);
+
+}
+
 /**
  * dw_apb_clockevent_init() - use an APB timer as a clock_event_device
  *
@@ -260,7 +275,8 @@ dw_apb_clockevent_init(int cpu, const char *name, unsigned rating,
 	dw_ced->ced.min_delta_ns = clockevent_delta2ns(5000, &dw_ced->ced);
 	dw_ced->ced.cpumask = cpumask_of(cpu);
 	dw_ced->ced.features = CLOCK_EVT_FEAT_PERIODIC |
-				CLOCK_EVT_FEAT_ONESHOT | CLOCK_EVT_FEAT_DYNIRQ;
+				CLOCK_EVT_FEAT_ONESHOT | CLOCK_EVT_FEAT_DYNIRQ |
+				CLOCK_EVT_FEAT_C3STOP;
 	dw_ced->ced.set_state_shutdown = apbt_shutdown;
 	dw_ced->ced.set_state_periodic = apbt_set_periodic;
 	dw_ced->ced.set_state_oneshot = apbt_set_oneshot;
@@ -270,6 +286,8 @@ dw_apb_clockevent_init(int cpu, const char *name, unsigned rating,
 	dw_ced->ced.irq = dw_ced->timer.irq;
 	dw_ced->ced.rating = rating;
 	dw_ced->ced.name = name;
+	dw_ced->ced.suspend = dw_apb_clockevent_pm_suspend;
+	dw_ced->ced.resume = dw_apb_clockevent_pm_resume;
 
 	dw_ced->irqaction.name		= dw_ced->ced.name;
 	dw_ced->irqaction.handler	= dw_apb_clockevent_irq;
