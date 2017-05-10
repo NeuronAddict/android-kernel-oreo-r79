@@ -327,6 +327,10 @@ static uint32_t perfmon_read_results(struct perf_result *data)
 				PRMU_INf(i + 1, RD_REQ_TOTAL_BYTE_CNT_LO, CNT)
 				+ ((uint64_t)PRMU_INf(i + 1,
 				RD_REQ_TOTAL_BYTE_CNT_HI, CNT) << 32);
+			data->prmu[i].rd_bandwidth =
+				(uint64_t)perf_mon_dev->axi_speed *
+				AXI_SPD_DIV * data->prmu[i].rd_req_len_cnt /
+				data->time_stamp;
 			data->prmu[i].wr_req_rdy_latency =
 				PRMU_INf(i + 1,
 					WR_REQ2RDY_LATENCY_CUR_MIN, LAT_CUR);
@@ -359,6 +363,10 @@ static uint32_t perfmon_read_results(struct perf_result *data)
 					WR_REQ_ACTUAL_BYTE_CNT_LO, CNT) +
 				((uint64_t)PRMU_INf(i + 1,
 				WR_REQ_ACTUAL_BYTE_CNT_HI, CNT) << 32);
+			data->prmu[i].wr_bandwidth =
+				(uint64_t)perf_mon_dev->axi_speed *
+				AXI_SPD_DIV * data->prmu[i].wr_act_req_len_cnt /
+				data->time_stamp;
 			i++;
 		}
 		return 0;
@@ -422,6 +430,7 @@ static uint32_t perfmon_start_free_test(void)
 
 	if ((perf_mon_dev->status == 1) || (perf_mon_dev->status == 3))
 		return 1;
+	set_axi_clk();
 	/* Enable Clock */
 	SCU_OUTf(RSTC, PMON_RST, 1);
 	SCU_OUTf(CCU_CLK_CTL, PMON_CLKEN, 1);
@@ -579,6 +588,7 @@ static int print_device(struct perf_result *data, int i, char *buf)
 			"Read response Received %lx\n"
 			"Outstanding Read Requests %lx\n"
 			"Total Read Requests %llx\n"
+			"Total Read Bandwidth %lld bytes/second\n"
 			"Write Request To Ready Latency\n"
 			"        %lx\n"
 			"Minimum %lx\n"
@@ -590,7 +600,8 @@ static int print_device(struct perf_result *data, int i, char *buf)
 			"Write response Received %lx\n"
 			"Outstanding Write Requests %lx\n"
 			"Total Write Requests %llx\n"
-			"Actual Write Requests %llx\n",
+			"Actual Write Requests %llx\n"
+			"Total Write Bandwidth %lld bytes/second\n",
 			(unsigned long long) data->time_stamp,
 			error_str,
 			mode_str,
@@ -610,6 +621,7 @@ static int print_device(struct perf_result *data, int i, char *buf)
 			(unsigned long) data->prmu[i].rd_resp_cnt,
 			(unsigned long) data->prmu[i].out_rd_resp_cnt,
 			(unsigned long long) data->prmu[i].rd_req_len_cnt,
+			(unsigned long long) data->prmu[i].rd_bandwidth,
 			(unsigned long) data->prmu[i].wr_req_rdy_latency,
 			(unsigned long) data->prmu[i].wr_req_rdy_latency_min,
 			(unsigned long) data->prmu[i].wr_req_rdy_latency_max,
@@ -620,7 +632,8 @@ static int print_device(struct perf_result *data, int i, char *buf)
 			(unsigned long) data->prmu[i].wr_resp_cnt,
 			(unsigned long) data->prmu[i].wr_out_cnt,
 			(unsigned long long) data->prmu[i].wr_req_len_cnt,
-			(unsigned long long) data->prmu[i].wr_act_req_len_cnt);
+			(unsigned long long) data->prmu[i].wr_act_req_len_cnt,
+			(unsigned long long) data->prmu[i].wr_bandwidth);
 }
 
 

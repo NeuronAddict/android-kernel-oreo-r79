@@ -87,6 +87,7 @@ struct prmu_results {
 	uint32_t rd_resp_cnt;
 	uint32_t out_rd_resp_cnt;
 	uint64_t rd_req_len_cnt;
+	uint64_t rd_bandwidth;
 	uint32_t wr_req_rdy_latency;
 	uint32_t wr_req_rdy_latency_min;
 	uint32_t wr_req_rdy_latency_max;
@@ -98,6 +99,7 @@ struct prmu_results {
 	uint32_t wr_out_cnt;
 	uint64_t wr_req_len_cnt;
 	uint64_t wr_act_req_len_cnt;
+	uint64_t wr_bandwidth;
 };
 
 struct perf_result {
