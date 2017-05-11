@@ -238,7 +238,7 @@ firmware_config {
 		rstc = <0x0FB71000>;
 		/* remove now to enable full speed clk */
 		/* ccu_clk_ctl = <0xA1FF5C63>; */
-		peripheral_clk_ctl = <0x80006048>;
+		peripheral_clk_ctl = <0x0000604A>;
 		mem_pwr_mgmnt = <0x0200c500>;
 
 		global_wake_en_set0 = <0xEFFE28FC>;
