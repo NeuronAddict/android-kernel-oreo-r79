@@ -249,8 +249,8 @@ int dma_setup_dram_to_stp_transfer(struct paintbox_data *pb,
 	if (ret < 0)
 		return ret;
 
-	paintbox_dma_set_channel_mode(transfer, DMA_CHAN_MODE_SRC_DRAM,
-			DMA_CHAN_MODE_DST_STP, false);
+	paintbox_dma_set_channel_mode(pb, session, channel, transfer,
+			DMA_CHAN_MODE_SRC_DRAM, DMA_CHAN_MODE_DST_STP, false);
 
 	ret = set_dma_stp_parameters(pb, session, channel, transfer,
 			&config->src.dram, &config->dst.stp);

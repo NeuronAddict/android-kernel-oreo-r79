@@ -82,10 +82,10 @@ static uint64_t mipi_reg_entry_read(struct paintbox_debug_reg_entry *reg_entry)
 	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
 
 	if (stream->is_input) {
-		writel(stream->stream_id, pb->io_ipu.ipu_base + MPI_STRM_SEL);
+		paintbox_mipi_select_input_stream(pb, stream->stream_id);
 		val = readq(pb->io_ipu.ipu_base + reg_entry->reg_offset);
 	} else {
-		writel(stream->stream_id, pb->io_ipu.ipu_base + MPO_STRM_SEL);
+		paintbox_mipi_select_output_stream(pb, stream->stream_id);
 		val = readq(pb->io_ipu.ipu_base + MPO_COMMON_BLOCK_START +
 				reg_entry->reg_offset);
 	}
@@ -111,10 +111,10 @@ static void mipi_reg_entry_write(struct paintbox_debug_reg_entry *reg_entry,
 	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
 
 	if (stream->is_input) {
-		writel(stream->stream_id, pb->io_ipu.ipu_base + MPI_STRM_SEL);
+		paintbox_mipi_select_input_stream(pb, stream->stream_id);
 		writeq(val, pb->io_ipu.ipu_base + reg_entry->reg_offset);
 	} else {
-		writel(stream->stream_id, pb->io_ipu.ipu_base + MPO_STRM_SEL);
+		paintbox_mipi_select_output_stream(pb, stream->stream_id);
 		writeq(val, pb->io_ipu.ipu_base + MPO_COMMON_BLOCK_START +
 				reg_entry->reg_offset);
 	}
@@ -411,7 +411,7 @@ int paintbox_dump_mipi_input_stream_registers(struct paintbox_debug *debug,
 
 	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
 
-	writel(stream->stream_id, pb->io_ipu.ipu_base + MPI_STRM_SEL);
+	paintbox_mipi_select_input_stream(pb, stream->stream_id);
 
 	for (reg_offset = MPI_STRM_BLOCK_START; reg_offset < MPI_STRM_BLOCK_END;
 			reg_offset += IPU_REG_WIDTH) {
@@ -477,7 +477,7 @@ int paintbox_dump_mipi_output_stream_registers(struct paintbox_debug *debug,
 
 	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
 
-	writel(stream->stream_id, pb->io_ipu.ipu_base + MPO_STRM_SEL);
+	paintbox_mipi_select_output_stream(pb, stream->stream_id);
 
 	for (reg_offset = MPO_STRM_BLOCK_START; reg_offset < MPO_STRM_BLOCK_END;
 			reg_offset += IPU_REG_WIDTH) {

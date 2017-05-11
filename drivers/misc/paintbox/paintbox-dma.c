@@ -70,6 +70,18 @@ static inline bool paintbox_dma_dst_is_lbp(uint32_t mode)
 			DMA_CHAN_MODE_DST_LBP;
 }
 
+static inline bool paintbox_dma_is_gather(uint32_t mode)
+{
+	return mode & DMA_CHAN_MODE_GATHER_MASK;
+}
+
+static inline bool paintbox_dma_is_gather_channel(
+		struct paintbox_dma_channel *channel)
+{
+	return channel->session->dma_gather_channel_mask &
+			(1 << channel->channel_id);
+}
+
 /* The caller to this function must hold pb->dma.dma_lock and DMA_CHAN_SEL must
  * be set.
  */
@@ -109,6 +121,34 @@ static inline void paintbox_dma_chan_ctrl_set(struct paintbox_data *pb,
 	writeq(pb->dma.chan_ctrl, pb->dma.dma_base + DMA_CHAN_CTRL);
 }
 
+/* The caller to this function must hold pb->lock. */
+static struct paintbox_dma_transfer *paintbox_allocate_transfer(
+		struct paintbox_data *pb)
+{
+	struct paintbox_dma_transfer *transfer;
+
+	if (pb->dma.free_count == 0) {
+		transfer = kzalloc(sizeof(struct paintbox_dma_transfer),
+				GFP_KERNEL);
+	} else {
+		transfer = list_entry(pb->dma.free_list.next,
+				struct paintbox_dma_transfer, entry);
+		list_del(&transfer->entry);
+		pb->dma.free_count--;
+		memset(transfer, 0, sizeof(struct paintbox_dma_transfer));
+	}
+
+	return transfer;
+}
+
+/* The caller to this function must hold pb->lock. */
+static void paintbox_free_transfer(struct paintbox_data *pb,
+		struct paintbox_dma_transfer *transfer)
+{
+	list_add_tail(&transfer->entry, &pb->dma.free_list);
+	pb->dma.free_count++;
+}
+
 /* The caller to this function must hold pb->lock */
 int validate_dma_channel(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned int channel_id)
@@ -145,6 +185,7 @@ struct paintbox_dma_channel *get_dma_channel(struct paintbox_data *pb,
 	return &pb->dma.channels[channel_id];
 }
 
+/* The caller to this function must hold pb->lock. */
 static void drain_queue(struct paintbox_data *pb,
 		struct list_head *transfer_list, unsigned int *count)
 {
@@ -165,7 +206,7 @@ static void drain_queue(struct paintbox_data *pb,
 
 		ipu_dma_release_buffer(pb, transfer);
 
-		kfree(transfer);
+		paintbox_free_transfer(pb, transfer);
 
 		spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
 	}
@@ -179,7 +220,9 @@ static void paintbox_dma_discard_queue_work(struct work_struct *work)
 			discard_queue_work);
 	struct paintbox_data *pb = container_of(dma, struct paintbox_data, dma);
 
+	mutex_lock(&pb->lock);
 	drain_queue(pb, &dma->discard_list, &dma->discard_count);
+	mutex_unlock(&pb->lock);
 }
 
 /* The caller to this function must hold pb->dma.dma_lock. */
@@ -456,7 +499,7 @@ void dma_stop_transfer(struct paintbox_data *pb,
 			verify_cleanup_completion(pb, channel->mipi_stream);
 	}
 
-#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+#if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 	/* On the first version of the hardware we always do a reset after
 	 * stopping the channel.
 	 */
@@ -829,7 +872,7 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 	if (channel->stats.time_stats_enabled)
 		channel->stats.setup_start_time = ktime_get_boottime();
 
-	transfer = kzalloc(sizeof(struct paintbox_dma_transfer), GFP_KERNEL);
+	transfer = paintbox_allocate_transfer(pb);
 	if (!transfer) {
 		mutex_unlock(&pb->lock);
 		dev_err(&pb->pdev->dev, "%s: allocation failure\n", __func__);
@@ -868,9 +911,8 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 	}
 
 	if (ret < 0) {
+		paintbox_free_transfer(pb, transfer);
 		mutex_unlock(&pb->lock);
-
-		kfree(transfer);
 		return ret;
 	}
 
@@ -967,7 +1009,7 @@ int read_dma_transfer_ioctl(struct paintbox_data *pb,
 	ret = ipu_dma_release_and_copy_buffer(pb, transfer, req.host_vaddr,
 			req.len_bytes);
 
-	kfree(transfer);
+	paintbox_free_transfer(pb, transfer);
 
 	mutex_unlock(&pb->lock);
 
@@ -1253,6 +1295,37 @@ void dma_report_mipi_output_completed(struct paintbox_data *pb,
 /* This function must be called in an interrupt context and the caller must
  * hold pb->dma.dma_lock.
  */
+void paintbox_dma_disable_gather_channels(struct paintbox_data *pb,
+		struct paintbox_session *session)
+{
+	struct paintbox_dma_channel *channel, *channel_next;
+
+	/* Gather DMA channels can only be powered down when both DMA channels
+	 * in the gather have completed.  The driver does not have information
+	 * about the relationship between DMA channels so the driver tracks
+	 * all gather channels within the session.  Once all gather transfers
+	 * for the session have completed the gather DMA channels can be
+	 * powered down.
+	 */
+	list_for_each_entry_safe(channel, channel_next, &session->dma_list,
+			session_entry) {
+		if (!(session->dma_gather_channel_mask &
+				(1 << channel->channel_id)))
+			continue;
+
+		/* If this channel has other active transfers then skip it. */
+		if (channel->active_count > 0)
+			continue;
+
+		paintbox_pm_disable_dma_channel(pb, channel);
+	}
+
+	session->dma_gather_channel_mask = 0;
+}
+
+/* This function must be called in an interrupt context and the caller must
+ * hold pb->dma.dma_lock.
+ */
 void paintbox_dma_eof_interrupt(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel,
 		struct paintbox_dma_transfer *transfer, ktime_t timestamp)
@@ -1371,6 +1444,9 @@ static bool paintbox_dma_process_transfer(struct paintbox_data *pb,
 	if (paintbox_dma_src_is_mipi(transfer->chan_mode))
 		mipi_input_handle_dma_completed(pb, channel->mipi_stream);
 
+	if (paintbox_dma_is_gather(transfer->chan_mode))
+		channel->session->dma_gather_transfer_count--;
+
 	if (status & DMA_CHAN_ISR_VA_ERR_MASK)
 		paintbox_dma_va_interrupt(pb, channel, transfer, timestamp);
 	else if (status & DMA_CHAN_ISR_EOF_MASK)
@@ -1437,8 +1513,30 @@ irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 			}
 		}
 
-		if (power_down)
+		if (!power_down) {
+			spin_unlock(&pb->dma.dma_lock);
+			continue;
+		}
+
+		/* If this is a gather channel then verify that all gather
+		 * transfers for the session have completed.  Gather DMA
+		 * transfers are performed using DMA channel pairs.  The DMA
+		 * channels involved can not be powered down until both DMA
+		 * transfers have completed.
+		 *
+		 * The driver does not know the relationship between the DMA
+		 * channels so the driver tracks all gather transfers and DMA
+		 * channels on a per session basis.  Gather channels will be
+		 * powered down when all gather transfers for the session have
+		 * completed.
+		 */
+		if (paintbox_dma_is_gather_channel(channel)) {
+			if (channel->session->dma_gather_transfer_count == 0)
+				paintbox_dma_disable_gather_channels(pb,
+						channel->session);
+		} else {
 			paintbox_pm_disable_dma_channel(pb, channel);
+		}
 
 		spin_unlock(&pb->dma.dma_lock);
 	}
@@ -1462,6 +1560,7 @@ int paintbox_dma_init(struct paintbox_data *pb)
 
 	spin_lock_init(&pb->dma.dma_lock);
 	INIT_LIST_HEAD(&pb->dma.discard_list);
+	INIT_LIST_HEAD(&pb->dma.free_list);
 
 #ifdef CONFIG_DEBUG_FS
 	paintbox_dma_debug_init(pb);

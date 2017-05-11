@@ -316,3 +316,25 @@ int set_dma_transfer_region_parameters(struct paintbox_data *pb,
 
 	return 0;
 }
+
+void paintbox_dma_set_channel_mode(struct paintbox_data *pb,
+		struct paintbox_session *session,
+		struct paintbox_dma_channel *channel,
+		struct paintbox_dma_transfer *transfer, uint64_t src_type,
+		uint64_t dst_type, bool gather)
+{
+	unsigned long irq_flags;
+
+	transfer->chan_mode = src_type << DMA_CHAN_MODE_SRC_SHIFT;
+	transfer->chan_mode |= dst_type << DMA_CHAN_MODE_DST_SHIFT;
+	transfer->chan_mode |= DMA_CHAN_MODE_CHAN_ENA_MASK;
+
+	if (gather) {
+		transfer->chan_mode |= DMA_CHAN_MODE_GATHER_MASK;
+
+		spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
+		session->dma_gather_transfer_count++;
+		session->dma_gather_channel_mask |= 1 << channel->channel_id;
+		spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
+	}
+}

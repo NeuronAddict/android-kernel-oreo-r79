@@ -20,6 +20,7 @@
 #include <linux/types.h>
 
 #include "paintbox-common.h"
+#include "paintbox-regs.h"
 
 int allocate_mipi_input_stream_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
@@ -97,5 +98,40 @@ int mipi_test_stream_reset_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg,
 		bool is_input);
 #endif
+
+/* The caller to this function must hold pb->io_ipu.mipi_lock. */
+static inline void paintbox_mipi_select_input_stream(struct paintbox_data *pb,
+		unsigned int stream_id)
+{
+	if (pb->io_ipu.selected_input_stream_id == stream_id)
+		return;
+
+	pb->io_ipu.selected_input_stream_id = stream_id;
+
+	writel(stream_id, pb->io_ipu.ipu_base + MPI_STRM_SEL);
+}
+
+/* The caller to this function must hold pb->io_ipu.mipi_lock. */
+static inline void paintbox_mipi_select_output_stream(struct paintbox_data *pb,
+		unsigned int stream_id)
+{
+	if (pb->io_ipu.selected_output_stream_id == stream_id)
+		return;
+
+	pb->io_ipu.selected_output_stream_id = stream_id;
+
+	writel(stream_id, pb->io_ipu.ipu_base + MPO_STRM_SEL);
+}
+
+/* The caller to this function must hold pb->io_ipu.mipi_lock. */
+static inline void paintbox_mipi_select_stream(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream)
+{
+	if (stream->is_input)
+		paintbox_mipi_select_input_stream(pb, stream->stream_id);
+	else
+		paintbox_mipi_select_output_stream(pb, stream->stream_id);
+
+}
 
 #endif  /* __PAINTBOX_MIPI_H__ */

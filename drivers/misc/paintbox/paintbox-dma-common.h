@@ -32,17 +32,11 @@ int set_dma_transfer_region_parameters(struct paintbox_data *pb,
 		struct paintbox_dma_transfer *transfer,
 		struct dma_transfer_config *config);
 
-static inline void paintbox_dma_set_channel_mode(
+void paintbox_dma_set_channel_mode(struct paintbox_data *pb,
+		struct paintbox_session *session,
+		struct paintbox_dma_channel *channel,
 		struct paintbox_dma_transfer *transfer, uint64_t src_type,
-		uint64_t dst_type, bool gather)
-{
-	transfer->chan_mode = src_type << DMA_CHAN_MODE_SRC_SHIFT;
-	transfer->chan_mode |= dst_type << DMA_CHAN_MODE_DST_SHIFT;
-	transfer->chan_mode |= DMA_CHAN_MODE_CHAN_ENA_MASK;
-
-	if (gather)
-		transfer->chan_mode |= DMA_CHAN_MODE_GATHER_MASK;
-}
+		uint64_t dst_type, bool gather);
 
 static inline void paintbox_dma_set_lb_start(
 		struct paintbox_dma_transfer *transfer, uint64_t x, uint64_t y)

@@ -50,14 +50,18 @@ static bool mipi_input_interface_has_interrupt(struct paintbox_data *pb,
 	unsigned int old_stream_id, stream_id;
 	bool interrupt_occurred = false;
 
-	old_stream_id = readl(pb->io_ipu.ipu_base + MPI_STRM_SEL);
+	old_stream_id = pb->io_ipu.selected_input_stream_id;
 
 	for (stream_id = 0; stream_id < interface->num_streams; stream_id++) {
 		struct paintbox_mipi_stream *stream =
 				interface->streams[stream_id];
 		uint32_t ctrl;
 
-		writel(stream->stream_id, pb->io_ipu.ipu_base + MPI_STRM_SEL);
+		/* If the stream is not allocated then skip it.  */
+		if (!stream->allocated)
+			continue;
+
+		paintbox_mipi_select_input_stream(pb, stream->stream_id);
 
 		ctrl = readl(pb->io_ipu.ipu_base + MPI_STRM_CTRL);
 		if (ctrl & (MPI_STRM_CTRL_SOF_ISR_MASK |
@@ -67,7 +71,7 @@ static bool mipi_input_interface_has_interrupt(struct paintbox_data *pb,
 		}
 	}
 
-	writel(old_stream_id, pb->io_ipu.ipu_base + MPI_STRM_SEL);
+	paintbox_mipi_select_input_stream(pb, old_stream_id);
 
 	return interrupt_occurred;
 }

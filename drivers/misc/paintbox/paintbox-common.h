@@ -63,6 +63,17 @@ struct paintbox_session {
 	/* The fields below are protected by pb->irq_lock */
 	struct completion release_completion;
 	bool releasing;
+
+	/* Number of DMA gather transfers active and pending in this session.
+	 * Protected by pb->dma.dma_lock.
+	 */
+	unsigned int dma_gather_transfer_count;
+
+	/* Mask of DMA channels with gather transfers.  Protected by
+	 * pb->dma.dma_lock.
+	 */
+	uint32_t dma_gather_channel_mask;
+
 };
 
 struct paintbox_debug_reg_entry;
@@ -235,7 +246,6 @@ struct paintbox_mipi_stream {
 		} output;
 	};
 	uint32_t ctrl_offset;
-	uint32_t select_offset;
 	int32_t frame_count;
 	int error;
 	bool is_input;
@@ -247,6 +257,7 @@ struct paintbox_mipi_stream {
 	bool last_frame;
 	bool enabled;
 	bool is_clean;
+	bool allocated;
 };
 
 struct paintbox_io_ipu {
@@ -262,6 +273,8 @@ struct paintbox_io_ipu {
 	unsigned int num_mipi_output_streams;
 	unsigned int num_mipi_input_interfaces;
 	unsigned int num_mipi_output_interfaces;
+	unsigned int selected_input_stream_id;
+	unsigned int selected_output_stream_id;
 
 	/* mipi_lock is used to protect the mipi registers */
 	spinlock_t mipi_lock;
@@ -446,6 +459,12 @@ struct paintbox_dma {
 	struct list_head discard_list;
 	unsigned int discard_count;
 	struct work_struct discard_queue_work;
+
+	/* Access to the free queue and free count is controlled by
+	 * pb->dma.dma_lock.
+	 */
+	struct list_head free_list;
+	unsigned int free_count;
 
 	/* dma_lock protects access to DMA transfer queues and registers. */
 	spinlock_t dma_lock;

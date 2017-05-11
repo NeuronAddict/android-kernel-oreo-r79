@@ -69,8 +69,9 @@ int dma_setup_mipi_to_dram_transfer(struct paintbox_data *pb,
 	if (ret < 0)
 		return ret;
 
-	paintbox_dma_set_channel_mode(transfer, DMA_CHAN_MODE_SRC_MIPI_IN,
-			DMA_CHAN_MODE_DST_DRAM, false);
+	paintbox_dma_set_channel_mode(pb, session, channel, transfer,
+			DMA_CHAN_MODE_SRC_MIPI_IN, DMA_CHAN_MODE_DST_DRAM,
+			false);
 
 	ret = set_dma_image_parameters(pb, channel, transfer, &config->img);
 	if (ret < 0)

@@ -131,8 +131,9 @@ int dma_setup_dram_to_lbp_transfer(struct paintbox_data *pb,
 	if (channel->stats.time_stats_enabled)
 		channel->stats.non_dram_setup_start_time = ktime_get_boottime();
 
-	paintbox_dma_set_channel_mode(transfer, DMA_CHAN_MODE_SRC_DRAM,
-			DMA_CHAN_MODE_DST_LBP, config->dst.lbp.gather);
+	paintbox_dma_set_channel_mode(pb, session, channel, transfer,
+			DMA_CHAN_MODE_SRC_DRAM, DMA_CHAN_MODE_DST_LBP,
+			config->dst.lbp.gather);
 
 	ret = set_dma_lbp_parameters(pb, session, channel, transfer,
 			&config->dst.lbp);
@@ -192,8 +193,9 @@ int dma_setup_lbp_to_dram_transfer(struct paintbox_data *pb,
 	if (channel->stats.time_stats_enabled)
 		channel->stats.non_dram_setup_start_time = ktime_get_boottime();
 
-	paintbox_dma_set_channel_mode(transfer, DMA_CHAN_MODE_SRC_LBP,
-			DMA_CHAN_MODE_DST_DRAM, config->src.lbp.gather);
+	paintbox_dma_set_channel_mode(pb, session, channel, transfer,
+			DMA_CHAN_MODE_SRC_LBP, DMA_CHAN_MODE_DST_DRAM,
+			config->src.lbp.gather);
 
 	ret = set_dma_lbp_parameters(pb, session, channel, transfer,
 			&config->src.lbp);
@@ -256,8 +258,9 @@ int dma_setup_mipi_to_lbp_transfer(struct paintbox_data *pb,
 	}
 #endif
 
-	paintbox_dma_set_channel_mode(transfer, DMA_CHAN_MODE_SRC_MIPI_IN,
-			DMA_CHAN_MODE_DST_LBP, false);
+	paintbox_dma_set_channel_mode(pb, session, channel, transfer,
+			DMA_CHAN_MODE_SRC_MIPI_IN, DMA_CHAN_MODE_DST_LBP,
+			false);
 
 	ret = set_dma_lbp_parameters(pb, session, channel, transfer,
 			&config->dst.lbp);
@@ -315,8 +318,9 @@ int dma_setup_lbp_to_mipi_transfer(struct paintbox_data *pb,
 	}
 #endif
 
-	paintbox_dma_set_channel_mode(transfer, DMA_CHAN_MODE_SRC_LBP,
-			DMA_CHAN_MODE_DST_MIPI_OUT, false);
+	paintbox_dma_set_channel_mode(pb, session, channel, transfer,
+			DMA_CHAN_MODE_SRC_LBP, DMA_CHAN_MODE_DST_MIPI_OUT,
+			false);
 
 	ret = set_dma_lbp_parameters(pb, session, channel, transfer,
 			&config->src.lbp);

@@ -69,7 +69,11 @@ static const char *bif_reg_names[IO_AXI_NUM_REGS] = {
 	REG_NAME_ENTRY(BIF_PMON_CNT_1_CFG),
 	REG_NAME_ENTRY(BIF_PMON_CNT_1),
 	REG_NAME_ENTRY(BIF_PMON_CNT_1_STS_ACC),
-	REG_NAME_ENTRY(BIF_PMON_CNT_1_STS)
+	REG_NAME_ENTRY(BIF_PMON_CNT_1_STS),
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	REG_NAME_ENTRY(BIF_IER),
+	REG_NAME_ENTRY(BIF_ITR),
+#endif
 };
 
 static inline int paintbox_dump_bif_reg(struct paintbox_data *pb,

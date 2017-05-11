@@ -448,12 +448,21 @@ int paintbox_dump_dma_registers(struct paintbox_debug *debug, char *buf,
 
 	val = dma_ctrl_registers[REG_INDEX(DMA_CHAN_CTRL)];
 	ret = dump_dma_reg_verbose(pb, DMA_CHAN_CTRL, val, buf, &written, len,
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+			"\tSTOP 0x%04x CONTINUOUS 0x%04x CHAN_RESET 0x%04x\n",
+			(val & DMA_CHAN_CTRL_STOP_MASK) >>
+					DMA_CHAN_CTRL_STOP_SHIFT,
+			(val & DMA_CHAN_CTRL_CONTINUOUS_MASK) >>
+					DMA_CHAN_CTRL_CONTINUOUS_SHIFT,
+			val & DMA_CHAN_CTRL_CHAN_RESET_MASK);
+#else
 			"\tSTOP 0x%04x DOUBLE_BUF 0x%04x CHAN_RESET 0x%04x\n",
 			(val & DMA_CHAN_CTRL_STOP_MASK) >>
 					DMA_CHAN_CTRL_STOP_SHIFT,
 			(val & DMA_CHAN_CTRL_DOUBLE_BUF_MASK) >>
 					DMA_CHAN_CTRL_DOUBLE_BUF_SHIFT,
 			val & DMA_CHAN_CTRL_CHAN_RESET_MASK);
+#endif
 	if (ret < 0)
 		goto err_exit;
 
@@ -963,9 +972,10 @@ int paintbox_dump_dma_channel_stats(struct paintbox_debug *debug, char *buf,
 			channel->stats.reported_discards);
 
 	written += snprintf(buf + written, len - written,
-			"\tqueue counts: pending %u active %u completed %u discarded %u\n",
+			"\tqueue counts: pending %u active %u completed %u discarded %u free %u\n",
 			channel->pending_count, channel->active_count,
-			channel->completed_count, pb->dma.discard_count);
+			channel->completed_count, pb->dma.discard_count,
+			pb->dma.free_count);
 	written += snprintf(buf + written, len - written,
 			"\tstop request pending: %u\n", channel->stop_request);
 	if (channel->stats.time_stats_enabled) {
