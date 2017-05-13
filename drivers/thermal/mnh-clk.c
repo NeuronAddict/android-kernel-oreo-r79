@@ -734,17 +734,6 @@ int mnh_clock_init_gating(int enabled)
 	HW_OUTf(mnh_dev->regs, SCU, RSTC, PERI_DMA_RST, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, PERI_DMA_CLKEN_SW,
 		!enabled);
-	if (enabled) {
-		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_LP4CMEM_PD_EN,
-			enabled);
-		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, LP4C_MEM_DS,
-			enabled);
-	} else {
-		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, LP4C_MEM_DS,
-			enabled);
-		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_LP4CMEM_PD_EN,
-			enabled);
-	}
 	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_BTROM_PD_EN, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_BTSRAM_PD_EN, enabled);
 	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, BTROM_SLP, enabled);
@@ -781,12 +770,20 @@ int mnh_bypass_clock_gating(int enabled)
 			enabled);
 		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, CPU_L1MEM_DS,
 			enabled);
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_LP4CMEM_PD_EN,
+			enabled);
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, LP4C_MEM_DS,
+			enabled);
 	} else {
 		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, CPU_L2MEM_DS,
 			enabled);
 		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, CPU_L1MEM_DS,
 			enabled);
 		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_CPUMEM_PD_EN,
+			enabled);
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, LP4C_MEM_DS,
+			enabled);
+		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_LP4CMEM_PD_EN,
 			enabled);
 		HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_CPUCG_EN,
 			enabled);
