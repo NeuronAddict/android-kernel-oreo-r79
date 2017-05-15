@@ -69,10 +69,11 @@ struct mnh_pcie_ep_device *pcie_ep_dev;
 struct delayed_work msi_work;
 struct delayed_work power_state_work;
 struct work_struct msi_rx_work, vm0_work, vm1_work, wake_work;
+struct mnh_pcie_ep_power_state target_state;
 #define DEVICE_NAME "mnh_pcie_ep"
 #define CLASS_NAME "pcie_ep"
 #define MSI_DELAY (HZ/20) /* TODO: Need to understand what this should be */
-#define POWER_DELAY (1000*1000) /* delay between L-power state checks, usecs */
+#define POWER_DELAY (100*1000) /* delay between L-power state checks, usecs */
 #define MAX_STR_COPY	32
 uint32_t rw_address_sysfs, rw_size_sysfs;
 struct mnh_pcie_irq sysfs_irq;
@@ -220,14 +221,7 @@ static int pcie_link_init(void)
 
 static void pcie_set_low_power(unsigned int enabled)
 {
-	if (!enabled && pcie_ep_dev->power_state.axi_gating) {
-		/* Shedule a worklet to get back to low power state in L1 */
-		cancel_delayed_work(&power_state_work);
-		schedule_delayed_work(&power_state_work,
-			usecs_to_jiffies(POWER_DELAY));
-	}
 	dev_dbg(pcie_ep_dev->dev, "%s enabled=%d\n", __func__, enabled);
-
 	SCUS_OUTf(CCU_CLK_CTL, HALT_AXICG_EN, enabled);
 	SCUS_OUTf(CCU_CLK_CTL, PCIE_AXI_CLKEN, !enabled);
 	/*
@@ -366,19 +360,35 @@ static void pcie_msi_worker(struct work_struct *work)
 
 static void pcie_power_state_worker(struct work_struct *work)
 {
-	uint32_t l1state;
+	uint32_t l1_state, l1_sub_state;
 
 	/* Check the l1 state and turn PCIe power savings on when we enter L1 */
-	l1state = CSR_INf(PCIE_APP_STS, PCIE_PM_LINKST_IN_L1);
-	dev_dbg(pcie_ep_dev->dev, "%s l1state=%d\n", __func__, l1state);
+	l1_state = CSR_INf(PCIE_APP_STS, PCIE_PM_LINKST_IN_L1);
+	l1_sub_state = CSR_INf(PCIE_APP_STS, PCIE_PM_LINKST_IN_L1sub);
+	dev_dbg(pcie_ep_dev->dev, "%s l1=%d, l1sub=%d\n", __func__,
+		l1_state, l1_sub_state);
 
-	if (!l1state) {
+	if (!l1_state) {
+		/* repeat the loop */
 		cancel_delayed_work(&power_state_work);
 		schedule_delayed_work(&power_state_work,
 			usecs_to_jiffies(POWER_DELAY));
 	} else {
+		if (pcie_ep_dev->power_state.l1state != target_state.l1state ||
+		    pcie_ep_dev->power_state.clkpm != target_state.clkpm) {
+			pcie_ep_dev->power_state.l1state = target_state.l1state;
+			pcie_ep_dev->power_state.clkpm = target_state.clkpm;
+			pcie_set_l_one(target_state.l1state,
+				       target_state.clkpm);
+
+		}
 		/* Enable PCIe power savings */
-		pcie_set_low_power(1);
+		if (target_state.axi_gating) {
+			pcie_set_low_power(target_state.axi_gating);
+			pcie_ep_dev->power_state.axi_gating =
+				target_state.axi_gating;
+		}
+
 	}
 
 
@@ -778,14 +788,12 @@ static int pcie_set_l_one(uint32_t enable, uint32_t clkpm)
 
 	pcie_set_low_power(0);
 
-	pcie_ep_dev->power_state.clkpm = clkpm;
-	pcie_ep_dev->power_state.l1state = enable;
-	if (pcie_ep_dev->power_state.clkpm == 1) {
+	if (clkpm == 1) {
 		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_CLK_PM_EN, 1);
 	} else {
 		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_CLK_PM_EN, 0);
 	}
-	if (pcie_ep_dev->power_state.l1state == 1) {
+	if (enable == 1) {
 		PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CONTROL1,
 				L1_1_ASPM_EN, 0x1);
 		PCIECAP_L1SUB_OUTf(L1SUB_CAP_L1SUB_CONTROL1,
@@ -798,7 +806,6 @@ static int pcie_set_l_one(uint32_t enable, uint32_t clkpm)
 					L1_2_ASPM_EN, 0x0);
 		CSR_OUTf(PCIE_APP_CTRL, PCIE_APP_REQ_EXIT_L1, 1);
 	}
-	pcie_set_power_mode_state(&pcie_ep_dev->power_state);
 	/* send an msi just to wake up AP and notice the L1.2 state change */
 	mnh_send_msi(PET_WATCHDOG);
 	return 0;
@@ -806,20 +813,17 @@ static int pcie_set_l_one(uint32_t enable, uint32_t clkpm)
 
 
 static void pcie_wake_worker(struct work_struct *work) {
-	int l1state = pcie_ep_dev->power_state.l1state;
-	int clkpm = pcie_ep_dev->power_state.clkpm;
-
 	pcie_set_low_power(0);
 
 	/* read pcie target state from the gp reg */
-	pcie_get_power_mode_state(&pcie_ep_dev->power_state);
+	pcie_get_power_mode_state(&target_state);
+	cancel_delayed_work(&power_state_work);
+	schedule_delayed_work(&power_state_work,
+		usecs_to_jiffies(POWER_DELAY));
 	dev_dbg(pcie_ep_dev->dev, "%s:%d curstate=%d target state=%d\n",
-		__func__, __LINE__, pcie_ep_dev->power_state.l1state, l1state);
-
-	if (pcie_ep_dev->power_state.l1state != l1state ||
-		pcie_ep_dev->power_state.clkpm != clkpm) {
-		pcie_set_l_one(l1state, clkpm);
-	}
+		__func__, __LINE__,
+		pcie_ep_dev->power_state.l1state,
+		target_state.l1state);
 }
 
 static irqreturn_t pcie_handle_wake_irq(int irq, void *dev_id)
@@ -1319,7 +1323,9 @@ EXPORT_SYMBOL(mnh_send_ltr);
 /* API to set PCIE endpoint into L1 */
 int mnh_set_l_one(uint32_t enable, uint32_t clkpm)
 {
-
+	pcie_ep_dev->power_state.clkpm = clkpm;
+	pcie_ep_dev->power_state.l1state = enable;
+	pcie_set_power_mode_state(&pcie_ep_dev->power_state);
 	return pcie_set_l_one(enable, clkpm);
 }
 EXPORT_SYMBOL(mnh_set_l_one);
@@ -1336,6 +1342,10 @@ EXPORT_SYMBOL(mnh_get_power_mode);
 int mnh_set_power_mode(struct mnh_pcie_ep_power_state *power_state)
 {
 	pcie_set_power_mode_state(power_state);
+	pcie_get_power_mode_state(&target_state);
+	cancel_delayed_work(&power_state_work);
+	schedule_delayed_work(&power_state_work,
+		usecs_to_jiffies(POWER_DELAY));
 	return 0;
 }
 EXPORT_SYMBOL(mnh_set_power_mode);
@@ -1930,23 +1940,24 @@ static ssize_t sysfs_set_power_mode(struct device *dev,
 				size_t count)
 {
 	unsigned long val = 0;
+	struct mnh_pcie_ep_power_state power_state;
 
 	if (kstrtoul(buf, 0, &val))
 		return -EINVAL;
 	dev_dbg(pcie_ep_dev->dev, "Setting power_mode 0x%x, 0x%x\n", val,
 		val & HWIO_SCU_GP_POWER_MODE_PCIE_L1_2_EN_FLDMASK);
 
-	pcie_ep_dev->power_state.clkpm =
+	power_state.clkpm =
 		(val & HWIO_SCU_GP_POWER_MODE_PCIE_CLKPM_EN_FLDMASK) >>
 		HWIO_SCU_GP_POWER_MODE_PCIE_CLKPM_EN_FLDSHFT;
-	pcie_ep_dev->power_state.l1state =
+	power_state.l1state =
 		(val & HWIO_SCU_GP_POWER_MODE_PCIE_L1_2_EN_FLDMASK) >>
 		HWIO_SCU_GP_POWER_MODE_PCIE_L1_2_EN_FLDSHFT;
-	pcie_ep_dev->power_state.axi_gating =
+	power_state.axi_gating =
 		(val &	HWIO_SCU_GP_POWER_MODE_PCIE_AXI_CG_EN_FLDMASK) >>
 		HWIO_SCU_GP_POWER_MODE_PCIE_AXI_CG_EN_FLDSHFT;
 
-	mnh_set_power_mode(&pcie_ep_dev->power_state);
+	mnh_set_power_mode(&power_state);
 	return count;
 }
 
@@ -2183,6 +2194,8 @@ static int mnh_pcie_ep_suspend(struct platform_device *pdev, pm_message_t state)
 {
 	cancel_delayed_work_sync(&msi_work);
 	cancel_delayed_work_sync(&power_state_work);
+	pcie_ep_dev->power_state.l1state = 0;
+	pcie_ep_dev->power_state.clkpm = 0;
 	pcie_ep_dev->rb_base = pcie_cluster_read(MNH_PCIE_GP_1);
 
 	return 0;
@@ -2193,10 +2206,10 @@ static int mnh_pcie_ep_resume(struct platform_device *pdev)
 	/*enable L1 entry */
 	PCIECAP_OUTf(PCIE_CAP_LINK_CONTROL_LINK_STATUS,
 			PCIE_CAP_ACTIVE_STATE_LINK_PM_CONTROL, 0x2);
-	pcie_get_power_mode_state(&pcie_ep_dev->power_state);
-	pcie_set_l_one(
-		pcie_ep_dev->power_state.l1state,
-		pcie_ep_dev->power_state.clkpm);
+	pcie_get_power_mode_state(&target_state);
+	cancel_delayed_work(&power_state_work);
+	schedule_delayed_work(&power_state_work,
+		usecs_to_jiffies(POWER_DELAY));
 
 	/* Enable interupts */
 	CSR_OUT(PCIE_SS_INTR_EN, PCIE_SS_IRQ_MASK);
