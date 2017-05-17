@@ -227,17 +227,19 @@ static uint32_t config_prmu(void)
 	return 0;
 
 }
-static uint32_t perfmon_start_test(uint64_t time)
+static uint32_t perfmon_start_test(uint64_t time_us)
 {
 	uint64_t ticks;
+	uint64_t time = time_us * 1000000;
 
 	if ((perf_mon_dev->status == 1) || (perf_mon_dev->status == 3))
 		return 1;
 	set_axi_clk();
+	ticks = (perf_mon_dev->axi_speed * time_us + 999999) / 1000000;
 	if (((0xFFFFFFFFFFFFFFFF/time) < perf_mon_dev->axi_speed)
 			|| (time == 0))
 		return 3;
-	ticks = perf_mon_dev->axi_speed * time; /* need to correct */
+	dev_dbg(perf_mon_dev->dev, "time_us %lld, ticks %lld\n", time_us, ticks);
 	/* Enable Clock */
 	SCU_OUTf(RSTC, PMON_RST, 1);
 	SCU_OUTf(CCU_CLK_CTL, PMON_CLKEN, 1);
@@ -669,14 +671,32 @@ static ssize_t sysfs_start_measure(struct device *dev,
 				const char *buf,
 				size_t count)
 {
-	unsigned long val;
+	unsigned long val, scale = 0;
 	int ret;
+	char *token;
+
+	token = strstr(buf, "us");
+	if (token) {
+		*token = '\0';
+		scale = 1;
+	}
+
+	if (!scale) {
+		token = strstr(buf, "ms");
+		if (token) {
+			*token = '\0';
+			scale = 1000;
+		}
+	}
+
+	if (!scale)
+		scale = 1000000;
 
 	if (kstrtoul(buf, 0, &val))
 		return -EINVAL;
 	if (val <= 0)
 		return -EINVAL;
-	ret = perfmon_start_test(val);
+	ret = perfmon_start_test(val * scale);
 	if (ret == 1)
 		dev_err(perf_mon_dev->dev, "Measurement ongoing\n");
 	if (ret == 2)
