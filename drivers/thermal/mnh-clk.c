@@ -452,7 +452,8 @@ int mnh_lpddr_freq_change(int index)
 		return 0;
 	}
 
-	if (index > LPDDR_FREQ_FSP0)
+	if (!HW_INxf(mnh_dev->regs, SCU,
+		LPDDR4_FSP_SETTING, index, FSP_SYS200_MODE))
 		mnh_lpddr_sys200_mode(false);
 
 	/* Disable LPC SW override */
@@ -501,7 +502,8 @@ int mnh_lpddr_freq_change(int index)
 
 	mnh_dev->ddr_freq = index;
 
-	if (index == LPDDR_FREQ_FSP0)
+	if (HW_INxf(mnh_dev->regs, SCU,
+		LPDDR4_FSP_SETTING, index, FSP_SYS200_MODE))
 		mnh_lpddr_sys200_mode(true);
 
 	mnh_ddr_clr_int_status();
