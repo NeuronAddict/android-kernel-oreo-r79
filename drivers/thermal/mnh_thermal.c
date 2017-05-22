@@ -398,7 +398,9 @@ static int mnh_thermal_get_data(void *data, int *data_out)
 				sensor->id, DATAVALID);
 			if(val == 1)
 				break;
-			udelay(sensor->wait_time_us);
+			/* use usleep_range to allow other threads to execute */
+			usleep_range(sensor->wait_time_us,
+				     sensor->wait_time_us + 100);
 		} while (time_before(jiffies, timeout));
 
 		/* Read DATA_OUT from sensor */
