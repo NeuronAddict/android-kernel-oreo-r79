@@ -139,7 +139,28 @@ static const char *io_ipu_reg_names[IO_IPU_NUM_REGS] = {
 	REG_NAME_ENTRY(MPO_STRM_CNFG0),
 	REG_NAME_ENTRY(MPO_STRM_CNFG1),
 	REG_NAME_ENTRY(MPO_STRM_CNFG0_RO),
-	REG_NAME_ENTRY(MPO_STRM_CNFG1_RO)
+	REG_NAME_ENTRY(MPO_STRM_CNFG1_RO),
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	REG_NAME_ENTRY(MPI_IER),
+	REG_NAME_ENTRY(MPI_IMR),
+	REG_NAME_ENTRY(MPI_ISR),
+	REG_NAME_ENTRY(MPI_ISR_OVF),
+	REG_NAME_ENTRY(MPI_ITR),
+	REG_NAME_ENTRY(MPI_ERR_IER),
+	REG_NAME_ENTRY(MPI_ERR_IMR),
+	REG_NAME_ENTRY(MPI_ERR_ISR),
+	REG_NAME_ENTRY(MPI_ERR_ISR_OVF),
+	REG_NAME_ENTRY(MPI_ERR_ITR),
+	REG_NAME_ENTRY(MPI_CTRL),
+	REG_NAME_ENTRY(MPI_STATUS),
+	REG_NAME_ENTRY(MPO_IER),
+	REG_NAME_ENTRY(MPO_IMR),
+	REG_NAME_ENTRY(MPO_ISR),
+	REG_NAME_ENTRY(MPO_ISR_OVF),
+	REG_NAME_ENTRY(MPO_ITR),
+	REG_NAME_ENTRY(MPO_CTRL),
+	REG_NAME_ENTRY(MPO_STATUS),
+#endif
 };
 
 static inline int dump_io_ipu_reg(struct paintbox_data *pb, uint32_t reg_offset,
@@ -171,6 +192,18 @@ static int dump_io_ipu_reg_verbose(struct paintbox_data *pb,
 	return ret;
 }
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+static int dump_mipi_input_strm_ctrl(struct paintbox_data *pb, uint32_t offset,
+		uint64_t val, char *buf, int *written, size_t len)
+{
+	return dump_io_ipu_reg_verbose(pb, offset, val, buf, written, len,
+			"\tNUM_FRAME %u RST %u CLEANUP %u\n",
+			(val & MPI_STRM_CTRL_NUM_FRAME_MASK) >>
+			MPI_STRM_CTRL_NUM_FRAME_SHIFT,
+			!!(val & MPI_STRM_CTRL_RST_MASK),
+			!!(val & MPI_STRM_CTRL_CLEANUP_MASK));
+}
+#else
 static int dump_mipi_input_strm_ctrl(struct paintbox_data *pb, uint32_t offset,
 		uint64_t val, char *buf, int *written, size_t len)
 {
@@ -186,6 +219,7 @@ static int dump_mipi_input_strm_ctrl(struct paintbox_data *pb, uint32_t offset,
 			!!(val & MPI_STRM_CTRL_CLEANUP_MASK),
 			!!(val & MPI_STRM_CTRL_EN_MASK));
 }
+#endif
 
 static int dump_mipi_input_strm_cnfg0(struct paintbox_data *pb, uint32_t offset,
 		uint64_t val, char *buf, int *written, size_t len)
@@ -219,6 +253,17 @@ static int dump_mipi_input_strm_cnfg1(struct paintbox_data *pb, uint32_t offset,
 			val & MPI_STRM_CNFG1_SEG_START_MASK);
 }
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+static int dump_mipi_output_strm_ctrl(struct paintbox_data *pb, uint32_t offset,
+		uint64_t val, char *buf, int *written, size_t len)
+{
+	return dump_io_ipu_reg_verbose(pb, offset, val, buf, written, len,
+			"\tRST %u CLEANUP %u RSYNC_EN %u\n",
+			!!(val & MPO_STRM_CTRL_RST_MASK),
+			!!(val & MPO_STRM_CTRL_CLEANUP_MASK),
+			!!(val & MPO_STRM_CTRL_RSYNC_EN_MASK));
+}
+#else
 static int dump_mipi_output_strm_ctrl(struct paintbox_data *pb, uint32_t offset,
 		uint64_t val, char *buf, int *written, size_t len)
 {
@@ -231,6 +276,7 @@ static int dump_mipi_output_strm_ctrl(struct paintbox_data *pb, uint32_t offset,
 			!!(val & MPO_STRM_CTRL_RSYNC_EN_MASK),
 			!!(val & MPO_STRM_CTRL_EN_MASK));
 }
+#endif
 
 static int dump_mipi_output_strm_cnfg0(struct paintbox_data *pb,
 		uint32_t offset, uint64_t val, char *buf, int *written,
@@ -356,7 +402,75 @@ int paintbox_dump_mipi_common_registers(struct paintbox_debug *debug, char *buf,
 	if (ret < 0)
 		return ret;
 
-	val = mipi_registers[REG_INDEX(MPI_CAP)];
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	val = mipi_registers[REG_INDEX(MPI_IER)];
+	ret = dump_io_ipu_reg(pb, MPI_IER, val, buf, &written, len);
+	if (ret < 0)
+		return ret;
+
+	val = mipi_registers[REG_INDEX(MPI_IMR)];
+	ret = dump_io_ipu_reg(pb, MPI_IMR, val, buf, &written, len);
+	if (ret < 0)
+		return ret;
+
+	val = mipi_registers[REG_INDEX(MPI_ISR)];
+	ret = dump_io_ipu_reg(pb, MPI_ISR, val, buf, &written, len);
+	if (ret < 0)
+		return ret;
+
+	val = mipi_registers[REG_INDEX(MPI_ISR_OVF)];
+	ret = dump_io_ipu_reg(pb, MPI_ISR_OVF, val, buf, &written, len);
+	if (ret < 0)
+		return ret;
+
+	val = mipi_registers[REG_INDEX(MPI_ITR)];
+	ret = dump_io_ipu_reg(pb, MPI_ITR, val, buf, &written, len);
+	if (ret < 0)
+		return ret;
+
+	val = mipi_registers[REG_INDEX(MPI_ERR_IER)];
+	ret = dump_io_ipu_reg(pb, MPI_ERR_IER, val, buf, &written, len);
+	if (ret < 0)
+		return ret;
+
+	val = mipi_registers[REG_INDEX(MPI_ERR_IMR)];
+	ret = dump_io_ipu_reg(pb, MPI_ERR_IMR, val, buf, &written, len);
+	if (ret < 0)
+		return ret;
+
+	val = mipi_registers[REG_INDEX(MPI_ERR_ISR)];
+	ret = dump_io_ipu_reg(pb, MPI_ERR_ISR, val, buf, &written, len);
+	if (ret < 0)
+		return ret;
+
+	val = mipi_registers[REG_INDEX(MPI_ERR_ISR_OVF)];
+	ret = dump_io_ipu_reg(pb, MPI_ERR_ISR_OVF, val, buf, &written, len);
+	if (ret < 0)
+		return ret;
+
+	val = mipi_registers[REG_INDEX(MPI_ERR_ITR)];
+	ret = dump_io_ipu_reg(pb, MPI_ERR_ITR, val, buf, &written, len);
+	if (ret < 0)
+		return ret;
+
+	val = mipi_registers[REG_INDEX(MPI_CTRL)];
+	ret = dump_io_ipu_reg_verbose(pb, MPI_CTRL, val, buf, &written,
+			len, "\tCONTINUOUS %03x\n",
+			(val & MPI_CTRL_STRM_CONTINUOUS_MASK) >>
+					MPI_CTRL_STRM_CONTINUOUS_SHIFT);
+	if (ret < 0)
+		return ret;
+
+	val = mipi_registers[REG_INDEX(MPI_STATUS)];
+	ret = dump_io_ipu_reg_verbose(pb, MPI_STATUS, val, buf, &written,
+			len, "\tIDLE %03x\n",
+			(val & MPI_STATUS_STRM_IDLE_MASK) >>
+					MPI_STATUS_STRM_IDLE_SHIFT);
+	if (ret < 0)
+		return ret;
+#endif
+
+	val = mipi_registers[REG_INDEX(MPI_STRM_SEL)];
 	ret = dump_io_ipu_reg(pb, MPI_STRM_SEL, val, buf, &written, len);
 	if (ret < 0)
 		return ret;
@@ -382,6 +496,49 @@ int paintbox_dump_mipi_common_registers(struct paintbox_debug *debug, char *buf,
 			val & MPO_CAP_MAX_IFC_MASK);
 	if (ret < 0)
 		return ret;
+
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	val = mipi_registers[REG_INDEX(MPO_IER - MPO_COMMON_BLOCK_START)];
+	ret = dump_io_ipu_reg(pb, MPO_IER, val, buf, &written, len);
+	if (ret < 0)
+		return ret;
+
+	val = mipi_registers[REG_INDEX(MPO_IMR - MPO_COMMON_BLOCK_START)];
+	ret = dump_io_ipu_reg(pb, MPO_IMR, val, buf, &written, len);
+	if (ret < 0)
+		return ret;
+
+	val = mipi_registers[REG_INDEX(MPO_ISR - MPO_COMMON_BLOCK_START)];
+	ret = dump_io_ipu_reg(pb, MPO_ISR, val, buf, &written, len);
+	if (ret < 0)
+		return ret;
+
+	val = mipi_registers[REG_INDEX(MPO_ISR_OVF - MPO_COMMON_BLOCK_START)];
+	ret = dump_io_ipu_reg(pb, MPO_ISR_OVF, val, buf, &written, len);
+	if (ret < 0)
+		return ret;
+
+	val = mipi_registers[REG_INDEX(MPO_ITR - MPO_COMMON_BLOCK_START)];
+	ret = dump_io_ipu_reg(pb, MPO_ITR, val, buf, &written, len);
+	if (ret < 0)
+		return ret;
+
+	val = mipi_registers[REG_INDEX(MPO_CTRL - MPO_COMMON_BLOCK_START)];
+	ret = dump_io_ipu_reg_verbose(pb, MPO_CTRL, val, buf, &written,
+			len, "\tCONTINUOUS %03x\n",
+			(val & MPO_CTRL_STRM_CONTINUOUS_MASK) >>
+					MPO_CTRL_STRM_CONTINUOUS_SHIFT);
+	if (ret < 0)
+		return ret;
+
+	val = mipi_registers[REG_INDEX(MPO_STATUS)];
+	ret = dump_io_ipu_reg_verbose(pb, MPO_STATUS, val, buf, &written,
+			len, "\tIDLE %03x\n",
+			(val & MPO_STATUS_STRM_IDLE_MASK) >>
+					MPO_STATUS_STRM_IDLE_SHIFT);
+	if (ret < 0)
+		return ret;
+#endif
 
 	val = mipi_registers[REG_INDEX(MPO_STRM_SEL - MPO_COMMON_BLOCK_START)];
 	ret = dump_io_ipu_reg(pb, MPO_STRM_SEL, val, buf, &written, len);

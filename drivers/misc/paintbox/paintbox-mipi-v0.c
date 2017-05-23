@@ -316,8 +316,9 @@ int mipi_input_clear_control(struct paintbox_data *pb,
  *
  * The caller to this function must hold pb->io_ipu.mipi_lock.
  */
-int mipi_output_set_control(struct paintbox_data *pb,
-		struct paintbox_mipi_stream *stream, uint32_t ctrl_set_mask)
+int mipi_output_clear_and_set_control(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream, uint32_t ctrl_clear_mask,
+		uint32_t ctrl_set_mask)
 {
 	unsigned int interface_id = stream->interface->interface_id;
 	bool start_interrupt_state, end_interrupt_state;
@@ -327,47 +328,9 @@ int mipi_output_set_control(struct paintbox_data *pb,
 			interface_id);
 
 	ctrl = readl(pb->io_ipu.ipu_base + MPO_STRM_CTRL);
-	writel(ctrl | ctrl_set_mask, pb->io_ipu.ipu_base + MPO_STRM_CTRL);
-
-	end_interrupt_state = get_mipi_output_interface_interrupt_state(pb,
-			interface_id);
-
-	/* An interface interrupt has occurred during the read, modify, write
-	 * operation above.  Determine if a stream interrupt was missed.
-	 */
-	if (!start_interrupt_state && end_interrupt_state)
-		return evaluate_missing_output_interrupt(pb, stream);
-
-	return 0;
-}
-
-/* Mitigation for hardware bug b/32640344
- *
- * On the V0 IPU, the MPO_STRM_CTRL register contains an EOF ISR bit that is set
- * by the hardware.  During a read, modify, write operation by the CPU it is
- * possible to clear these bit without knowing that it has been set.
- * This could cause the driver to miss an EOF interrupt.  On the V0 IPU, there
- * is only one stream per MIPI output interface.  If the interface bit is set in
- * the IPU_ISR register but the ISR bit is not set in the MPO_STRM_CTRL
- * interrupt then it can be determined that an interrupt was missed.
- *
- * This function returns -EINTR if an interrupt occurred while doing a read,
- * modify, write of the MPO_STRM_CTRL register.
- *
- * The caller to this function must hold pb->io_ipu.mipi_lock.
- */
-int mipi_output_clear_control(struct paintbox_data *pb,
-		struct paintbox_mipi_stream *stream, uint32_t ctrl_clear_mask)
-{
-	unsigned int interface_id = stream->interface->interface_id;
-	bool start_interrupt_state, end_interrupt_state;
-	uint32_t ctrl;
-
-	start_interrupt_state = get_mipi_output_interface_interrupt_state(pb,
-			interface_id);
-
-	ctrl = readl(pb->io_ipu.ipu_base + MPO_STRM_CTRL);
-	writel(ctrl & ~ctrl_clear_mask, pb->io_ipu.ipu_base + MPO_STRM_CTRL);
+	ctrl &= ~ctrl_clear_mask;
+	ctrl |= ctrl_set_mask;
+	writel(ctrl, pb->io_ipu.ipu_base + MPO_STRM_CTRL);
 
 	end_interrupt_state = get_mipi_output_interface_interrupt_state(pb,
 			interface_id);

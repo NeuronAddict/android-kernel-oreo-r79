@@ -44,6 +44,7 @@
 #include "paintbox-lbp.h"
 #include "paintbox-mipi.h"
 #include "paintbox-mmu.h"
+#include "paintbox-pmon.h"
 #include "paintbox-power.h"
 #include "paintbox-regs.h"
 #include "paintbox-sim-regs.h"
@@ -137,6 +138,16 @@ static int paintbox_release(struct inode *ip, struct file *fp)
 		release_mipi_stream(pb, session, stream);
 
 	paintbox_irq_wait_for_release_complete(pb, session);
+
+	/* free any pmon allocations */
+	if (pb->bif.pmon_session == session)
+		pb->bif.pmon_session = NULL;
+
+	if (pb->mmu.pmon_session == session)
+		pb->mmu.pmon_session = NULL;
+
+	if (pb->dma.pmon_session == session)
+		pb->dma.pmon_session = NULL;
 
 	mutex_unlock(&pb->lock);
 
@@ -400,6 +411,24 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 		break;
 	case PB_UNBIND_MIPI_OUT_INTERRUPT:
 		ret = unbind_mipi_interrupt_ioctl(pb, session, arg, false);
+		break;
+	case PB_PMON_ALLOCATE:
+		ret = pmon_allocate_ioctl(pb, session, arg);
+		break;
+	case PB_PMON_RELEASE:
+		ret = pmon_release_ioctl(pb, session, arg);
+		break;
+	case PB_PMON_CONFIG_WRITE:
+		ret = pmon_config_write_ioctl(pb, session, arg);
+		break;
+	case PB_PMON_DATA_READ:
+		ret = pmon_data_read_ioctl(pb, session, arg);
+		break;
+	case PB_PMON_DATA_WRITE:
+		ret = pmon_data_write_ioctl(pb, session, arg);
+		break;
+	case PB_PMON_ENABLE:
+		ret = pmon_enable_ioctl(pb, session, arg);
 		break;
 #ifdef CONFIG_PAINTBOX_TEST_SUPPORT
 	case PB_TEST_DMA_RESET:

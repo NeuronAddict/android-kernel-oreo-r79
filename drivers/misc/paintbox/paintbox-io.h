@@ -28,33 +28,33 @@ bool get_mipi_output_interface_interrupt_state(struct paintbox_data *pb,
 		unsigned int interface_id);
 
 void paintbox_io_enable_interrupt(struct paintbox_data *pb,
-		uint32_t enable_mask);
+		uint64_t enable_mask);
 void paintbox_io_disable_interrupt(struct paintbox_data *pb,
-		uint32_t disable_mask);
+		uint64_t disable_mask);
 
 static inline void paintbox_enable_dma_channel_interrupt(
 		struct paintbox_data *pb, unsigned int channel_id)
 {
-	paintbox_io_enable_interrupt(pb, 1 << channel_id);
+	paintbox_io_enable_interrupt(pb, 1ULL << channel_id);
 }
 
 static inline void paintbox_disable_dma_channel_interrupt(
 		struct paintbox_data *pb, unsigned int channel_id)
 {
-	paintbox_io_disable_interrupt(pb, 1 << channel_id);
+	paintbox_io_disable_interrupt(pb, 1ULL << channel_id);
 }
 
 static inline void paintbox_enable_stp_interrupt(struct paintbox_data *pb,
 		unsigned int stp_id)
 {
-	paintbox_io_enable_interrupt(pb, 1 << (stp_id_to_index(stp_id) +
+	paintbox_io_enable_interrupt(pb, 1ULL << (stp_id_to_index(stp_id) +
 			IPU_IMR_STP_INTR_SHIFT));
 }
 
 static inline void paintbox_disable_stp_interrupt(struct paintbox_data *pb,
 		unsigned int stp_id)
 {
-	paintbox_io_disable_interrupt(pb, 1 << (stp_id_to_index(stp_id) +
+	paintbox_io_disable_interrupt(pb, 1ULL << (stp_id_to_index(stp_id) +
 			IPU_IMR_STP_INTR_SHIFT));
 }
 
@@ -81,28 +81,36 @@ static inline void paintbox_disable_mmu_interrupt(struct paintbox_data *pb)
 static inline void paintbox_enable_mipi_input_interface_interrupt(
 		struct paintbox_data *pb, unsigned int interface_id)
 {
-	paintbox_io_enable_interrupt(pb, 1 << (interface_id +
+	paintbox_io_enable_interrupt(pb, 1ULL << (interface_id +
 			IPU_IMR_MPI_INTR_SHIFT));
 }
 
 static inline void paintbox_disable_mipi_input_interface_interrupt(
 		struct paintbox_data *pb, unsigned int interface_id)
 {
-	paintbox_io_disable_interrupt(pb, 1 << (interface_id +
+	paintbox_io_disable_interrupt(pb, 1ULL << (interface_id +
 			IPU_IMR_MPI_INTR_SHIFT));
 }
+
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+void paintbox_enable_mipi_input_interface_error_interrupt(
+		struct paintbox_data *pb, unsigned int interface_id);
+
+void paintbox_disable_mipi_input_interface_error_interrupt(
+		struct paintbox_data *pb, unsigned int interface_id);
+#endif
 
 static inline void paintbox_enable_mipi_output_interface_interrupt(
 		struct paintbox_data *pb, unsigned int interface_id)
 {
-	paintbox_io_enable_interrupt(pb, 1 << (interface_id +
+	paintbox_io_enable_interrupt(pb, 1ULL << (interface_id +
 			IPU_IMR_MPO_INTR_SHIFT));
 }
 
 static inline void paintbox_disable_mipi_output_interface_interrupt(
 		struct paintbox_data *pb, unsigned int interface_id)
 {
-	paintbox_io_disable_interrupt(pb, 1 << (interface_id +
+	paintbox_io_disable_interrupt(pb, 1ULL << (interface_id +
 			IPU_IMR_MPO_INTR_SHIFT));
 }
 

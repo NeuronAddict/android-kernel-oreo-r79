@@ -142,6 +142,13 @@ struct paintbox_power {
 	int bif_mmu_clock_idle_disable_ref_count;
 };
 
+struct paintbox_bif {
+	/* points to the session that has allocated the bif pmon counters.
+	 * points to NULL if no session has allocated the counters.
+	 */
+	struct paintbox_session *pmon_session;
+};
+
 struct paintbox_mmu {
 #ifdef CONFIG_PAINTBOX_DEBUG
 	struct paintbox_debug debug;
@@ -153,6 +160,11 @@ struct paintbox_mmu {
 	struct iommu_group *group;
 	bool enabled;
 #endif
+
+	/* points to the session that has allocated the mmu pmon counters.
+	 * points to NULL if no session has allocated the counters.
+	 */
+	struct paintbox_session *pmon_session;
 };
 
 struct paintbox_io {
@@ -172,7 +184,7 @@ struct paintbox_io {
 	spinlock_t io_lock;
 
 	struct {
-		uint32_t ipu_imr;
+		uint64_t ipu_imr;
 		uint32_t dma_chan_en;
 	} regs;
 
@@ -453,6 +465,11 @@ struct paintbox_dma {
 	struct dentry *bif_outstanding_dentry;
 	unsigned int bif_outstanding;
 
+	/* points to the session that has allocated the dma pmon counters.
+	 * points to NULL if no session has allocated the counters.
+	 */
+	struct paintbox_session *pmon_session;
+
 	/* Access to the discard queue and discard count is controlled by
 	 * pb->dma.dma_lock.
 	 */
@@ -600,6 +617,7 @@ struct paintbox_data {
 	struct paintbox_stp_common stp;
 	struct paintbox_power power;
 	struct paintbox_io io;
+	struct paintbox_bif bif;
 	struct paintbox_mmu mmu;
 	struct paintbox_io_ipu io_ipu;
 	struct paintbox_dma dma;

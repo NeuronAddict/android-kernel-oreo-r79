@@ -146,7 +146,10 @@ static const char *lbp_reg_names[LBP_NUM_REGS] = {
 	REG_NAME_ENTRY(LB_SB_SIZE),
 	REG_NAME_ENTRY(LB_BASE),
 	REG_NAME_ENTRY(LB_STAT),
-	REG_NAME_ENTRY(LB_L_PARAM)
+	REG_NAME_ENTRY(LB_L_PARAM),
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	REG_NAME_ENTRY(LB_SB_DELTA)
+#endif
 };
 
 static inline int paintbox_dump_lbp_reg_simple(struct paintbox_data *pb,
@@ -355,6 +358,18 @@ static int paintbox_dump_lb_l_param_register(struct paintbox_data *pb,
 			LB_L_PARAM_L_WIDTH_SHIFT, val & LB_L_PARAM_L_INC_MASK);
 }
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+static int paintbox_dump_lb_sb_delta_register(struct paintbox_data *pb,
+		char *buf, int *written, size_t len)
+{
+	uint64_t val;
+
+	val = readq(pb->lbp.reg_base + LB_SB_DELTA);
+	return paintbox_dump_lbp_reg(pb, LB_SB_DELTA, buf, written, len,
+			"\tSB_DELTA %u\n", val & LB_SB_DELTA_SB_DELTA_MASK);
+}
+#endif
+
 void paintbox_log_lbp_registers(struct paintbox_data *pb,
 		struct paintbox_lbp *lbp, struct paintbox_lb *lb,
 		const char *msg)
@@ -374,6 +389,10 @@ void paintbox_log_lbp_registers(struct paintbox_data *pb,
 	paintbox_dump_lb_base_register(pb, NULL, NULL, 0);
 	paintbox_dump_lb_stat_register(pb, NULL, NULL, 0);
 	paintbox_dump_lb_l_param_register(pb, NULL, NULL, 0);
+
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	paintbox_dump_lb_sb_delta_register(pb, NULL, NULL, 0);
+#endif
 }
 
 #ifdef CONFIG_PAINTBOX_DEBUG
@@ -463,6 +482,12 @@ int paintbox_dump_lb_registers(struct paintbox_debug *debug, char *buf,
 	ret = paintbox_dump_lb_l_param_register(pb, buf, &written, len);
 	if (ret < 0)
 		return ret;
+
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	ret = paintbox_dump_lb_sb_delta_register(pb, buf, &written, len);
+	if (ret < 0)
+		return ret;
+#endif
 
 	return written;
 }

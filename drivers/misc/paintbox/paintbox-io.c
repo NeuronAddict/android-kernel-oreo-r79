@@ -65,6 +65,19 @@ static const char *io_apb_reg_names[IO_APB_NUM_REGS] = {
 #if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
 	REG_NAME_ENTRY(IPU_IER),
 	REG_NAME_ENTRY(IPU_ITR),
+	REG_NAME_ENTRY(DMA_ERR_ISR),
+	REG_NAME_ENTRY(DMA_ERR_IMR),
+	REG_NAME_ENTRY(DMA_ERR_IER),
+	REG_NAME_ENTRY(DMA_ERR_ITR),
+	REG_NAME_ENTRY(STP_ERR_ISR),
+	REG_NAME_ENTRY(STP_ERR_IMR),
+	REG_NAME_ENTRY(STP_ERR_IER),
+	REG_NAME_ENTRY(STP_ERR_ITR),
+	REG_NAME_ENTRY(MIF_ERR_ISR),
+	REG_NAME_ENTRY(MIF_ERR_IMR),
+	REG_NAME_ENTRY(MIF_ERR_IER),
+	REG_NAME_ENTRY(MIF_ERR_ITR),
+	REG_NAME_ENTRY(IPU_STP_GRP_SEL),
 #endif
 };
 
@@ -80,15 +93,17 @@ int paintbox_dump_io_apb_registers(struct paintbox_debug *debug, char *buf,
 		size_t len)
 {
 	struct paintbox_data *pb = debug->pb;
+	unsigned int i;
 	int ret, written = 0;
 
-	ret = paintbox_dump_io_apb_reg(pb, IPU_ISR, buf, &written, len);
-	if (ret < 0)
-		goto err_exit;
-
-	ret = paintbox_dump_io_apb_reg(pb, IPU_IMR, buf, &written, len);
-	if (ret < 0)
-		goto err_exit;
+	for (i = 0; i < IO_APB_NUM_REGS; i++) {
+		if (io_apb_reg_names[i] != NULL) {
+			ret = paintbox_dump_io_apb_reg(pb, i * IPU_REG_WIDTH,
+					buf, &written, len);
+			if (ret < 0)
+				goto err_exit;
+		}
+	}
 
 	return written;
 
@@ -170,16 +185,24 @@ static const struct file_operations io_apb_time_stats_enable_fops = {
 static irqreturn_t paintbox_io_interrupt(int irq, void *arg)
 {
 	struct paintbox_data *pb = (struct paintbox_data *)arg;
-	uint32_t status;
+	uint64_t status;
 	ktime_t timestamp;
 
 	pb->io.irq_activations++;
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	status = readq(pb->io.apb_base + IPU_ISR);
+#else
 	status = readl(pb->io.apb_base + IPU_ISR);
+#endif
 	if (status == 0)
 		return IRQ_NONE;
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	writeq(status, pb->io.apb_base + IPU_ISR);
+#else
 	writel(status, pb->io.apb_base + IPU_ISR);
+#endif
 
 	timestamp = ktime_get_boottime();
 
@@ -202,11 +225,24 @@ static irqreturn_t paintbox_io_interrupt(int irq, void *arg)
 				IPU_ISR_MPI_INTR_MASK) >>
 				IPU_ISR_MPI_INTR_SHIFT, timestamp);
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	if (status & IPU_ISR_MIF_ERR_INTR_MASK) {
+		uint32_t error_status;
+
+		error_status = readl(pb->io.apb_base + MIF_ERR_ISR);
+		writel(error_status, pb->io.apb_base + MIF_ERR_ISR);
+		paintbox_mipi_input_error_interrupt(pb, timestamp);
+	}
+#endif
+
 	if (status & IPU_ISR_MPO_INTR_MASK)
 		paintbox_mipi_output_interrupt(pb, (status &
 				IPU_ISR_MPO_INTR_MASK) >>
 				IPU_ISR_MPO_INTR_SHIFT, timestamp);
 
+	/* TODO(showarth): when connected in RTL, VA_ERR will be set in
+	 * IPU_ISR_DMA_ERR and DMA_ERR_ISR.
+	 */
 	if (status & IPU_ISR_DMA_CHAN_INTR_MASK)
 		paintbox_dma_interrupt(pb, status & IPU_ISR_DMA_CHAN_INTR_MASK,
 				timestamp);
@@ -234,39 +270,89 @@ static irqreturn_t paintbox_io_interrupt(int irq, void *arg)
 }
 
 void paintbox_io_enable_interrupt(struct paintbox_data *pb,
-		uint32_t enable_mask)
+		uint64_t enable_mask)
 {
 	unsigned long irq_flags;
 
 	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
 	pb->io.regs.ipu_imr |= enable_mask;
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	writeq(pb->io.regs.ipu_imr, pb->io.apb_base + IPU_IMR);
+#else
 	writel(pb->io.regs.ipu_imr, pb->io.apb_base + IPU_IMR);
+#endif
 	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
 }
 
 void paintbox_io_disable_interrupt(struct paintbox_data *pb,
-		uint32_t disable_mask)
+		uint64_t disable_mask)
 {
 	unsigned long irq_flags;
 
 	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
 	pb->io.regs.ipu_imr &= ~disable_mask;
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	writeq(pb->io.regs.ipu_imr, pb->io.apb_base + IPU_IMR);
+#else
 	writel(pb->io.regs.ipu_imr, pb->io.apb_base + IPU_IMR);
+#endif
 	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
 }
+
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+void paintbox_enable_mipi_input_interface_error_interrupt(
+		struct paintbox_data *pb, unsigned int interface_id)
+{
+	uint32_t mif_err_imr;
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
+
+	mif_err_imr = readl(pb->io.apb_base + MIF_ERR_IMR);
+	mif_err_imr |= 1 << (interface_id + MIF_ERR_IER_MIF_ERR_SHIFT);
+	writel(mif_err_imr, pb->io.apb_base + MIF_ERR_IMR);
+
+	if (!(pb->io.regs.ipu_imr & IPU_IMR_MIF_ERR_INTR_MASK)) {
+		pb->io.regs.ipu_imr |= IPU_IMR_MIF_ERR_INTR_MASK;
+		writeq(pb->io.regs.ipu_imr, pb->io.apb_base + IPU_IMR);
+	}
+
+	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
+}
+
+void paintbox_disable_mipi_input_interface_error_interrupt(
+		struct paintbox_data *pb, unsigned int interface_id)
+{
+	uint32_t mif_err_imr;
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
+
+	mif_err_imr = readl(pb->io.apb_base + MIF_ERR_IMR);
+	mif_err_imr &= ~(1 << (interface_id + MIF_ERR_IER_MIF_ERR_SHIFT));
+	writel(mif_err_imr, pb->io.apb_base + MIF_ERR_IMR);
+
+	if (!mif_err_imr) {
+		pb->io.regs.ipu_imr &= ~IPU_IMR_MIF_ERR_INTR_MASK;
+		writeq(pb->io.regs.ipu_imr, pb->io.apb_base + IPU_IMR);
+	}
+
+	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
+}
+#endif
 
 bool get_mipi_input_interface_interrupt_state(struct paintbox_data *pb,
 		unsigned int interface_id)
 {
-	return !!(readl(pb->io.apb_base + IPU_ISR) &
-			(1 << (interface_id + IPU_IMR_MPI_INTR_SHIFT)));
+	return !!(readq(pb->io.apb_base + IPU_ISR) &
+			(1ULL << (interface_id + IPU_IMR_MPI_INTR_SHIFT)));
 }
 
 bool get_mipi_output_interface_interrupt_state(struct paintbox_data *pb,
 		unsigned int interface_id)
 {
-	return !!(readl(pb->io.apb_base + IPU_ISR) &
-			(1 << (interface_id + IPU_IMR_MPO_INTR_SHIFT)));
+	return !!(readq(pb->io.apb_base + IPU_ISR) &
+			(1ULL << (interface_id + IPU_IMR_MPO_INTR_SHIFT)));
 }
 
 int paintbox_io_apb_init(struct paintbox_data *pb)

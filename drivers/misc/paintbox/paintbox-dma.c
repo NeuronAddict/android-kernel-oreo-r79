@@ -624,10 +624,21 @@ struct paintbox_dma_channel *dma_handle_mipi_stream_allocated(
 
 	channel = &pb->dma.channels[channel_id];
 
-	/* There should not be a stream object already associated with this
-	 * channel.  If there is then there is a bug in cleanup.
+	/* If the DMA channel is already associated with a MIPI stream, then it cannot
+	 * be associated with this stream. This can happen on Canvas, which shares DMA
+	 * channels across MIPI output interafces.
 	 */
-	WARN_ON(channel->mipi_stream);
+	if (channel->mipi_stream) {
+		dev_warn(&pb->pdev->dev,
+				"%s: dma channel%u is already used for mipi %s stream%u, and cannot be used for mipi %s stream%u.\n",
+				__func__, channel_id,
+				channel->mipi_stream->is_input ? "input" : "output",
+				channel->mipi_stream->stream_id,
+				stream->is_input ? "input" : "output",
+				stream->stream_id);
+		*ret = -EBUSY;
+		return NULL;
+	}
 
 	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
 
@@ -1354,10 +1365,10 @@ void paintbox_dma_eof_interrupt(struct paintbox_data *pb,
 
 	dma_report_completion(pb, channel, transfer, timestamp, err);
 
-	/* If there was an error or there are no pending transfers then return
-	 * now.
+	/* If there are no pending transfers or the channel has been stopped
+	 * then return now.
 	 */
-	if (err || list_empty(&channel->pending_list))
+	if (list_empty(&channel->pending_list) || err == -ECANCELED)
 		return;
 
 	/* There should be space in the active queue if not then there is a

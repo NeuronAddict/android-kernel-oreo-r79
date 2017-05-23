@@ -363,6 +363,68 @@ struct sram_vector_coordinate_read {
 	bool read_alu_registers;
 };
 
+enum pmon_block_type {
+	PMON_BLOCK_BIF = 0,
+	PMON_BLOCK_MMU = 1,
+	PMON_BLOCK_DMA = 2,
+	PMON_BLOCK_LBP = 3,
+	PMON_BLOCK_STP = 4,
+};
+
+enum pmon_mode {
+	PMON_MODE_DISABLED               = 0,
+	PMON_MODE_SIMPLE_INCREMENT       = 1,
+	PMON_MODE_ACCUMULATE             = 2,
+	PMON_MODE_LESS_THAN_THRESHOLD    = 3,
+	PMON_MODE_EQUAL_TO_THRESHOLD     = 4,
+	PMON_MODE_GREATER_THAN_THRESHOLD = 5,
+	PMON_MODE_COUNT_INCREMENT        = 6,
+};
+
+struct pmon_op {
+	int32_t sel;
+	int32_t mask;
+	int32_t match;
+	bool inv;
+};
+
+struct pmon_config {
+	enum pmon_block_type block;
+	int32_t core_id; /* Used by LBP or STP PMONs only */
+	int32_t counter_id;
+
+	enum pmon_mode mode;
+	int32_t threshold;
+	struct pmon_op inc;
+	struct pmon_op dec;
+};
+
+struct pmon_data {
+	enum pmon_block_type block;
+	int32_t core_id; /* Used by LBP or STP PMONs only */
+	int32_t counter_id;
+
+	int64_t count;
+	int32_t accumulator;
+	bool accumulator_overflow;
+	bool accumulator_underflow;
+	bool count_overflow;
+};
+
+struct pmon_enable {
+	enum pmon_block_type block;
+	int core_id;
+
+	bool enable;
+
+	/* Used by DMA PMON block only, set to 0 otherwise */
+	int channel_id_0;
+	int channel_id_1;
+
+	/* Used by LBP PMON block only, set to 0 otherwise */
+	int rptr_id;
+};
+
 struct mipi_input_stream_setup {
 	uint32_t seg_start;
 	uint32_t seg_words_per_row;
@@ -555,7 +617,15 @@ struct mipi_interrupt_config {
 /* Flush pending interrupts for all irqs in the session. */
 #define PB_FLUSH_ALL_INTERRUPTS        _IO('p', 70)
 
-#define PB_NUM_IOCTLS 71
+/* ioctls for configuring, reading, writing PMON counters */
+#define PB_PMON_ALLOCATE              _IOR('p', 71, enum pmon_block_type)
+#define PB_PMON_RELEASE               _IOR('p', 72, enum pmon_block_type)
+#define PB_PMON_CONFIG_WRITE          _IOR('p', 73, struct pmon_config)
+#define PB_PMON_DATA_READ            _IOWR('p', 74, struct pmon_data)
+#define PB_PMON_DATA_WRITE            _IOW('p', 75, struct pmon_data)
+#define PB_PMON_ENABLE                _IOW('p', 76, struct pmon_enable)
+
+#define PB_NUM_IOCTLS 77
 
 /* Test ioctls
  * The following ioctls are for testing and are not to be used for normal

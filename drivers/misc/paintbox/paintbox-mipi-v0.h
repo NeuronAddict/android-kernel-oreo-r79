@@ -36,6 +36,14 @@
 
 #define MIPI_INVALID_FRAME_NUMBER -1
 
+#define MIPI_INPUT_SOF_IMR	MPI_STRM_CTRL_SOF_IMR_MASK
+#define MIPI_INPUT_SOF_ISR	MPI_STRM_CTRL_SOF_ISR_MASK
+#define MIPI_INPUT_OVF_IMR	MPI_STRM_CTRL_OVF_IMR_MASK
+#define MIPI_INPUT_OVF_ISR	MPI_STRM_CTRL_OVF_ISR_MASK
+
+#define MIPI_OUTPUT_EOF_IMR	MPO_STRM_CTRL_EOF_IMR_MASK
+#define MIPI_OUTPUT_EOF_ISR	MPO_STRM_CTRL_EOF_ISR_MASK
+
 /* TODO(ahampson):  The mapping here below applies to the V0 IPU but may not be
  * the same in future versions of the hardware.  This mapping should be moved
  * into the device tree.  b/32283059
@@ -93,10 +101,109 @@ int mipi_input_clear_control(struct paintbox_data *pb,
  *
  * The caller to these functions must hold pb->io_ipu.mipi_lock.
  */
-int mipi_output_set_control(struct paintbox_data *pb,
-		struct paintbox_mipi_stream *stream, uint32_t ctrl_set_mask);
+int mipi_output_clear_and_set_control(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream, uint32_t ctrl_clear_mask,
+		uint32_t ctrl_set_mask);
 
-int mipi_output_clear_control(struct paintbox_data *pb,
-		struct paintbox_mipi_stream *stream, uint32_t ctrl_clear_mask);
+static inline int mipi_output_set_control(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream, uint32_t ctrl_set_mask)
+{
+	return mipi_output_clear_and_set_control(pb, stream, 0, ctrl_set_mask);
+}
+
+static inline int mipi_output_clear_control(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream, uint32_t ctrl_clear_mask)
+{
+	return mipi_output_clear_and_set_control(pb, stream, ctrl_clear_mask,
+			0);
+}
+
+/* The caller to the mipi_{in,out}put_(ack|{en,dis}able)_xxx functions must hold
+ * pb->io_ipu.mipi_lock.
+ */
+static inline int mipi_input_enable_stream(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream)
+{
+	paintbox_mipi_select_input_stream(pb, stream->stream_id);
+
+	return mipi_input_set_control(pb, stream, MPI_STRM_CTRL_EN_MASK);
+}
+
+static inline int mipi_input_enable_irqs_and_stream(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream, uint32_t imr_mask)
+{
+	paintbox_mipi_select_input_stream(pb, stream->stream_id);
+
+	return mipi_input_set_control(pb, stream,
+			imr_mask | MPI_STRM_CTRL_EN_MASK);
+}
+
+static inline int mipi_input_disable_stream(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream)
+{
+	paintbox_mipi_select_input_stream(pb, stream->stream_id);
+
+	return mipi_input_clear_control(pb, stream, MPI_STRM_CTRL_EN_MASK);
+}
+
+static inline int mipi_input_disable_irqs_and_stream(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream, uint32_t imr_mask)
+{
+	paintbox_mipi_select_input_stream(pb, stream->stream_id);
+
+	return mipi_input_clear_control(pb, stream,
+			imr_mask | MPI_STRM_CTRL_EN_MASK);
+}
+
+static inline int mipi_output_ack_irqs(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream, uint32_t isr_mask)
+{
+	paintbox_mipi_select_output_stream(pb, stream->stream_id);
+
+	return mipi_output_clear_control(pb, stream, isr_mask);
+}
+
+static inline int mipi_output_enable_stream(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream)
+{
+	paintbox_mipi_select_output_stream(pb, stream->stream_id);
+
+	return mipi_output_set_control(pb, stream, MPO_STRM_CTRL_EN_MASK);
+}
+
+static inline int mipi_output_enable_irqs_and_stream(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream, uint32_t imr_mask,
+		bool row_sync)
+{
+	uint32_t ctrl_clear_mask = 0;
+	uint32_t ctrl_set_mask = imr_mask | MPO_STRM_CTRL_EN_MASK;
+
+	paintbox_mipi_select_output_stream(pb, stream->stream_id);
+
+	/* {set,clear} RSYNC_EN in case previously {cleared,set} */
+	if (row_sync)
+		ctrl_set_mask |= MPO_STRM_CTRL_RSYNC_EN_MASK;
+	else
+		ctrl_clear_mask |= MPO_STRM_CTRL_RSYNC_EN_MASK;
+
+	return mipi_output_clear_and_set_control(pb, stream, ctrl_clear_mask,
+			ctrl_set_mask);
+}
+
+static inline int mipi_output_disable_stream(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream)
+{
+	paintbox_mipi_select_output_stream(pb, stream->stream_id);
+
+	return mipi_output_clear_control(pb, stream, MPO_STRM_CTRL_EN_MASK);
+}
+
+static inline int mipi_output_disable_irqs(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream, uint32_t imr_mask)
+{
+	paintbox_mipi_select_output_stream(pb, stream->stream_id);
+
+	return mipi_output_clear_control(pb, stream, imr_mask);
+}
 
 #endif /* __PAINTBOX_MIPI_V0_H__ */

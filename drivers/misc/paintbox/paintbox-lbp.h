@@ -52,6 +52,11 @@ void release_lbp(struct paintbox_data *pb, struct paintbox_session *session,
 void reset_lb(struct paintbox_data *pb, unsigned int lbp_id,
 		unsigned int lb_id);
 
+/* The caller to this function must hold pb->lock and must have selected a pool
+ * via paintbox_lbp_select
+ */
+void paintbox_lbp_set_pmon_rptr_id(struct paintbox_data *pb, uint64_t rptr_id);
+
 /* The caller to this function must hold pb->lock */
 static inline void paintbox_lbp_select(struct paintbox_data *pb,
 		unsigned int lbp_id)

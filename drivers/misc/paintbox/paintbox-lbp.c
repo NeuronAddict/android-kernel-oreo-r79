@@ -349,6 +349,39 @@ static int write_l_param_register(struct paintbox_data *pb,
 	return 0;
 }
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+static int write_lb_sb_delta_register(struct paintbox_data *pb,
+		struct paintbox_lb *lb)
+{
+	unsigned int width_rounded, sb_cols_rounded;
+	uint32_t lb_sb_delta;
+
+	if (lb->sb_cols == 0) {
+		writel(0, pb->lbp.reg_base + LB_SB_DELTA);
+		return 0;
+	}
+
+	width_rounded = (lb->width_pixels + LB_BLOCK_TRANSFER_WIDTH - 1) /
+			LB_BLOCK_TRANSFER_WIDTH;
+	sb_cols_rounded = (lb->sb_cols + LB_BLOCK_TRANSFER_HEIGHT - 1) /
+			LB_BLOCK_TRANSFER_HEIGHT;
+
+	lb_sb_delta = sb_cols_rounded - width_rounded % sb_cols_rounded;
+
+	if (lb_sb_delta > LB_SB_DELTA_SB_DELTA_M) {
+		dev_err(&pb->pdev->dev,
+				"%s: lbp%u lb%u: invalid lb_sb_delta %u (max %llu)\n",
+				__func__, lb->lbp->pool_id, lb->lb_id,
+				lb_sb_delta, LB_SB_DELTA_SB_DELTA_M);
+		return -EINVAL;
+	}
+
+	writel(lb_sb_delta, pb->lbp.reg_base + LB_SB_DELTA);
+
+	return 0;
+}
+#endif
+
 int setup_lb_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg)
 {
@@ -480,6 +513,14 @@ int setup_lb_ioctl(struct paintbox_data *pb,
 		writel(LB_L_PARAM_L_WIDTH_MAX << LB_L_PARAM_L_WIDTH_SHIFT,
 				pb->lbp.reg_base + LB_L_PARAM);
 	}
+
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	ret = write_lb_sb_delta_register(pb, lb);
+	if (ret < 0) {
+		mutex_unlock(&pb->lock);
+		return ret;
+	}
+#endif
 
 	/* Enable and initialize the line buffer
 	 * The init bit is not self clearing, we need to clear the init bit.
@@ -744,6 +785,19 @@ int reset_lb_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 	mutex_unlock(&pb->lock);
 
 	return 0;
+}
+
+/* The caller to this function must hold pb->lock and must have selected a pool
+ * via paintbox_lbp_select
+ */
+void paintbox_lbp_set_pmon_rptr_id(struct paintbox_data *pb, uint64_t rptr_id)
+{
+	uint64_t lbp_ctrl;
+
+	lbp_ctrl = readq(pb->lbp.reg_base + LBP_CTRL);
+	lbp_ctrl &= ~LBP_CTRL_PMON_RD_SEL_MASK;
+	lbp_ctrl |= rptr_id << LBP_CTRL_PMON_RD_SEL_SHIFT;
+	writeq(lbp_ctrl, pb->lbp.reg_base + LBP_CTRL);
 }
 
 static int init_lbp(struct paintbox_data *pb, unsigned int lbp_index)
