@@ -483,12 +483,20 @@ struct paintbox_dma {
 	struct list_head free_list;
 	unsigned int free_count;
 
-	/* dma_lock protects access to DMA transfer queues and registers. */
+	/* pb->dma.dma_lock protects access to DMA transfer queues and
+	 * registers.
+	 */
 	spinlock_t dma_lock;
 
-	/* Protected by dma_lock */
+	/* Protected by pb->dma.dma_lock */
 	unsigned int selected_dma_channel_id;
-	uint64_t chan_ctrl;
+
+	/* Protected by pb->dma.dma_lock */
+	struct {
+		uint64_t chan_ctrl;
+		uint64_t irq_err_imr;
+		uint32_t irq_imr;
+	} regs;
 };
 
 /* Data structure for information specific to a Stencil Processor.

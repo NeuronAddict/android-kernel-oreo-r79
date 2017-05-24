@@ -30,6 +30,18 @@ static const char *dma_reg_names[DMA_NUM_REGS] = {
 	REG_NAME_ENTRY(DMA_CTRL),
 	REG_NAME_ENTRY(DMA_CHAN_CTRL),
 	REG_NAME_ENTRY(DMA_CAP0),
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	REG_NAME_ENTRY(DMA_IRQ_ISR),
+	REG_NAME_ENTRY(DMA_IRQ_ERR_ISR),
+	REG_NAME_ENTRY(DMA_IRQ_ITR),
+	REG_NAME_ENTRY(DMA_IRQ_ERR_ITR),
+	REG_NAME_ENTRY(DMA_IRQ_IER),
+	REG_NAME_ENTRY(DMA_IRQ_ERR_IER),
+	REG_NAME_ENTRY(DMA_IRQ_IMR),
+	REG_NAME_ENTRY(DMA_IRQ_ERR_IMR),
+	REG_NAME_ENTRY(DMA_IRQ_ISR_OVF),
+	REG_NAME_ENTRY(DMA_IRQ_ERR_ISR_OVF),
+#endif
 	REG_NAME_ENTRY(DMA_PMON_CFG),
 	REG_NAME_ENTRY(DMA_PMON_CNT_0_CFG),
 	REG_NAME_ENTRY(DMA_PMON_CNT_0),
@@ -57,9 +69,11 @@ static const char *dma_reg_names[DMA_NUM_REGS] = {
 	REG_NAME_ENTRY(DMA_CHAN_VA_BDRY),
 	REG_NAME_ENTRY(DMA_CHAN_NOC_XFER),
 	REG_NAME_ENTRY(DMA_CHAN_NODE),
+#if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 	REG_NAME_ENTRY(DMA_CHAN_IMR),
 	REG_NAME_ENTRY(DMA_CHAN_ISR),
 	REG_NAME_ENTRY(DMA_CHAN_ISR_OVF),
+#endif
 	REG_NAME_ENTRY(DMA_CHAN_MODE_RO),
 	REG_NAME_ENTRY(DMA_CHAN_IMG_FORMAT_RO),
 	REG_NAME_ENTRY(DMA_CHAN_IMG_SIZE_RO),
@@ -473,7 +487,11 @@ int paintbox_dump_dma_registers(struct paintbox_debug *debug, char *buf,
 	if (ret < 0)
 		goto err_exit;
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	for (i = REG_INDEX(DMA_IRQ_ISR); i <= REG_INDEX(DMA_PMON_CNT_3_STS);
+#else
 	for (i = REG_INDEX(DMA_PMON_CFG); i <= REG_INDEX(DMA_PMON_CNT_3_STS);
+#endif
 			i++) {
 		if (dma_reg_names[i] != NULL) {
 			val = dma_ctrl_registers[i];
@@ -865,7 +883,7 @@ int paintbox_dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
 			&written, len);
 	if (ret < 0)
 		goto err_exit;
-
+#if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 	ret = dump_dma_reg(pb, DMA_CHAN_IMR,
 			get_reg_value(reg_values, DMA_CHAN_IMR), buf, &written,
 			len);
@@ -883,7 +901,7 @@ int paintbox_dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
 			&written, len);
 	if (ret < 0)
 		goto err_exit;
-
+#endif
 	ret = dump_chan_mode_register(pb, DMA_CHAN_MODE_RO,
 			get_reg_value(reg_values, DMA_CHAN_MODE_RO), buf,
 			&written, len);

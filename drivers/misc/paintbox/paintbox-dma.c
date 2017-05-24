@@ -81,44 +81,106 @@ static inline bool paintbox_dma_is_gather_channel(
 	return channel->session->dma_gather_channel_mask &
 			(1 << channel->channel_id);
 }
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+/* The caller to this function must hold pb->dma.dma_lock. */
+static void paintbox_dma_enable_channel_interrupts(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel)
+{
+	if (channel->interrupts_enabled)
+		return;
 
+	channel->interrupts_enabled = true;
+
+	pb->dma.regs.irq_imr |= 1 << channel->channel_id;
+	writel(pb->dma.regs.irq_imr, pb->dma.dma_base + DMA_IRQ_IMR);
+
+	/* Enable both VA_ERR and MS_ERR (MIPI Overflow) error interrupts for
+	 * the channel.
+	 */
+	pb->dma.regs.irq_err_imr |= 1 << channel->channel_id;
+	pb->dma.regs.irq_err_imr |= 1ULL << (channel->channel_id +
+			DMA_IRQ_ERR_IMR_MS_ERR_SHIFT);
+	writeq(pb->dma.regs.irq_err_imr, pb->dma.dma_base + DMA_IRQ_ERR_IMR);
+
+	/* Enable the DMA channel interrupt in the top-level IPU_IMR */
+	paintbox_enable_dma_channel_interrupt(pb, channel->channel_id);
+
+	dev_dbg(&pb->pdev->dev, "dma channel%u: interrupts enabled\n",
+			channel->channel_id);
+}
+
+/* The caller to this function must hold pb->dma.dma_lock. */
+static void paintbox_dma_disable_channel_interrupts(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel)
+{
+	if (!channel->interrupts_enabled)
+		return;
+
+	channel->interrupts_enabled = false;
+
+	pb->dma.regs.irq_imr &= ~(1 << channel->channel_id);
+	writel(pb->dma.regs.irq_imr, pb->dma.dma_base + DMA_IRQ_IMR);
+
+	/* Disable both VA_ERR and MS_ERR (MIPI Overflow) error interrupts for
+	 * the channel.
+	 */
+	pb->dma.regs.irq_err_imr &= ~(1 << channel->channel_id);
+	pb->dma.regs.irq_err_imr &= ~(1ULL << (channel->channel_id +
+			DMA_IRQ_ERR_IMR_MS_ERR_SHIFT));
+	writeq(pb->dma.regs.irq_err_imr, pb->dma.dma_base + DMA_IRQ_ERR_IMR);
+
+	paintbox_disable_dma_channel_interrupt(pb, channel->channel_id);
+
+	dev_dbg(&pb->pdev->dev, "dma channel%u: interrupts disabled\n",
+			channel->channel_id);
+}
+#else
 /* The caller to this function must hold pb->dma.dma_lock and DMA_CHAN_SEL must
  * be set.
  */
-static inline void paintbox_dma_enable_channel_interrupts(
-		struct paintbox_data *pb, struct paintbox_dma_channel *channel)
+static void paintbox_dma_enable_channel_interrupts(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel)
 {
-	if (!channel->interrupts_enabled) {
-		channel->interrupts_enabled = true;
+	if (channel->interrupts_enabled)
+		return;
 
-		writel(DMA_CHAN_IMR_EOF_MASK | DMA_CHAN_IMR_VA_ERR_MASK,
-				pb->dma.dma_base + DMA_CHAN_IMR);
+	channel->interrupts_enabled = true;
 
-		/* Enable the DMA channel interrupt in the top-level IPU_IMR */
-		paintbox_enable_dma_channel_interrupt(pb, channel->channel_id);
-	}
+	writel(DMA_CHAN_IMR_EOF_MASK | DMA_CHAN_IMR_VA_ERR_MASK,
+			pb->dma.dma_base + DMA_CHAN_IMR);
+
+	/* Enable the DMA channel interrupt in the top-level IPU_IMR */
+	paintbox_enable_dma_channel_interrupt(pb, channel->channel_id);
+
+	dev_dbg(&pb->pdev->dev, "dma channel%u: interrupts enabled\n",
+			channel->channel_id);
 }
 
 /* The caller to this function must hold pb->dma.dma_lock and DMA_CHAN_SEL must
  * be set.
  */
-static inline void paintbox_dma_disable_channel_interrupts(
-		struct paintbox_data *pb, struct paintbox_dma_channel *channel)
+static void paintbox_dma_disable_channel_interrupts(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel)
 {
-	if (channel->interrupts_enabled) {
-		channel->interrupts_enabled = false;
+	if (!channel->interrupts_enabled)
+		return;
 
-		writel(0, pb->dma.dma_base + DMA_CHAN_IMR);
-		paintbox_disable_dma_channel_interrupt(pb, channel->channel_id);
-	}
+	channel->interrupts_enabled = false;
+
+	writel(0, pb->dma.dma_base + DMA_CHAN_IMR);
+	paintbox_disable_dma_channel_interrupt(pb, channel->channel_id);
+
+	dev_dbg(&pb->pdev->dev, "dma channel%u: interrupts disabled\n",
+			channel->channel_id);
 }
+#endif
 
 static inline void paintbox_dma_chan_ctrl_set(struct paintbox_data *pb,
 		uint64_t mask, uint64_t value)
 {
-	pb->dma.chan_ctrl &= ~mask;
-	pb->dma.chan_ctrl |= value;
-	writeq(pb->dma.chan_ctrl, pb->dma.dma_base + DMA_CHAN_CTRL);
+	pb->dma.regs.chan_ctrl &= ~mask;
+	pb->dma.regs.chan_ctrl |= value;
+	writeq(pb->dma.regs.chan_ctrl, pb->dma.dma_base + DMA_CHAN_CTRL);
 }
 
 /* The caller to this function must hold pb->lock. */
@@ -251,6 +313,26 @@ static void paintbox_dma_enqueue_pending_transfer(struct paintbox_data *pb,
 {
 	list_add_tail(&transfer->entry, &channel->pending_list);
 	channel->pending_count++;
+}
+
+static struct paintbox_dma_transfer *paintbox_dequeue_active_transfer(
+		struct paintbox_data *pb, struct paintbox_dma_channel *channel)
+{
+	struct paintbox_dma_transfer *transfer;
+
+	if (list_empty(&channel->active_list) || channel->active_count == 0) {
+		dev_warn(&pb->pdev->dev,
+				"%s: channel%u no active transfer\n", __func__,
+				channel->channel_id);
+		return NULL;
+	}
+
+	transfer = list_entry(channel->active_list.next,
+				struct paintbox_dma_transfer, entry);
+	list_del(&transfer->entry);
+	channel->active_count--;
+
+	return transfer;
 }
 
 /* The caller to this function must hold pb->dma.dma_lock. */
@@ -1428,28 +1510,16 @@ void paintbox_dma_va_interrupt(struct paintbox_data *pb,
 #endif
 }
 
-/* This function must be called in an interrupt context and pb->dma.dma_lock
- * must be held.  This function will return true if a power down can occur.
- */
-static bool paintbox_dma_process_transfer(struct paintbox_data *pb,
-		struct paintbox_dma_channel *channel, uint32_t status,
-		ktime_t timestamp)
+static struct paintbox_dma_transfer *paintbox_dma_interrupt_common(
+		struct paintbox_data *pb, struct paintbox_dma_channel *channel)
 {
 	struct paintbox_dma_transfer *transfer;
 
-	transfer = list_entry(channel->active_list.next,
-				struct paintbox_dma_transfer, entry);
-	if (!transfer || channel->active_count == 0) {
-		dev_warn(&pb->pdev->dev,
-				"%s: channel%u no active transfer ISR 0x%08x\n",
-				__func__, channel->channel_id, status);
-		return true;
-	}
+	transfer = paintbox_dequeue_active_transfer(pb, channel);
+	if (!transfer)
+		return NULL;
 
-	list_del(&transfer->entry);
-	channel->active_count--;
-
-	/* If this is a MIPI_IN transfer then notify the MIPI  code that the DMA
+	/* If this is a MIPI_IN transfer then notify the MIPI code that the DMA
 	 * transfer has completed.
 	 */
 	if (paintbox_dma_src_is_mipi(transfer->chan_mode))
@@ -1458,19 +1528,208 @@ static bool paintbox_dma_process_transfer(struct paintbox_data *pb,
 	if (paintbox_dma_is_gather(transfer->chan_mode))
 		channel->session->dma_gather_transfer_count--;
 
+	return transfer;
+}
+
+static void paintbox_dma_pm_disable_if_idle(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel,
+		struct paintbox_dma_transfer *transfer)
+{
+	/* If there is an active transfer then the channel is not idle and can
+	 * not be powered down.
+	 */
+	if (channel->active_count > 0)
+		return;
+
+	/* If the last transfer was a MIPI out transfer then the channel will
+	 * not be idle until the MIPI EOF interrupt.  The MIPI code will notify
+	 * the DMA code when the MIPI EOF has occurred.
+	 */
+	if (paintbox_dma_dst_is_mipi(transfer->chan_mode))
+		return;
+
+	/* If this is a gather channel then verify that all gather transfers for
+	 * the session have completed.  Gather DMA transfers are performed using
+	 * DMA channel pairs.  The DMA channels involved can not be powered down
+	 * until both DMA transfers have completed.
+	 *
+	 * The driver does not know the relationship between the DMA channels so
+	 * the driver tracks all gather transfers and DMA channels on a per
+	 * session basis.  Gather channels will be powered down when all gather
+	 * transfers for the session have completed.
+	 */
+	if (paintbox_dma_is_gather_channel(channel)) {
+		if (channel->session->dma_gather_transfer_count == 0)
+			paintbox_dma_disable_gather_channels(pb,
+					channel->session);
+		return;
+	}
+
+	/* The DMA channel is idle, power it down. */
+	paintbox_pm_disable_dma_channel(pb, channel);
+}
+
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+/* This function must be called in an interrupt context and pb->dma.dma_lock
+ * must be held.
+ */
+static void paintbox_dma_process_eof_interrupts(struct paintbox_data *pb,
+		uint32_t status, ktime_t timestamp)
+{
+	unsigned int channel_id;
+
+	for (channel_id = 0; channel_id < pb->dma.num_channels && status;
+			channel_id++, status >>= 1) {
+		struct paintbox_dma_transfer *transfer;
+		struct paintbox_dma_channel *channel;
+
+		if (!(status & 0x01))
+			continue;
+
+		channel = &pb->dma.channels[channel_id];
+
+		transfer = paintbox_dma_interrupt_common(pb, channel);
+		if (!transfer) {
+			/* If there is no active transfer associated with this
+			 * interrupt then mark the channel as idle and move on
+			 * to the next one.
+			 */
+			paintbox_pm_disable_dma_channel(pb, channel);
+			continue;
+		}
+
+		paintbox_dma_eof_interrupt(pb, channel, transfer, timestamp);
+
+		/* Determine if the channel is idle and power it down if
+		 * possible.
+		 */
+		paintbox_dma_pm_disable_if_idle(pb, channel, transfer);
+	}
+}
+
+/* This function must be called in an interrupt context and pb->dma.dma_lock
+ * must be held.
+ */
+static void paintbox_dma_process_va_err_interrupts(struct paintbox_data *pb,
+		uint32_t status, ktime_t timestamp)
+{
+	unsigned int channel_id;
+
+	for (channel_id = 0; channel_id < pb->dma.num_channels && status;
+			channel_id++, status >>= 1) {
+		struct paintbox_dma_transfer *transfer;
+		struct paintbox_dma_channel *channel;
+
+		if (!(status & 0x01))
+			continue;
+
+		channel = &pb->dma.channels[channel_id];
+
+		transfer = paintbox_dma_interrupt_common(pb, channel);
+		if (!transfer) {
+			/* If there is no active transfer associated with this
+			 * interrupt then mark the channel as idle and move on
+			 * to the next one.
+			 */
+			paintbox_pm_disable_dma_channel(pb, channel);
+			continue;
+		}
+
+		paintbox_dma_va_interrupt(pb, channel, transfer, timestamp);
+
+		/* Determine if the channel is idle and power it down if
+		 * possible.
+		 */
+		paintbox_dma_pm_disable_if_idle(pb, channel, transfer);
+	}
+}
+
+irqreturn_t paintbox_dma_channel_interrupt(struct paintbox_data *pb,
+		ktime_t timestamp)
+{
+	uint32_t status;
+
+	status = readl(pb->dma.dma_base + DMA_IRQ_ISR);
+	if (status) {
+		writel(status, pb->dma.dma_base + DMA_IRQ_ISR);
+		paintbox_dma_process_eof_interrupts(pb, status, timestamp);
+	}
+
+	status = readl(pb->dma.dma_base + DMA_IRQ_ISR_OVF);
+	if (status) {
+		writel(status, pb->dma.dma_base + DMA_IRQ_ISR_OVF);
+		paintbox_dma_process_eof_interrupts(pb, status, timestamp);
+	}
+
+	return IRQ_HANDLED;
+}
+
+irqreturn_t paintbox_dma_channel_error_interrupt(struct paintbox_data *pb,
+		ktime_t timestamp)
+{
+	uint64_t status;
+
+	status = readq(pb->dma.dma_base + DMA_IRQ_ERR_ISR);
+	if (status) {
+		writeq(status, pb->dma.dma_base + DMA_IRQ_ERR_ISR);
+
+		/* TODO(ahampson):  Add support for MS_ERR interrupt.
+		 * b/38339261
+		 */
+
+		paintbox_dma_process_va_err_interrupts(pb, status &
+				DMA_IRQ_ERR_ISR_VA_ERR_MASK, timestamp);
+	}
+
+	status = readq(pb->dma.dma_base + DMA_IRQ_ERR_ISR_OVF);
+	if (status) {
+		writeq(status, pb->dma.dma_base + DMA_IRQ_ERR_ISR_OVF);
+
+		/* TODO(ahampson):  Add support for MS_ERR interrupt.
+		 * b/38339261
+		 */
+
+		paintbox_dma_process_va_err_interrupts(pb, status &
+				DMA_IRQ_ERR_ISR_OVF_VA_ERR_MASK, timestamp);
+	}
+
+	return IRQ_HANDLED;
+}
+
+/* This function must be called in an interrupt context */
+irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
+		uint32_t channel_mask, ktime_t timestamp)
+{
+	/* TODO(ahampson):  Eventually the top level interrupt handler will be
+	 * changed so EOF and error interrupts will be processed separately.
+	 * In the interim both handlers will be called.
+	 */
+	paintbox_dma_channel_interrupt(pb, timestamp);
+	paintbox_dma_channel_error_interrupt(pb, timestamp);
+	return IRQ_HANDLED;
+}
+#else
+/* This function must be called in an interrupt context and pb->dma.dma_lock
+ * must be held.  This function will return true if a power down can occur.
+ */
+static void paintbox_dma_process_transfer_v0(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel, uint32_t status,
+		ktime_t timestamp)
+{
+	struct paintbox_dma_transfer *transfer;
+
+	transfer = paintbox_dma_interrupt_common(pb, channel);
+	if (!transfer) {
+		paintbox_pm_disable_dma_channel(pb, channel);
+		return;
+	}
+
 	if (status & DMA_CHAN_ISR_VA_ERR_MASK)
 		paintbox_dma_va_interrupt(pb, channel, transfer, timestamp);
 	else if (status & DMA_CHAN_ISR_EOF_MASK)
 		paintbox_dma_eof_interrupt(pb, channel, transfer, timestamp);
 
-	/* Check to see if the channel can be powered down.  If this is a MIPI
-	 * out transfer then delay the power down till after the MIPI EOF.
-	 */
-	if (channel->active_count == 0 &&
-			!paintbox_dma_dst_is_mipi(transfer->chan_mode))
-		return true;
-
-	return false;
+	paintbox_dma_pm_disable_if_idle(pb, channel, transfer);
 }
 
 /* This function must be called in an interrupt context */
@@ -1482,8 +1741,7 @@ irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 	for (channel_id = 0; channel_id < pb->dma.num_channels && channel_mask;
 			channel_id++, channel_mask >>= 1) {
 		struct paintbox_dma_channel *channel;
-		uint32_t status, overflow_status;
-		bool power_down;
+		uint32_t status;
 
 		if (!(channel_mask & 0x01))
 			continue;
@@ -1504,7 +1762,7 @@ irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 		status = readl(pb->dma.dma_base + DMA_CHAN_ISR);
 		writel(status, pb->dma.dma_base + DMA_CHAN_ISR);
 
-		power_down = paintbox_dma_process_transfer(pb, channel, status,
+		paintbox_dma_process_transfer_v0(pb, channel, status,
 				timestamp);
 
 		/* Check the ISR_OVF status register in case a second
@@ -1513,40 +1771,14 @@ irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 		 * and process it.
 		 */
 		if (channel->active_count > 0) {
-			overflow_status = readl(pb->dma.dma_base +
-					DMA_CHAN_ISR_OVF);
-			if (overflow_status) {
-				writel(overflow_status, pb->dma.dma_base +
+			status = readl(pb->dma.dma_base + DMA_CHAN_ISR_OVF);
+			if (status) {
+				writel(status, pb->dma.dma_base +
 						DMA_CHAN_ISR_OVF);
 
-				power_down = paintbox_dma_process_transfer(pb,
-					channel, overflow_status, timestamp);
+				paintbox_dma_process_transfer_v0(pb, channel,
+						status, timestamp);
 			}
-		}
-
-		if (!power_down) {
-			spin_unlock(&pb->dma.dma_lock);
-			continue;
-		}
-
-		/* If this is a gather channel then verify that all gather
-		 * transfers for the session have completed.  Gather DMA
-		 * transfers are performed using DMA channel pairs.  The DMA
-		 * channels involved can not be powered down until both DMA
-		 * transfers have completed.
-		 *
-		 * The driver does not know the relationship between the DMA
-		 * channels so the driver tracks all gather transfers and DMA
-		 * channels on a per session basis.  Gather channels will be
-		 * powered down when all gather transfers for the session have
-		 * completed.
-		 */
-		if (paintbox_dma_is_gather_channel(channel)) {
-			if (channel->session->dma_gather_transfer_count == 0)
-				paintbox_dma_disable_gather_channels(pb,
-						channel->session);
-		} else {
-			paintbox_pm_disable_dma_channel(pb, channel);
 		}
 
 		spin_unlock(&pb->dma.dma_lock);
@@ -1554,6 +1786,7 @@ irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 
 	return IRQ_HANDLED;
 }
+#endif
 
 int paintbox_dma_init(struct paintbox_data *pb)
 {
@@ -1567,7 +1800,11 @@ int paintbox_dma_init(struct paintbox_data *pb)
 			DMA_CTRL_DMA_CHAN_SEL_MASK) >>
 			DMA_CTRL_DMA_CHAN_SEL_SHIFT;
 
-	pb->dma.chan_ctrl = DMA_CHAN_CTRL_DEF;
+	pb->dma.regs.chan_ctrl = DMA_CHAN_CTRL_DEF;
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	pb->dma.regs.irq_imr = DMA_IRQ_IMR_DEF;
+	pb->dma.regs.irq_err_imr = DMA_IRQ_ERR_IMR_DEF;
+#endif
 
 	spin_lock_init(&pb->dma.dma_lock);
 	INIT_LIST_HEAD(&pb->dma.discard_list);

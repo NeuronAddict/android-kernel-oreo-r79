@@ -1141,13 +1141,6 @@ void mipi_request_cleanup(struct paintbox_data *pb,
 			-ECANCELED);
 
 	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
-
-	/* If the overflow interrupt started the cleanup work queue then cancel
-	 * it.  Since software is requesting the cleanup we will handle the
-	 * cleanup verification in the calling thread and do not need to handle
-	 * it asynchronously.
-	 */
-	cancel_delayed_work_sync(&stream->cleanup_work);
 }
 
 /* The caller to this function must hold pb->lock. */

@@ -341,19 +341,21 @@ void paintbox_disable_mipi_input_interface_error_interrupt(
 }
 #endif
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 bool get_mipi_input_interface_interrupt_state(struct paintbox_data *pb,
 		unsigned int interface_id)
 {
-	return !!(readq(pb->io.apb_base + IPU_ISR) &
+	return !!(readl(pb->io.apb_base + IPU_ISR) &
 			(1ULL << (interface_id + IPU_IMR_MPI_INTR_SHIFT)));
 }
 
 bool get_mipi_output_interface_interrupt_state(struct paintbox_data *pb,
 		unsigned int interface_id)
 {
-	return !!(readq(pb->io.apb_base + IPU_ISR) &
+	return !!(readl(pb->io.apb_base + IPU_ISR) &
 			(1ULL << (interface_id + IPU_IMR_MPO_INTR_SHIFT)));
 }
+#endif
 
 int paintbox_io_apb_init(struct paintbox_data *pb)
 {

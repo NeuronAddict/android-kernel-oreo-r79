@@ -531,7 +531,7 @@ int paintbox_dump_mipi_common_registers(struct paintbox_debug *debug, char *buf,
 	if (ret < 0)
 		return ret;
 
-	val = mipi_registers[REG_INDEX(MPO_STATUS)];
+	val = mipi_registers[REG_INDEX(MPO_STATUS - MPO_COMMON_BLOCK_START)];
 	ret = dump_io_ipu_reg_verbose(pb, MPO_STATUS, val, buf, &written,
 			len, "\tIDLE %03x\n",
 			(val & MPO_STATUS_STRM_IDLE_MASK) >>

@@ -22,10 +22,12 @@
 #include "paintbox-regs.h"
 #include "paintbox-stp.h"
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 bool get_mipi_input_interface_interrupt_state(struct paintbox_data *pb,
 		unsigned int interface_id);
 bool get_mipi_output_interface_interrupt_state(struct paintbox_data *pb,
 		unsigned int interface_id);
+#endif
 
 void paintbox_io_enable_interrupt(struct paintbox_data *pb,
 		uint64_t enable_mask);
