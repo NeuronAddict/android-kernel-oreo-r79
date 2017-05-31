@@ -1,7 +1,7 @@
 /*
  *
  * MNH Clock Driver
- * Copyright (c) 2016, Intel Corporation.
+ * Copyright (c) 2016-2017, Intel Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -31,7 +31,6 @@
 #include <soc/mnh/mnh-hwio-ddr-ctl.h>
 #include "mnh-clk.h"
 
-
 #define PLL_UNLOCK 0x4CD9
 #define REF_FREQ_SEL 0x8
 #define MAX_STR_COPY 9
@@ -41,7 +40,13 @@
 #define DEVICE_NAME "mnh_freq_cooling"
 
 #define LP_CMD_EXIT_LP 0x81
+
+#define MR_READ_SBIT 23
 #define LP_CMD_SBIT 5
+
+/* consider moving to struct */
+u32 mnh_ddr_refresh_msec = 250;
+struct delayed_work mnh_ddr_adjust_refresh_work;
 
 #define MNH_CPU_IN(reg) \
 HW_IN(mnh_dev->cpuaddr, CPU, reg)
@@ -155,6 +160,9 @@ struct mnh_freq_cooling_device {
 	void __iomem *ddraddr;
 	void __iomem *cpuaddr;
 	int ddr_irq;
+	struct completion ddr_mrr;
+	u32 ddr_mrr4;
+	struct completion ddr_lp_cmd;
 	enum mnh_ipu_clk_src ipu_clk_src;
 	enum mnh_cpu_freq_type cpu_freq;
 	enum mnh_ipu_freq_type ipu_freq;
@@ -651,8 +659,10 @@ int mnh_ddr_clr_int_status(void)
 		return -ENODEV;
 
 	u64 stat = 0;
+
 	MNH_DDR_CTL_OUT(230, 0x0F);
 	MNH_DDR_CTL_OUT(229, 0xFFFFFFFF);
+
 	stat = mnh_ddr_int_status();
 	if (stat) {
 		pr_err("%s: int stat not all clear: %llx\n",
@@ -666,21 +676,13 @@ EXPORT_SYMBOL(mnh_ddr_clr_int_status);
 /* read single bit in int_status */
 static u32 mnh_ddr_int_status_bit(u8 sbit)
 {
-	u32 status = 0;
-	u32 upper = 0;
+	u64 status = 0;
 	const u32 max_int_status_bit = 35;
 	const u32 first_upper_bit = 32;
 	if (sbit > max_int_status_bit)
 		return -EINVAL;
 
-	/*
-	docs refer to int status by bit numbers 0-35,
-	but we're only reading 32 bits at a time.
-	*/
-	upper = (sbit >= first_upper_bit) ? 1 : 0;
-	sbit -= (upper) ? first_upper_bit : 0;
-
-	status = (upper) ? MNH_DDR_CTL_IN(228) : MNH_DDR_CTL_IN(227);
+	status = mnh_ddr_int_status();
 	status &= (1 << sbit);
 	return status;
 }
@@ -705,26 +707,49 @@ static int mnh_ddr_clr_int_status_bit(u8 sbit)
 	}
 	return 0;
 }
+
 static int mnh_ddr_send_lp_cmd(u8 cmd)
 {
-	u32 timeout = 100000;
-	pr_debug("%s sending cmd: 0x%x\n", __func__, cmd);
+	unsigned long timeout = msecs_to_jiffies(100);
+
+	dev_dbg(mnh_dev->dev,
+		"%s sending cmd: 0x%x\n",
+		__func__, cmd);
+
+	reinit_completion(&mnh_dev->ddr_lp_cmd);
 	MNH_DDR_CTL_OUTf(112, LP_CMD, cmd);
 
-	while (!mnh_ddr_int_status_bit(LP_CMD_SBIT) && --timeout)
-		udelay(1);
-
-	if (mnh_ddr_int_status_bit(LP_CMD_SBIT)) {
-		return mnh_ddr_clr_int_status_bit(LP_CMD_SBIT);
-	} else {
+	if (!wait_for_completion_timeout(&mnh_dev->ddr_lp_cmd,
+		timeout)) {
+		dev_err(mnh_dev->dev,
+		"%s ERROR timeout sending cmd: 0x%02x\n",
+		__func__, cmd);
 		return -ETIMEDOUT;
 	}
+	return 0;
 }
 
 static void mnh_ddr_enable_lp(void)
 {
-	dev_info(mnh_dev->dev, "%s\n", __func__);
-	MNH_DDR_CTL_OUTf(124, LP_AUTO_SR_MC_GATE_IDLE, 0xFF);
+	u32 fsp = 0;
+
+	/*
+	These are roughly scaled to the frequency of the fsp
+	*/
+	const u32 sleep_val[LPDDR_FREQ_NUM_FSPS] = {
+		0x04, 0x10, 0x40, 0x60 };
+
+	fsp = HW_INf(mnh_dev->regs, SCU, LPDDR4_LOW_POWER_STS,
+				LPDDR4_CUR_FSP);
+
+	if (fsp > LPDDR_FREQ_NUM_FSPS)
+		fsp = LPDDR_FREQ_MAX;
+
+	dev_dbg(mnh_dev->dev, "%s\n", __func__);
+
+	MNH_DDR_CTL_OUTf(124, LP_AUTO_SR_MC_GATE_IDLE,
+		sleep_val[fsp]);
+
 	MNH_DDR_CTL_OUTf(122, LP_AUTO_MEM_GATE_EN, 0x4);
 	MNH_DDR_CTL_OUTf(122, LP_AUTO_ENTRY_EN, 0x4);
 	MNH_DDR_CTL_OUTf(122, LP_AUTO_EXIT_EN, 0xF);
@@ -732,12 +757,184 @@ static void mnh_ddr_enable_lp(void)
 
 static void mnh_ddr_disable_lp(void)
 {
-	dev_info(mnh_dev->dev, "%s\n", __func__);
+	dev_dbg(mnh_dev->dev, "%s\n", __func__);
 	MNH_DDR_CTL_OUTf(124, LP_AUTO_SR_MC_GATE_IDLE, 0x00);
 	MNH_DDR_CTL_OUTf(122, LP_AUTO_MEM_GATE_EN, 0x0);
 	MNH_DDR_CTL_OUTf(122, LP_AUTO_ENTRY_EN, 0x0);
 	MNH_DDR_CTL_OUTf(122, LP_AUTO_EXIT_EN, 0x0);
 	mnh_ddr_send_lp_cmd(LP_CMD_EXIT_LP);
+}
+
+/*
+val0 and val1 are the values for modereg, read from
+chip 0 and chip 1 respectively.
+*/
+int mnh_ddr_read_mode_reg(u8 modereg, u8 *val0, u8 *val1)
+{
+	int ret = 0;
+	const u64 readable = 0x00000000030C51f1;
+	u32 val = 0;
+	unsigned long timeout = 0;
+	u32 peripheral_mrr_data = 0;
+
+	if ((modereg >= 64) ||
+		((readable & ((u64)1 << modereg)) == 0)) {
+		pr_err("%s %d is not readable.\n",
+			__func__, modereg);
+		*val0 = 0;
+		*val1 = 0;
+		return -1;
+	}
+
+	val = 0xFF & modereg;
+	val |= 1 << 16;
+
+	mnh_ddr_disable_lp();
+
+	timeout = msecs_to_jiffies(50);
+	reinit_completion(&mnh_dev->ddr_mrr);
+	MNH_DDR_CTL_OUTf(141, READ_MODEREG, val);
+
+	if (!wait_for_completion_timeout(&mnh_dev->ddr_mrr,
+			timeout)) {
+		pr_err("%s timeout on mrr\n", __func__);
+		mnh_ddr_enable_lp();
+		return -ETIMEDOUT;
+	}
+
+	mnh_ddr_enable_lp();
+
+	peripheral_mrr_data =
+		MNH_DDR_CTL_INf(142, PERIPHERAL_MRR_DATA);
+
+	*val0 = 0xFF & peripheral_mrr_data;
+	*val1 = 0xFF & (peripheral_mrr_data >> 16);
+	dev_dbg(mnh_dev->dev,
+		"%s values: 0x%02x 0x%02x\n",
+		__func__, *val0, *val1);
+	return ret;
+}
+
+static u16 mnh_ddr_update_refresh(u8 old_rate, u16 old_interval,
+	u8 new_rate)
+{
+	u16 new_interval;
+
+	/* mask out everything but refresh rate */
+	old_rate &= 0x07;
+	new_rate &= 0x07;
+
+	if ((new_rate == 0) ||
+		(new_rate == 0x7)) {
+		panic("ddr temp exceeds parameters: 0x%02x "
+			" and preventing undeterministic side effects now",
+			new_rate);
+	}
+
+	if (/* no changes */
+		(old_rate == new_rate) ||
+		/* same range */
+		((old_rate == 0x5) && (new_rate == 0x6)) ||
+		((old_rate == 0x6) && (new_rate == 0x5)))
+		return old_interval;
+
+	if (new_rate > old_rate) {
+		/* getting hotter */
+		new_interval = old_interval >> (new_rate - old_rate);
+	} else {
+		/* getting cooler */
+		if (old_rate > 0x5)
+			old_rate = 0x5;
+		new_interval = old_interval << (old_rate - new_rate);
+	}
+
+	pr_info("%s changed 0x%04x to 0x%04x\n",
+		__func__, old_interval, new_interval);
+
+	return new_interval;
+}
+
+static void mnh_ddr_adjust_refresh(u8 refresh_rate)
+{
+	static u8 previous_refresh_rate = 0x03;
+	u16 tref[LPDDR_FREQ_NUM_FSPS];
+	int fsp;
+
+	/* sanitize refresh rate */
+	refresh_rate &= 0x07;
+
+	if (refresh_rate != previous_refresh_rate) {
+		tref[0]		= MNH_DDR_CTL_INf(56,  TREF_F0);
+		tref[1]		= MNH_DDR_CTL_INf(57,  TREF_F1);
+		tref[2]		= MNH_DDR_CTL_INf(58,  TREF_F2);
+		tref[3]		= MNH_DDR_CTL_INf(59,  TREF_F3);
+
+		for (fsp = 0; fsp < LPDDR_FREQ_NUM_FSPS; fsp++) {
+			tref[fsp] =
+				mnh_ddr_update_refresh(previous_refresh_rate,
+					tref[fsp],
+					refresh_rate);
+		}
+
+		MNH_DDR_CTL_OUTf(56,  TREF_F0,     tref[0]);
+		MNH_DDR_CTL_OUTf(57,  TREF_F1,     tref[1]);
+		MNH_DDR_CTL_OUTf(58,  TREF_F2,     tref[2]);
+		MNH_DDR_CTL_OUTf(59,  TREF_F3,     tref[3]);
+		previous_refresh_rate = refresh_rate;
+	}
+}
+
+static void mnh_ddr_adjust_refresh_worker(struct work_struct *work)
+{
+	static int cnt = 100;
+	u8 val0 = 0, val1 = 0;
+	u32 combined_val = 0;
+	const u8 rr_fld = 0x07;
+	u8 refresh_rate;
+	const u8 tuf_fld = 0x80;
+	int ret = 0;
+	int got_tuf = 0;
+
+	ret = mnh_ddr_read_mode_reg(4, &val0, &val1);
+	mnh_dev->ddr_mrr4 = (u32)val1 << 16 | (u32)val0;
+
+	if (ret) {
+		dev_err(mnh_dev->dev,
+			"%s ERROR refresh rate read failed. %d\n",
+			__func__, ret);
+		goto refresh_again;
+	}
+
+	refresh_rate = rr_fld & val0;
+	if (refresh_rate < (rr_fld & val1)) {
+		dev_info(mnh_dev->dev,
+			"%s rrs don't match: 0x%02x != 0x%02x"
+			"deferring to higher temp die rate",
+			__func__, val0, val1);
+		refresh_rate = rr_fld & val1;
+	}
+
+	if ((tuf_fld & val0) ||
+		(tuf_fld & val1)) {
+		pr_info("%s TUF 0x%02x 0x%02x\n",
+			__func__, val0, val1);
+		got_tuf = 1;
+	}
+
+	pr_debug("%s refresh rate: 0x%02x tuf: %d\n",
+			__func__, refresh_rate, got_tuf);
+	if (got_tuf)
+		mnh_ddr_adjust_refresh(refresh_rate);
+
+	if (!ret) {
+		/* AP can easily read this from here */
+		combined_val = (u32)val0 | (u32)val1 << 16;
+		HW_OUTx(mnh_dev->regs, SCU,
+			GPS, 1, combined_val);
+	}
+refresh_again:
+	schedule_delayed_work(&mnh_ddr_adjust_refresh_work,
+		msecs_to_jiffies(mnh_ddr_refresh_msec));
 }
 
 /**
@@ -1282,6 +1479,12 @@ static ssize_t lpddr_sys200_set(struct device *dev,
 	return count;
 }
 
+static ssize_t lpddr_mrr4_get(struct device *dev,
+				struct device_attribute *attr,
+				char *buf)
+{
+	return sprintf(buf, "0x%08x\n", mnh_dev->ddr_mrr4);
+}
 
 static ssize_t dump_powerregs_get(struct device *dev,
 				struct device_attribute *attr,	
@@ -1356,7 +1559,8 @@ static DEVICE_ATTR(lpddr_lp, S_IWUSR | S_IRUGO,
 		lpddr_lp_get, lpddr_lp_set);
 static DEVICE_ATTR(lpddr_sys200, S_IWUSR | S_IRUGO,
 		lpddr_sys200_get, lpddr_sys200_set);
-
+static DEVICE_ATTR(lpddr_mrr4, S_IRUGO,
+		lpddr_mrr4_get, NULL);
 static DEVICE_ATTR(dump_powerregs, S_IRUGO,
 		dump_powerregs_get, NULL);
 
@@ -1370,6 +1574,7 @@ static struct attribute *freq_dev_attributes[] = {
 	&dev_attr_bypass_clock_gating.attr,
 	&dev_attr_lpddr_lp.attr,
 	&dev_attr_lpddr_sys200.attr,
+	&dev_attr_lpddr_mrr4.attr,
 	&dev_attr_dump_powerregs.attr,
 	NULL
 };
@@ -1378,7 +1583,6 @@ static struct attribute_group mnh_freq_cooling_group = {
 	.name = "mnh_freq_cool",
 	.attrs = freq_dev_attributes
 };
-
 
 
 static int init_sysfs(struct device *dev, struct kobject *sysfs_kobj)
@@ -1404,16 +1608,29 @@ static void clean_sysfs(void)
  */
 static irqreturn_t mnh_pm_handle_ddr_irq(int irq, void *dev_id)
 {
-	//spin_lock(&mnh_dev->irqlock);
 	u64 status = mnh_ddr_int_status();
-	/* Clear the bits */
-	mnh_ddr_clr_int_status();
 
-	//complete(&mnh_dev->ddrclk_complete);
+	dev_dbg(mnh_dev->dev,
+		"%s status=0x%llx\n", __func__, status);
 
-	//spin_unlock(&mnh_dev->irqlock);
+	if (status & (1 << MR_READ_SBIT)) {
+		mnh_ddr_clr_int_status_bit(MR_READ_SBIT);
+		complete(&mnh_dev->ddr_mrr);
+	}
 
-	dev_info(mnh_dev->dev, "%s status=0x%llx\n", __func__, status);
+	if (status & (1 << LP_CMD_SBIT)) {
+		mnh_ddr_clr_int_status_bit(LP_CMD_SBIT);
+		complete(&mnh_dev->ddr_lp_cmd);
+	}
+
+	status = mnh_ddr_int_status();
+
+	if (status) {
+		mnh_ddr_clr_int_status();
+		dev_err(mnh_dev->dev,
+			"%s unhandled status=0x%llx, but cleared.\n", __func__, status);
+	}
+
 	/* return interrupt handled */
 	return IRQ_HANDLED;
 }
@@ -1434,6 +1651,10 @@ int mnh_clk_init(struct platform_device *pdev, void __iomem *baseadress)
 	/* Set baseadress for SCU */
 	tmp_mnh_dev->regs = baseadress;
 	tmp_mnh_dev->dev = &pdev->dev;
+	init_completion(&tmp_mnh_dev->ddr_mrr);
+	tmp_mnh_dev->ddr_mrr4 = 0xDEADDEAD;
+	init_completion(&tmp_mnh_dev->ddr_lp_cmd);
+	// spin_lock_init(&tmp_mnh_dev->irqlock);
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
 	if (!res) {
@@ -1487,15 +1708,18 @@ int mnh_clk_init(struct platform_device *pdev, void __iomem *baseadress)
 	tmp_mnh_dev->cpu_pllcfg = (const struct freq_reg_table*)&cpu_reg_tables[tmp_mnh_dev->refclk];
 	tmp_mnh_dev->ipu_pllcfg = (const struct freq_reg_table*)&ipu_reg_tables[tmp_mnh_dev->refclk];
 
-
-	init_sysfs(tmp_mnh_dev->dev, kernel_kobj);
-
 	mnh_dev = tmp_mnh_dev;
 	mnh_dev->cpu_freq = mnh_cpu_freq_to_index();
 	mnh_dev->ipu_freq = mnh_ipu_freq_to_index();
 
 	spin_lock_init(&mnh_dev->reset_lock);
 
+	init_sysfs(mnh_dev->dev, kernel_kobj);
+
+	INIT_DELAYED_WORK(&mnh_ddr_adjust_refresh_work,
+		mnh_ddr_adjust_refresh_worker);
+	schedule_delayed_work(&mnh_ddr_adjust_refresh_work,
+		msecs_to_jiffies(mnh_ddr_refresh_msec));
 	mnh_clock_init_gating(1);
 
 	return 0;
