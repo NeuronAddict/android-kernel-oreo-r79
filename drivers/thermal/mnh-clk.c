@@ -834,13 +834,11 @@ int mnh_ipu_clock_gating(int enabled)
 
 	if (enabled) {
 		HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLKEN, !enabled);
-		HW_OUTf(mnh_dev->regs, SCU, RSTC, IPU_RST, enabled);
 		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, IPU_MEM_DS, enabled);
 		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, IPU_MEM_SD, enabled);
 	} else {
 		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, IPU_MEM_SD, enabled);
 		HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, IPU_MEM_DS, enabled);
-		HW_OUTf(mnh_dev->regs, SCU, RSTC, IPU_RST, enabled);
 		HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLKEN, !enabled);
 	}
 
@@ -1084,7 +1082,7 @@ static ssize_t ipu_clock_gating_get(struct device *dev,
 {
 	int clk_gated;
 
-	clk_gated = HW_INf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLKEN);
+	clk_gated = !HW_INf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLKEN);
 
 	return sprintf(buf, "%d\n", clk_gated);
 }
