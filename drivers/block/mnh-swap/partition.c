@@ -28,8 +28,6 @@
 #include <linux/io.h>
 #include "partition.h"
 
-#define ARRAY_SIZE(a) (sizeof(a) / sizeof(*a))
-
 #define SECTOR_SIZE 512
 #define MBR_SIZE SECTOR_SIZE
 #define MBR_DISK_SIGNATURE_OFFSET 440

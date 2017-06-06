@@ -86,7 +86,7 @@ struct mipi_dev *dev_map[MIPI_MAX] = { NULL };
 
 void mipicsi_set_device(enum mipicsi_top_dev devid, struct mipi_dev *dev)
 {
-	pr_info("%s: devid %d, 0x%x\n", __func__, devid, dev);
+	pr_info("%s: devid %d\n", __func__, devid);
 	dev_map[devid] = dev;
 }
 
@@ -994,7 +994,7 @@ int mipicsi_top_probe(struct platform_device *pdev)
 	struct mipi_dev *dev;
 	int irq_number = 0;
 	struct resource *mem = NULL;
-	char *device_id_name;
+	const char *device_id_name;
 	struct device_node *np = NULL;
 
 	dev_info(&pdev->dev, "Installing MIPI CSI-2 TOP module...\n");

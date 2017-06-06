@@ -660,7 +660,7 @@ int mipicsi_host_probe(struct platform_device *pdev)
 	struct mipi_dev *dev;
 	int irq_number = 0;
 	struct mipi_host_irq_st *int_status = NULL;
-	char *device_id_name;
+	const char *device_id_name;
 	struct device_node *np = NULL;
 
 	dev_info(&pdev->dev, "Installing MIPI CSI-2 HOST module...\n");
@@ -682,7 +682,7 @@ int mipicsi_host_probe(struct platform_device *pdev)
 	if (np == NULL)
 		dev_err(&pdev->dev, "Could not find of device node!\n");
 	else
-		dev_info(&pdev->dev, "Device node 0x%x\n", np);
+		dev_info(&pdev->dev, "Device node found\n");
 
 
 	/* Device tree information: Base addresses & mapping */

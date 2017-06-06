@@ -327,8 +327,7 @@ struct irq_proc {
 	char devname[TASK_COMM_LEN];
 };
 
-static irqreturn_t irq_proc_irq_handler(int irq, void *vidp, struct pt_regs
-regs)
+static irqreturn_t irq_proc_irq_handler(int irq, void *vidp)
 {
 	struct irq_proc *idp = (struct irq_proc *)vidp;
 
@@ -462,7 +461,6 @@ void register_irq_proc(unsigned int irq, struct irq_desc *desc)
 {
 	static DEFINE_MUTEX(register_lock);
 	char name [MAX_NAMELEN];
-	struct proc_dir_entry *entry;
 
 	if (!root_irq_dir || (desc->irq_data.chip == &no_irq_chip))
 		return;

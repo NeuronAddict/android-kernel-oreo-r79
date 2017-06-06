@@ -37,13 +37,13 @@ struct mipi_top_operations {
 	int (*readreg)(struct mipicsi_top_reg*);
 	int (*vpg)(struct mipicsi_top_vpg*);
 	int (*get_device_irq_status)(enum mipicsi_top_dev devid,
-				     struct mipi_device_irq_st**);
+				     struct mipi_device_irq_st*);
 	int (*set_device_irq_mask)(enum mipicsi_top_dev devid,
 				 struct mipi_device_irq_mask*);
 	int (*force_device_irq)(enum mipicsi_top_dev devid,
 				struct mipi_device_irq_mask*);
 	int (*get_host_irq_status)(enum mipicsi_top_dev devid,
-				   struct mipi_host_irq_st**);
+				   struct mipi_host_irq_st*);
 	int (*set_host_irq_mask)(enum mipicsi_top_dev devid,
 				 struct mipi_host_irq_mask*);
 	int (*force_host_irq)(enum mipicsi_top_dev devid,

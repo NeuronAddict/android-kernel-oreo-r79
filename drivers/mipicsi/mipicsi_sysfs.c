@@ -628,8 +628,8 @@ static ssize_t reg_read_store(struct device *dev,
 			reg.offset = val;
 			mipicsi_top_read(&reg);
 			read_data = reg.value;
-			pr_err("Reg Read: Offset %0x%x, Value 0x%x\n",
-			       reg.offset, reg.value);
+			pr_err("Reg Read: Offset 0x%x, Value 0x%x\n",
+			       (unsigned int)reg.offset, (unsigned int)reg.value);
 			return count;
 		}
 	}

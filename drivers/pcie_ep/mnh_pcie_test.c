@@ -85,7 +85,7 @@ static int buildll(void)
 int test2_callback(struct mnh_pcie_irq *irq)
 {
 
-	dev_err(pcie_ep_tst_device, "IRQ received %d \n",irq);
+	dev_err(pcie_ep_tst_device, "IRQ received %d \n",irq->pcie_irq);
 	if (irq->msi_irq == MSG_SEND_I) {
 		/*if (status == 0) {
 			status =1;
@@ -170,6 +170,7 @@ static ssize_t  mth_fs_pcie_write(struct file *file, const char __user *buf, siz
 static ssize_t mth_fs_pcie_read (struct file *filp,char *buf, size_t length, loff_t * offset)
 {
 	static char msg[5];
+	unsigned long ret = 0;
 
 	if (status == 3) {
 		//mnh_sg_destroy(sgl);
@@ -178,13 +179,13 @@ static ssize_t mth_fs_pcie_read (struct file *filp,char *buf, size_t length, lof
 		//sprintf(msg, "WAIT\n");
 		if (length < 6)
 			return 0;
-		copy_to_user(buf,&msg,5);
+		ret = copy_to_user(buf,&msg,5);
 		return 6;
 	} else {
 		sprintf(msg, "WAIT\n");
 		if (length < 6)
 			return 0;
-		copy_to_user(buf,&msg,5);
+		ret = copy_to_user(buf,&msg,5);
 		return 6;
 	}
 }

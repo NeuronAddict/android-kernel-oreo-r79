@@ -1413,8 +1413,8 @@ int mnh_clk_init(struct platform_device *pdev, void __iomem *baseadress)
 		pr_err("unable to read refclk-gpio\n");
 		return -ENOMEM;
 	}
-	mnh_dev->cpu_pllcfg = &cpu_reg_tables[mnh_dev->refclk];
-	mnh_dev->ipu_pllcfg = &ipu_reg_tables[mnh_dev->refclk];
+	mnh_dev->cpu_pllcfg = (const struct freq_reg_table*)&cpu_reg_tables[mnh_dev->refclk];
+	mnh_dev->ipu_pllcfg = (const struct freq_reg_table*)&ipu_reg_tables[mnh_dev->refclk];
 
 	mnh_dev->cpu_freq = mnh_cpu_freq_to_index();
 	mnh_dev->ipu_freq = mnh_ipu_freq_to_index();

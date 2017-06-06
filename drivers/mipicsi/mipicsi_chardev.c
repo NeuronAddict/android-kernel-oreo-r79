@@ -287,9 +287,7 @@ int mipi_chardev_get_irq_st_ioctl(unsigned long arg,
 				  struct mipi_chardev *chardev)
 {
 	int err = 0;
-	struct mipi_device_irq_st *pdev_status;
 	struct mipi_device_irq_st dev_status;
-	struct mipi_host_irq_st *phost_status;
 	struct mipi_host_irq_st host_status;
 
 	err = copy_from_user(&dev_status, (void __user *)arg,

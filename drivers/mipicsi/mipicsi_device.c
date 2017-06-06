@@ -976,7 +976,7 @@ int mipicsi_device_probe(struct platform_device *pdev)
 	struct mipi_dev *dev;
 	int irq_number = 0;
 	struct resource *mem = NULL;
-	char *device_id_name;
+	const char *device_id_name;
 	struct device_node *np = NULL;
 	struct mipi_device_irq_st *int_status;
 
