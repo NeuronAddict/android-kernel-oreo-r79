@@ -176,13 +176,12 @@ static ssize_t loadcounter_show(struct kobject *kobj, struct kobj_attribute *att
 		return -EIO;
 
 	pr_debug("%s\n", __func__);
-	return sprintf(buf, "%lu\n", mnh_timer_get_loadcount(base) );
+	return sprintf(buf, "%llu\n", mnh_timer_get_loadcount(base) );
 }
 
 static ssize_t loadcounter_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
 {
-	int ret;
-	unsigned long var;
+	int var, ret;
 	void __iomem *base = get_timer_base(kobj);
 	if (!base)
 		return -EIO;
@@ -207,7 +206,7 @@ static ssize_t currentvalue_show(struct kobject *kobj, struct kobj_attribute *at
 		return -EIO;
 
         pr_debug("%s\n", __func__);
-	return sprintf(buf, "%lu\n", mnh_timer_get_currentvalue(base));
+	return sprintf(buf, "%llu\n", mnh_timer_get_currentvalue(base));
 }
 
 
@@ -238,9 +237,8 @@ static ssize_t status_show(struct kobject *kobj, struct kobj_attribute *attr, ch
 
 static ssize_t status_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
 {
-	int ret;
+	int var, ret;
         u32 ctrl;
-	unsigned long var;
         void __iomem *base = get_timer_base(kobj);
 	if (!base)
 		return -EIO;
@@ -430,15 +428,6 @@ static void mnh_timer_init()
 	}
 }
 
-static int mnh_timer_suspend(struct platform_device *pdev)
-{
-#if 0
-	HW_OUTf(scu, SCU, RSTC, TIMER_RST, 1);
-	HW_OUTf(scu, SCU, PERIPH_CLK_CTRL, TIMER_CLKEN_SW, 0);
-#endif
-	return 0;
-}
-
 static int mnh_timer_resume(struct platform_device *pdev)
 {
 	HW_OUTf(scu, SCU, PERIPH_CLK_CTRL, TIMER_CLKEN_SW, 1);
@@ -508,7 +497,6 @@ MODULE_DEVICE_TABLE(of, mnh_timer_dev);
 static struct platform_driver mnh_timer_pldriver = {
 	.probe		= mnh_timer_probe,
 	.remove		= mnh_timer_remove,
-	.suspend	= mnh_timer_suspend,
 	.resume		= mnh_timer_resume,
 	.driver		= {
 		.name  = "mnh-timer",
