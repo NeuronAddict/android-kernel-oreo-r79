@@ -240,6 +240,9 @@ int mnh_cpu_freq_change(int index)
 	int lock = 0;
 	int sys200, ipu_div = 0;
 
+	if (!mnh_dev)
+		return -ENODEV;
+
 	if (index < CPU_FREQ_MIN || index > CPU_FREQ_MAX)
 		return -EINVAL;
 
@@ -348,6 +351,9 @@ int mnh_ipu_freq_change(int index)
 {
 	int lock = 0;
 
+	if (!mnh_dev)
+		return -ENODEV;
+
 	if (index < IPU_FREQ_MIN || index > IPU_FREQ_MAX)
 		return -EINVAL;
 
@@ -439,6 +445,9 @@ int mnh_lpddr_freq_change(int index)
 {
 	int status = 0;
 
+	if (!mnh_dev)
+		return -ENODEV;
+
 	dev_dbg(mnh_dev->dev, "%s: %d\n", __func__, index);
 
 	if (index < LPDDR_FREQ_MIN || index > LPDDR_FREQ_MAX)
@@ -521,6 +530,9 @@ int mnh_lpddr_sys200_mode(bool enable)
 {
 	int lock;
 
+	if (!mnh_dev)
+		return -ENODEV;
+
 	dev_dbg(mnh_dev->dev, "%s: %d\n", __func__, enable);
 	/* Unlock PLL access */
 	HW_OUTf(mnh_dev->regs, SCU, PLL_PASSCODE, PASSCODE, PLL_UNLOCK);
@@ -559,6 +571,9 @@ EXPORT_SYMBOL(mnh_lpddr_sys200_mode);
  */
 int mnh_cpu_ipu_sys200_mode(void)
 {
+	if (!mnh_dev)
+		return -ENODEV;
+
 	dev_dbg(mnh_dev->dev, "%s\n", __func__);
 
 	/* Unlock PLL access */
@@ -619,6 +634,9 @@ EXPORT_SYMBOL(mnh_cpu_ipu_sys200_mode);
 /* read entire int_status */
 u64 mnh_ddr_int_status(void)
 {
+	if (!mnh_dev)
+		return -ENODEV;
+
 	u64 int_stat = ((u64)MNH_DDR_CTL_IN(228) << 32) | MNH_DDR_CTL_IN(227);
 	return int_stat;
 }
@@ -627,6 +645,9 @@ EXPORT_SYMBOL(mnh_ddr_int_status);
 /* clear entire int_status */
 int mnh_ddr_clr_int_status(void)
 {
+	if (!mnh_dev)
+		return -ENODEV;
+
 	u64 stat = 0;
 	MNH_DDR_CTL_OUT(230, 0x0F);
 	MNH_DDR_CTL_OUT(229, 0xFFFFFFFF);
@@ -726,9 +747,10 @@ static void mnh_ddr_disable_lp(void)
  */
 int mnh_clock_init_gating(int enabled)
 {
-	dev_dbg(mnh_dev->dev, "%s:%d\n", __func__, __LINE__);
 	if (!mnh_dev)
-		return -ENOENT;
+		return -ENODEV;
+
+	dev_dbg(mnh_dev->dev, "%s:%d\n", __func__, __LINE__);
 
 	if (enabled != 1 && enabled != 0)
 		return -EINVAL;
@@ -756,9 +778,10 @@ EXPORT_SYMBOL(mnh_clock_init_gating);
 
 int mnh_bypass_clock_gating(int enabled)
 {
-	dev_dbg(mnh_dev->dev, "%s:%d\n", __func__, __LINE__);
 	if (!mnh_dev)
-		return -ENOENT;
+		return -ENODEV;
+
+	dev_dbg(mnh_dev->dev, "%s:%d\n", __func__, __LINE__);
 
 	if (enabled != 1 && enabled != 0)
 		return -EINVAL;
@@ -802,9 +825,8 @@ EXPORT_SYMBOL(mnh_bypass_clock_gating);
 
 int mnh_axi_clock_gating(int enabled)
 {
-	dev_dbg(mnh_dev->dev, "%s:%d\n", __func__, __LINE__);
 	if (!mnh_dev)
-		return -ENOENT;
+		return -ENODEV;
 
 	if (enabled != 1 && enabled != 0)
 		return -EINVAL;
@@ -825,9 +847,10 @@ EXPORT_SYMBOL(mnh_axi_clock_gating);
  */
 int mnh_ipu_clock_gating(int enabled)
 {
-	dev_dbg(mnh_dev->dev, "%s\n", __func__);
 	if (!mnh_dev)
 		return -ENOENT;
+
+	dev_dbg(mnh_dev->dev, "%s\n", __func__);
 
 	if (enabled != 1 && enabled != 0)
 		return -EINVAL;
@@ -1350,78 +1373,81 @@ int mnh_clk_init(struct platform_device *pdev, void __iomem *baseadress)
 {
 	int ret = 0, err = 0;
 	struct resource *res;
+	struct mnh_freq_cooling_device *tmp_mnh_dev;
 	uint32_t refclk_gpio;
 
 	dev_info(&pdev->dev, "mnh_freq_cooling_init\n");
 
-	mnh_dev = devm_kzalloc(&pdev->dev, sizeof(*mnh_dev),
+	tmp_mnh_dev = devm_kzalloc(&pdev->dev, sizeof(*tmp_mnh_dev),
 			GFP_KERNEL);
-	if (!mnh_dev)
+	if (!tmp_mnh_dev)
 		return -ENOMEM;
 
 	/* Set baseadress for SCU */
-	mnh_dev->regs = baseadress;
-	mnh_dev->dev = &pdev->dev;
-	// init_completion(&mnh_dev->ddrclk_complete);
-	// spin_lock_init(&mnh_dev->irqlock);
+	tmp_mnh_dev->regs = baseadress;
+	tmp_mnh_dev->dev = &pdev->dev;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
 	if (!res) {
-		dev_err(mnh_dev->dev, "cannot get platform resources\n");
+		dev_err(tmp_mnh_dev->dev, "cannot get platform resources\n");
 		ret = -ENOENT;
 		goto mnh_probe_err;
 	}
-	mnh_dev->ddraddr = ioremap_nocache(res->start, resource_size(res));
-	if (!mnh_dev->ddraddr) {
-		dev_err(mnh_dev->dev, "unable to remap resources\n");
+	tmp_mnh_dev->ddraddr = ioremap_nocache(res->start, resource_size(res));
+	if (!tmp_mnh_dev->ddraddr) {
+		dev_err(tmp_mnh_dev->dev, "unable to remap resources\n");
 		ret = -ENOMEM;
 		goto mnh_probe_err;
 	}
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 2);
 	if (!res) {
-		dev_err(mnh_dev->dev, "cannot get platform resources\n");
+		dev_err(tmp_mnh_dev->dev, "cannot get platform resources\n");
 		ret = -ENOENT;
 		goto mnh_probe_err;
 	}
-	mnh_dev->cpuaddr = ioremap_nocache(res->start, resource_size(res));
-	if (!mnh_dev->cpuaddr) {
-		dev_err(mnh_dev->dev, "unable to remap resources\n");
+	tmp_mnh_dev->cpuaddr = ioremap_nocache(res->start, resource_size(res));
+	if (!tmp_mnh_dev->cpuaddr) {
+		dev_err(tmp_mnh_dev->dev, "unable to remap resources\n");
 		ret = -ENOMEM;
 		goto mnh_probe_err;
 	}
 	
-	mnh_dev->ddr_irq = platform_get_irq(pdev, 0);
-	dev_dbg(mnh_dev->dev, "Allocate ddr irq %d\n", mnh_dev->ddr_irq);
-	err = request_irq(mnh_dev->ddr_irq, mnh_pm_handle_ddr_irq,
-	       IRQF_SHARED, DEVICE_NAME, mnh_dev->dev);
+	tmp_mnh_dev->ddr_irq = platform_get_irq(pdev, 0);
+	dev_dbg(tmp_mnh_dev->dev, "Allocate ddr irq %d\n",
+		tmp_mnh_dev->ddr_irq);
+	err = request_irq(tmp_mnh_dev->ddr_irq, mnh_pm_handle_ddr_irq,
+	       IRQF_SHARED, DEVICE_NAME, tmp_mnh_dev->dev);
 	if (err) {
-		dev_err(mnh_dev->dev, "Could not allocated ddr irq\n");
+		dev_err(tmp_mnh_dev->dev, "Could not allocated ddr irq\n");
 		ret = -EINVAL;
 		goto mnh_probe_err;
 	}
 	/* Check IPU_CLK src */
-	mnh_dev->ipu_clk_src =
-		HW_INf(mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLK_SRC);
+	tmp_mnh_dev->ipu_clk_src =
+		HW_INf(tmp_mnh_dev->regs, SCU, CCU_CLK_CTL, IPU_CLK_SRC);
 
 	/* Check refclk rate */
-	err = device_property_read_u32(mnh_dev->dev, "refclk-gpio",
+	err = device_property_read_u32(tmp_mnh_dev->dev, "refclk-gpio",
 		&refclk_gpio);
 	if (!err)
-		mnh_dev->refclk = mnh_freq_check_refclk(refclk_gpio);
+		tmp_mnh_dev->refclk = mnh_freq_check_refclk(refclk_gpio);
 	else {
 		pr_err("unable to read refclk-gpio\n");
 		return -ENOMEM;
 	}
-	mnh_dev->cpu_pllcfg = (const struct freq_reg_table*)&cpu_reg_tables[mnh_dev->refclk];
-	mnh_dev->ipu_pllcfg = (const struct freq_reg_table*)&ipu_reg_tables[mnh_dev->refclk];
+	tmp_mnh_dev->cpu_pllcfg = (const struct freq_reg_table*)&cpu_reg_tables[tmp_mnh_dev->refclk];
+	tmp_mnh_dev->ipu_pllcfg = (const struct freq_reg_table*)&ipu_reg_tables[tmp_mnh_dev->refclk];
 
+
+	init_sysfs(tmp_mnh_dev->dev, kernel_kobj);
+
+	mnh_dev = tmp_mnh_dev;
 	mnh_dev->cpu_freq = mnh_cpu_freq_to_index();
 	mnh_dev->ipu_freq = mnh_ipu_freq_to_index();
 
-	init_sysfs(mnh_dev->dev, kernel_kobj);
-
 	mnh_clock_init_gating(1);
+
 	return 0;
 
 mnh_probe_err:
