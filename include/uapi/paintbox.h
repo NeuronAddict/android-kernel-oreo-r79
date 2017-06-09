@@ -510,6 +510,58 @@ struct mipi_stream_enable {
 	};
 };
 
+struct mipi_stream_enable_multiple {
+	/* If enable_all is false then the streams specified in the
+	 * stream_id_mask will be enabled.
+	 */
+	uint32_t stream_id_mask;
+
+	/* If free_running is false then the stream will run for the specified
+	 * number of frames.
+	 */
+	int32_t frame_count;
+
+	/* If free_running is true then the stream will run with this
+	 * configuration until the client disables it.
+	 */
+	bool free_running;
+
+	/* If enable_all is true then all streams in the session will be
+	 * enabled.  If enable_all is false then only the streams specified in
+	 * stream_id_mask will be enabled.
+	 */
+	bool enable_all;
+
+	union {
+		struct {
+			/* enable_row_sync is only used for output streams. */
+			bool enable_row_sync;
+		} output;
+		struct {
+			/* If disable_on_error is true then the stream will be
+			 * disabled if an overflow error occurs.  If it is false
+			 * then the stream will continue to run for the
+			 * confgured number of frames or indefinitely if
+			 * configured for free running.
+			 */
+			bool disable_on_error;
+		} input;
+	};
+};
+
+struct mipi_stream_disable_multiple {
+	/* If disable_all is false then the streams specified in the
+	 * stream_id_mask will be enabled.
+	 */
+	uint32_t stream_id_mask;
+
+	/* If disable_all is true then all streams in the session will be
+	 * enabled.  If disable_all is false then only the streams specified in
+	 * stream_id_mask will be disabled.
+	 */
+	bool disable_all;
+};
+
 struct mipi_interrupt_config {
 	uint32_t stream_id;
 	uint32_t interrupt_id;
@@ -625,7 +677,17 @@ struct mipi_interrupt_config {
 #define PB_PMON_DATA_WRITE            _IOW('p', 75, struct pmon_data)
 #define PB_PMON_ENABLE                _IOW('p', 76, struct pmon_enable)
 
-#define PB_NUM_IOCTLS 77
+/* Enable or disable multiple MIPI streams */
+#define PB_ENABLE_MIPI_IN_STREAMS     _IOW('p', 77, \
+		struct mipi_stream_enable_multiple)
+#define PB_DISABLE_MIPI_IN_STREAMS    _IOW('p', 78, \
+		struct mipi_stream_disable_multiple)
+#define PB_ENABLE_MIPI_OUT_STREAMS    _IOW('p', 79, \
+		struct mipi_stream_enable_multiple)
+#define PB_DISABLE_MIPI_OUT_STREAMS   _IOW('p', 80, \
+		struct mipi_stream_disable_multiple )
+
+#define PB_NUM_IOCTLS 81
 
 /* Test ioctls
  * The following ioctls are for testing and are not to be used for normal

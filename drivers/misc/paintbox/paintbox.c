@@ -412,6 +412,22 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 	case PB_UNBIND_MIPI_OUT_INTERRUPT:
 		ret = unbind_mipi_interrupt_ioctl(pb, session, arg, false);
 		break;
+	case PB_ENABLE_MIPI_IN_STREAMS:
+		ret = paintbox_mipi_enable_multiple_ioctl(pb, session, arg,
+				true /* is_input */);
+		break;
+	case PB_DISABLE_MIPI_IN_STREAMS:
+		ret = paintbox_mipi_disable_multiple_ioctl(pb, session, arg,
+				true /* is_input */);
+		break;
+	case PB_ENABLE_MIPI_OUT_STREAMS:
+		ret = paintbox_mipi_enable_multiple_ioctl(pb, session, arg,
+				false /* is_input */);
+		break;
+	case PB_DISABLE_MIPI_OUT_STREAMS:
+		ret = paintbox_mipi_disable_multiple_ioctl(pb, session, arg,
+				false /* is_input */);
+		break;
 	case PB_PMON_ALLOCATE:
 		ret = pmon_allocate_ioctl(pb, session, arg);
 		break;

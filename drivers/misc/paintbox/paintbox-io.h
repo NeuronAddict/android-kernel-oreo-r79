@@ -60,6 +60,14 @@ static inline void paintbox_disable_stp_interrupt(struct paintbox_data *pb,
 			IPU_IMR_STP_INTR_SHIFT));
 }
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+void paintbox_enable_stp_error_interrupt(struct paintbox_data *pb,
+		unsigned int stp_id);
+
+void paintbox_disable_stp_error_interrupt(struct paintbox_data *pb,
+		unsigned int stp_id);
+#endif
+
 static inline void paintbox_enable_bif_interrupt(struct paintbox_data *pb)
 {
 	paintbox_io_enable_interrupt(pb, IPU_IMR_BIF_INTR_MASK);

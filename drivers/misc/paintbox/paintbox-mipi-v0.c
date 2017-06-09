@@ -343,3 +343,185 @@ int mipi_output_clear_and_set_control(struct paintbox_data *pb,
 
 	return 0;
 }
+
+/* On the V0 IPU it is also not possible to enable all streams at once, streams
+ * will be enabled sequentially.
+ *
+ * TODO(ahampson):  This function does not verify that the streams being enabled
+ * are all in the same state.
+ */
+void paintbox_mipi_enable_multiple_input(struct paintbox_data *pb,
+		struct paintbox_session *session, uint32_t stream_id_mask,
+		struct mipi_stream_enable_multiple *req)
+{
+	struct paintbox_mipi_stream *stream, *stream_next;
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
+
+	list_for_each_entry_safe(stream, stream_next,
+			&session->mipi_input_list, session_entry) {
+		int ret;
+
+		if (!req->enable_all &&
+				!(stream_id_mask & (1 << stream->stream_id)))
+			continue;
+
+		if (stream->enabled) {
+			paintbox_mipi_update_stream_count(pb, stream,
+					req->free_running, req->frame_count);
+			continue;
+		}
+
+		paintbox_mipi_enable_input_stream_common(pb, stream,
+				req->free_running, req->frame_count,
+				req->input.disable_on_error);
+
+		/* TODO(ahampson):  A future performance optimization would be
+		 * to construct an array of ctrl register masks here and then
+		 * write that all at once in a second loop.  This would reduce
+		 * the amount of time between stream enables.
+		 */
+		ret = mipi_input_enable_irqs_and_stream(pb, stream,
+			MIPI_INPUT_SOF_IMR | MIPI_INPUT_OVF_IMR);
+
+		/* Log a missed interrupt if it occurred but don't propagate the
+		 * error up.
+		*/
+		if (ret == -EINTR)
+			dev_warn(&pb->pdev->dev, "%s: mipi input stream%u may have missed an interrupt\n",
+				__func__, stream->stream_id);
+	}
+
+	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
+}
+
+/* On the V0 IPU it is also not possible to enable all streams at once, streams
+ * will be enabled sequentially.
+ *
+ * TODO(ahampson):  This function does not verify that the streams being enabled
+ * are all in the same state.
+ */
+void paintbox_mipi_enable_multiple_output(struct paintbox_data *pb,
+		struct paintbox_session *session, uint32_t stream_id_mask,
+		struct mipi_stream_enable_multiple *req)
+{
+	struct paintbox_mipi_stream *stream, *stream_next;
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
+
+	list_for_each_entry_safe(stream, stream_next,
+			&session->mipi_output_list, session_entry) {
+		int ret;
+
+		if (!req->enable_all &&
+				!(stream_id_mask & (1 << stream->stream_id)))
+			continue;
+
+		if (stream->enabled) {
+			paintbox_mipi_update_stream_count(pb, stream,
+					req->free_running, req->frame_count);
+			continue;
+		}
+
+		ret = enable_mipi_output_stream(pb, stream, req->free_running,
+				req->frame_count, req->output.enable_row_sync);
+
+		/* Log a missed interrupt if it occurred but don't propagate the
+		 * error up.
+		*/
+		if (ret == -EINTR)
+			dev_warn(&pb->pdev->dev, "%s: mipi output stream%u may have missed an interrupt\n",
+				__func__, stream->stream_id);
+	}
+
+	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
+}
+
+/* On the V0 IPU it is also not possible to disable all streams at once, streams
+ * will be disabled sequentially.
+ *
+ * TODO(ahampson):  This function does not verify that the streams being
+ * disables are all in the same state.
+ */
+void paintbox_mipi_disable_multiple_input(struct paintbox_data *pb,
+		struct paintbox_session *session, uint32_t stream_id_mask,
+		struct mipi_stream_disable_multiple *req)
+{
+	struct paintbox_mipi_stream *stream, *stream_next;
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
+
+	list_for_each_entry_safe(stream, stream_next, &session->mipi_input_list,
+			session_entry) {
+		int ret;
+
+		if (!req->disable_all &&
+				!(stream_id_mask & (1 << stream->stream_id)))
+			continue;
+
+		paintbox_mipi_disable_stream_common(pb, stream);
+
+		/* Do not disable the overflow interrupt on disable. This
+		 * interrupt reports on the state of the current frame and needs
+		 * to be left enabled.
+		 */
+		ret = mipi_input_disable_irqs_and_stream(pb, stream,
+				MIPI_INPUT_SOF_IMR);
+
+		/* Log a missed interrupt if it occurred but don't propagate the
+		 * error up.
+		 */
+		if (ret == -EINTR)
+			dev_warn(&pb->pdev->dev,
+					"%s: mipi output stream%u may have missed an interrupt\n",
+					__func__, stream->stream_id);
+	}
+
+	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
+}
+
+/* On the V0 IPU it is also not possible to disable all streams at once, streams
+ * will be disabled sequentially.
+ *
+ * TODO(ahampson):  This function does not verify that the streams being
+ * disables are all in the same state.
+ */
+void paintbox_mipi_disable_multiple_output(struct paintbox_data *pb,
+		struct paintbox_session *session, uint32_t stream_id_mask,
+		struct mipi_stream_disable_multiple *req)
+{
+	struct paintbox_mipi_stream *stream, *stream_next;
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
+
+	list_for_each_entry_safe(stream, stream_next,
+			&session->mipi_output_list, session_entry) {
+		int ret;
+
+		if (!req->disable_all &&
+				!(stream_id_mask & (1 << stream->stream_id)))
+			continue;
+
+		paintbox_mipi_disable_stream_common(pb, stream);
+
+		/* Do not disable the EOF interrupt on disable. This interrupt
+		 * reports on the state of the current frame and needs to be
+		 * left enabled.
+		 */
+		ret = mipi_output_disable_stream(pb, stream);
+
+		/* Log a missed interrupt if it occurred but don't propagate the
+		 * error up.
+		 */
+		if (ret == -EINTR)
+			dev_warn(&pb->pdev->dev,
+					"%s: mipi output stream%u may have missed an interrupt\n",
+					__func__, stream->stream_id);
+	}
+
+	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
+}

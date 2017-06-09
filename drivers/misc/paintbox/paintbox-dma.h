@@ -66,9 +66,16 @@ int flush_dma_transfers_ioctl(struct paintbox_data *pb,
 
 int paintbox_dma_init(struct paintbox_data *pb);
 
-/* This function must be called in an interrupt context */
+/* These functions must be called in an interrupt context */
+#if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 		uint32_t channel_mask, ktime_t timestamp);
+#else
+irqreturn_t paintbox_dma_channel_interrupt(struct paintbox_data *pb,
+		ktime_t timestamp);
+irqreturn_t paintbox_dma_channel_error_interrupt(struct paintbox_data *pb,
+		ktime_t timestamp);
+#endif
 
 /* This function must be called in an interrupt context */
 void dma_report_channel_error(struct paintbox_data *pb,
@@ -77,9 +84,11 @@ void dma_report_channel_error(struct paintbox_data *pb,
 /* This function must be called in an interrupt context */
 void dma_report_error_all_channels(struct paintbox_data *pb, int err);
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 /* This function must be called in an interrupt context */
 void dma_set_mipi_error(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel, int err);
+#endif
 
 /* This function must be called in an interrupt context */
 void dma_report_mipi_output_completed(struct paintbox_data *pb,

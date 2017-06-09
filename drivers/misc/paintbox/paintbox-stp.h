@@ -71,6 +71,11 @@ void disable_stp_access_to_lbp(struct paintbox_data *pb,
 irqreturn_t paintbox_stp_interrupt(struct paintbox_data *pb, uint64_t stp_mask,
 		ktime_t timestamp);
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+irqreturn_t paintbox_stp_error_interrupt(struct paintbox_data *pb,
+		uint64_t stp_mask, ktime_t timestamp);
+#endif
+
 static inline unsigned int stp_id_to_index(unsigned int stp_id)
 {
 	return stp_id - 1;
@@ -91,5 +96,20 @@ static inline void paintbox_stp_select(struct paintbox_data *pb,
 	pb->stp.selected_stp_id = stp_id;
 	writel(stp_id, pb->stp.reg_base + STP_SEL);
 }
+
+/* The caller to this function must hold pb->stp.lock and must set the STP
+ * select register to the desired STP.
+ */
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+static inline uint32_t paintbox_stp_stat_read(struct paintbox_data *pb)
+{
+	return readl(pb->stp.reg_base + STP_STAT);
+}
+#else
+static inline uint64_t paintbox_stp_stat_read(struct paintbox_data *pb)
+{
+	return readq(pb->stp.reg_base + STP_STAT);
+}
+#endif
 
 #endif /* __PAINTBOX_STP_H__ */

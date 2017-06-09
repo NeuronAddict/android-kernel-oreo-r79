@@ -100,8 +100,7 @@ static int paintbox_perf_thread_main(void* data) {
 			stp_id = stp_index_to_id(stp_index);
 			paintbox_stp_select(pb, stp_id);
 
-			samples[stp_index].stat =
-					readq(pb->stp.reg_base + STP_STAT);
+			samples[stp_index].stat = paintbox_stp_stat_read(pb);
 		}
 		spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 

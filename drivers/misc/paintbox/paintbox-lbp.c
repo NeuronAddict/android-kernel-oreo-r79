@@ -314,14 +314,29 @@ static int write_l_param_register(struct paintbox_data *pb,
 		struct paintbox_lb *lb)
 {
 	unsigned int width_rounded, sb_cols_rounded;
-	uint32_t l_inc, l_width;
+	uint32_t l_inc, l_width, line_ratio;
 
-	width_rounded = (lb->width_pixels + LB_BLOCK_TRANSFER_WIDTH - 1) /
-			LB_BLOCK_TRANSFER_WIDTH;
-	sb_cols_rounded =  (lb->sb_cols + LB_BLOCK_TRANSFER_HEIGHT - 1) /
-			LB_BLOCK_TRANSFER_HEIGHT;
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	switch (lb->fb_rows) {
+	case 1:
+		line_ratio = 16;
+		break;
+	case 2:
+		line_ratio = 8;
+		break;
+	default:
+		line_ratio = 4;
+	};
+#else
+	line_ratio = 4;
+#endif
 
-	/* Linear address increment, (ROUND_UP4(img_width) / 4 */
+	width_rounded = (lb->width_pixels + line_ratio - 1) / line_ratio;
+	sb_cols_rounded =  (lb->sb_cols + line_ratio - 1) / line_ratio;
+
+	/* Linear address increment:
+	 * (ROUND_UP(img_width, line_ratio) / line_ratio
+	 */
 	l_inc = width_rounded;
 	if (l_inc > LB_L_PARAM_L_INC_MAX) {
 		dev_err(&pb->pdev->dev,
@@ -332,7 +347,8 @@ static int write_l_param_register(struct paintbox_data *pb,
 	}
 
 	/* Capacity of the linear space in 256 words.
-	 * ROUND_UP4(img_width) / 4 + ROUND_UP4(sb_cols) / 4
+	 * ROUND_UP(img_width, line_ratio) / line_ratio +
+	 *   ROUND_UP(sb_cols, line_ratio) / line_ratio
 	 */
 	l_width = width_rounded + sb_cols_rounded;
 	if (l_width > LB_L_PARAM_L_WIDTH_MAX) {
@@ -499,6 +515,13 @@ int setup_lb_ioctl(struct paintbox_data *pb,
 			LB_BASE_SB_BASE_ADDR_SHIFT;
 	writel(lb_base, pb->lbp.reg_base + LB_BASE);
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	ret = write_l_param_register(pb, lb);
+	if (ret < 0) {
+		mutex_unlock(&pb->lock);
+		return ret;
+	}
+#else
 	/* LB_L_PARAM L_INC and L_WIDTH are only set in sliding buffer mode. */
 	if (lb->sb_rows > 0 || lb->sb_cols > 0) {
 		ret = write_l_param_register(pb, lb);
@@ -513,6 +536,7 @@ int setup_lb_ioctl(struct paintbox_data *pb,
 		writel(LB_L_PARAM_L_WIDTH_MAX << LB_L_PARAM_L_WIDTH_SHIFT,
 				pb->lbp.reg_base + LB_L_PARAM);
 	}
+#endif
 
 #if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
 	ret = write_lb_sb_delta_register(pb, lb);

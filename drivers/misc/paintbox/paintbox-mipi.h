@@ -53,6 +53,45 @@ int unbind_mipi_interrupt_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg,
 		bool is_input);
 
+int paintbox_mipi_enable_multiple_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg,
+		bool is_input);
+int paintbox_mipi_disable_multiple_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg,
+		bool is_input);
+
+/* The caller to these functions must hold pb->lock.*/
+void paintbox_mipi_enable_multiple_input(struct paintbox_data *pb,
+		struct paintbox_session *session, uint32_t stream_id_mask,
+		struct mipi_stream_enable_multiple *req);
+void paintbox_mipi_enable_multiple_output(struct paintbox_data *pb,
+		struct paintbox_session *session, uint32_t stream_id_mask,
+		struct mipi_stream_enable_multiple *req);
+void paintbox_mipi_disable_multiple_input(struct paintbox_data *pb,
+		struct paintbox_session *session, uint32_t stream_id_mask,
+		struct mipi_stream_disable_multiple *req);
+void paintbox_mipi_disable_multiple_output(struct paintbox_data *pb,
+		struct paintbox_session *session, uint32_t stream_id_mask,
+		struct mipi_stream_disable_multiple *req);
+
+/* The caller to this function must hold pb->lock and pb->io_ipu.mipi_lock. */
+void paintbox_mipi_update_stream_count(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream, bool free_running,
+		int32_t frame_count);
+
+/* The caller to this function must hold pb->lock and pb->io_ipu.mipi_lock. */
+void paintbox_mipi_enable_input_stream_common(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream, bool free_running,
+		int32_t frame_count, bool disable_on_error);
+
+/* The caller to this function must hold pb->lock and pb->io_ipu.mipi_lock. */
+void paintbox_mipi_disable_stream_common(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream);
+
+/* The caller to this function must hold pb->io_ipu.mipi_lock. */
+void enable_mipi_interface(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream);
+
 /* The caller to this function must hold pb->lock */
 void release_mipi_stream(struct paintbox_data *pb,
 		struct paintbox_session *session,
@@ -104,6 +143,11 @@ int mipi_test_stream_reset_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg,
 		bool is_input);
 #endif
+
+/* The caller to this function must hold pb->lock and pb->io_ipu.mipi_lock. */
+int enable_mipi_output_stream(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream, bool free_running,
+		int32_t frame_count, bool enable_row_sync);
 
 /* The caller to this function must hold pb->io_ipu.mipi_lock. */
 static inline void paintbox_mipi_select_input_stream(struct paintbox_data *pb,

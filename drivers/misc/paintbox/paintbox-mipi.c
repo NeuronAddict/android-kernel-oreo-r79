@@ -17,6 +17,7 @@
 #include <linux/interrupt.h>
 #include <linux/kernel.h>
 #include <linux/ktime.h>
+#include <linux/list.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/timekeeping.h>
@@ -40,7 +41,7 @@
 #include "paintbox-regs.h"
 
 /* The caller to this function must hold pb->io_ipu.mipi_lock. */
-static void enable_mipi_interface(struct paintbox_data *pb,
+void enable_mipi_interface(struct paintbox_data *pb,
 		struct paintbox_mipi_stream *stream)
 {
 	struct paintbox_mipi_interface *interface = stream->interface;
@@ -134,6 +135,40 @@ static int validate_mipi_output_stream(struct paintbox_data *pb,
 		dev_err(&pb->pdev->dev, "%s: access error, stream id %d\n",
 				__func__, stream_id);
 		return -EACCES;
+	}
+
+	return 0;
+}
+
+static int paintbox_validate_mipi_stream_mask(struct paintbox_data *pb,
+		struct paintbox_session *session, uint32_t stream_id_mask,
+		uint32_t *validated_mask, bool is_input)
+{
+	struct paintbox_mipi_stream *stream, *stream_next;
+	struct list_head *stream_list;
+
+	stream_list = is_input ? &session->mipi_input_list :
+			&session->mipi_output_list;
+
+	list_for_each_entry_safe(stream, stream_next, stream_list,
+			session_entry) {
+		unsigned int stream_id_bit = 1 << stream->stream_id;
+
+		if (!(stream_id_mask & stream_id_bit))
+			continue;
+
+		/* A stream can not be enabled if the corresponding DMA channel
+		 * is not part of this session.
+		 */
+		if (!stream->dma_channel) {
+			dev_err(&pb->pdev->dev,
+					"%s: mipi %s stream%u no corresponding dma channel\n",
+					__func__, is_input ? "input" : "output",
+					stream->stream_id);
+			return -EINVAL;
+		}
+
+		*validated_mask |= stream_id_bit;
 	}
 
 	return 0;
@@ -442,9 +477,24 @@ int release_mipi_stream_ioctl(struct paintbox_data *pb,
 }
 
 /* The caller to this function must hold pb->lock and pb->io_ipu.mipi_lock. */
-static int enable_mipi_input_stream(struct paintbox_data *pb,
+void paintbox_mipi_update_stream_count(struct paintbox_data *pb,
 		struct paintbox_mipi_stream *stream, bool free_running,
-		bool disable_on_error, int32_t frame_count)
+		int32_t frame_count)
+{
+	/* frame count is zero when in free running mode. */
+	stream->frame_count = free_running ? 0 : frame_count;
+	stream->free_running = free_running;
+
+	dev_dbg(&pb->pdev->dev,
+			"mipi %s stream%u updating stream running period, free running %d frame_count %u\n",
+			stream->is_input ? "input" : "output",
+			stream->stream_id, free_running, frame_count);
+}
+
+/* The caller to this function must hold pb->lock and pb->io_ipu.mipi_lock. */
+void paintbox_mipi_enable_input_stream_common(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream, bool free_running,
+		int32_t frame_count, bool disable_on_error)
 {
 	/* frame count is zero when in free running mode. */
 	stream->frame_count = free_running ? 0 : frame_count;
@@ -455,13 +505,20 @@ static int enable_mipi_input_stream(struct paintbox_data *pb,
 	stream->disable_on_error = disable_on_error;
 
 	enable_mipi_interface(pb, stream);
-
-	return mipi_input_enable_irqs_and_stream(pb, stream,
-			MIPI_INPUT_SOF_IMR | MIPI_INPUT_OVF_IMR);
 }
 
 /* The caller to this function must hold pb->lock and pb->io_ipu.mipi_lock. */
-static int enable_mipi_output_stream(struct paintbox_data *pb,
+void paintbox_mipi_disable_stream_common(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream)
+{
+	stream->free_running = false;
+	stream->frame_count = 0;
+	stream->last_frame = true;
+	stream->enabled = false;
+}
+
+/* The caller to this function must hold pb->lock and pb->io_ipu.mipi_lock. */
+int enable_mipi_output_stream(struct paintbox_data *pb,
 		struct paintbox_mipi_stream *stream, bool free_running,
 		int32_t frame_count, bool enable_row_sync)
 {
@@ -574,12 +631,16 @@ int enable_mipi_stream_ioctl(struct paintbox_data *pb,
 		return 0;
 	}
 
-	if (is_input)
-		ret = enable_mipi_input_stream(pb, stream, req.free_running,
-				req.frame_count, req.input.disable_on_error);
-	else
+	if (is_input) {
+		paintbox_mipi_enable_input_stream_common(pb, stream,
+				req.free_running, req.frame_count,
+				req.input.disable_on_error);
+		ret = mipi_input_enable_irqs_and_stream(pb, stream,
+				MIPI_INPUT_SOF_IMR | MIPI_INPUT_OVF_IMR);
+	} else {
 		ret = enable_mipi_output_stream(pb, stream, req.free_running,
 				req.frame_count, req.output.enable_row_sync);
+	}
 
 	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
 
@@ -659,6 +720,78 @@ int disable_mipi_stream_ioctl(struct paintbox_data *pb,
 				stream_id);
 		ret = 0;
 	}
+
+	return 0;
+}
+
+int paintbox_mipi_enable_multiple_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg,
+		bool is_input)
+{
+	struct mipi_stream_enable_multiple __user *user_req;
+	struct mipi_stream_enable_multiple req;
+	uint32_t stream_id_mask = 0;
+	int ret;
+
+	user_req = (struct mipi_stream_enable_multiple __user *)arg;
+	if (copy_from_user(&req, user_req, sizeof(req)))
+		return -EFAULT;
+
+	mutex_lock(&pb->lock);
+
+	if (!req.enable_all) {
+		ret = paintbox_validate_mipi_stream_mask(pb, session,
+				req.stream_id_mask, &stream_id_mask, is_input);
+		if (ret < 0) {
+			mutex_unlock(&pb->lock);
+			return ret;
+		}
+	}
+
+	if (is_input)
+		paintbox_mipi_enable_multiple_input(pb, session, stream_id_mask,
+				&req);
+	else
+		paintbox_mipi_enable_multiple_output(pb, session,
+				stream_id_mask, &req);
+
+	mutex_unlock(&pb->lock);
+
+	return 0;
+}
+
+int paintbox_mipi_disable_multiple_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg,
+		bool is_input)
+{
+	struct mipi_stream_disable_multiple __user *user_req;
+	struct mipi_stream_disable_multiple req;
+	uint32_t stream_id_mask = 0;
+	int ret;
+
+	user_req = (struct mipi_stream_disable_multiple __user *)arg;
+	if (copy_from_user(&req, user_req, sizeof(req)))
+		return -EFAULT;
+
+	mutex_lock(&pb->lock);
+
+	if (!req.disable_all) {
+		ret = paintbox_validate_mipi_stream_mask(pb, session,
+				req.stream_id_mask, &stream_id_mask, is_input);
+		if (ret < 0) {
+			mutex_unlock(&pb->lock);
+			return ret;
+		}
+	}
+
+	if (is_input)
+		paintbox_mipi_disable_multiple_input(pb, session,
+				stream_id_mask, &req);
+	else
+		paintbox_mipi_disable_multiple_output(pb, session,
+				stream_id_mask, &req);
+
+	mutex_unlock(&pb->lock);
 
 	return 0;
 }
@@ -938,11 +1071,14 @@ int setup_mipi_input_stream(struct paintbox_data *pb,
 	 * stream was requested to be enabled as part of the setup then do so
 	 * now.
 	 */
-	if (setup->enable_on_setup)
-		ret |= enable_mipi_input_stream(pb, stream, setup->free_running,
-				setup->frame_count,
+	if (setup->enable_on_setup) {
+		paintbox_mipi_enable_input_stream_common(pb, stream,
+				setup->free_running, setup->frame_count,
 				setup->input.disable_on_error);
-	else if (stream->enabled)
+
+		ret = mipi_input_enable_irqs_and_stream(pb, stream,
+				MIPI_INPUT_SOF_IMR | MIPI_INPUT_OVF_IMR);
+	} else if (stream->enabled)
 		ret |= mipi_input_enable_stream(pb, stream);
 
 	LOG_MIPI_REGISTERS(pb, stream);
@@ -1473,10 +1609,12 @@ static void paintbox_mipi_input_ovf_interrupt(struct paintbox_data *pb,
 	paintbox_irq_waiter_signal(pb, stream->irq, timestamp,
 			stream->input.last_frame_number, -EIO);
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 	/* Set the MIPI error for the active transfer so the error can
 	 * be reported on the DMA EOF interrupt.
 	 */
 	dma_set_mipi_error(pb, stream->dma_channel, -EIO);
+#endif
 
 	if (stream->disable_on_error) {
 		mipi_input_disable_irqs_and_stream(pb, stream,
@@ -1526,16 +1664,23 @@ irqreturn_t paintbox_mipi_input_interrupt(struct paintbox_data *pb,
 	spin_lock(&pb->io_ipu.mipi_lock);
 
 	status = readl(pb->io_ipu.ipu_base + MPI_ISR);
-	if (status) {
-		writel(status, pb->io_ipu.ipu_base + MPI_ISR);
-		paintbox_mpi_process_sof_interrupts(pb, status, timestamp);
-	}
 
-	status = readl(pb->io_ipu.ipu_base + MPI_ISR_OVF);
-	if (status) {
-		writel(status, pb->io_ipu.ipu_base + MPI_ISR_OVF);
-		paintbox_mpi_process_sof_interrupts(pb, status, timestamp);
-	}
+	do {
+		if (status) {
+			writel(status, pb->io_ipu.ipu_base + MPI_ISR);
+			paintbox_mpi_process_sof_interrupts(pb, status,
+					timestamp);
+		}
+
+		status = readl(pb->io_ipu.ipu_base + MPI_ISR_OVF);
+		if (status) {
+			writel(status, pb->io_ipu.ipu_base + MPI_ISR_OVF);
+			paintbox_mpi_process_sof_interrupts(pb, status,
+					timestamp);
+		}
+
+		status = readl(pb->io_ipu.ipu_base + MPI_ISR);
+	} while (status);
 
 	spin_unlock(&pb->io_ipu.mipi_lock);
 
@@ -1570,16 +1715,23 @@ irqreturn_t paintbox_mipi_input_error_interrupt(struct paintbox_data *pb,
 	spin_lock(&pb->io_ipu.mipi_lock);
 
 	status = readl(pb->io_ipu.ipu_base + MPI_ERR_ISR);
-	if (status) {
-		writel(status, pb->io_ipu.ipu_base + MPI_ERR_ISR);
-		paintbox_mpi_process_ovf_interrupts(pb, status, timestamp);
-	}
 
-	status = readl(pb->io_ipu.ipu_base + MPI_ERR_ISR_OVF);
-	if (status) {
-		writel(status, pb->io_ipu.ipu_base + MPI_ERR_ISR_OVF);
-		paintbox_mpi_process_ovf_interrupts(pb, status, timestamp);
-	}
+	do {
+		if (status) {
+			writel(status, pb->io_ipu.ipu_base + MPI_ERR_ISR);
+			paintbox_mpi_process_ovf_interrupts(pb, status,
+					timestamp);
+		}
+
+		status = readl(pb->io_ipu.ipu_base + MPI_ERR_ISR_OVF);
+		if (status) {
+			writel(status, pb->io_ipu.ipu_base + MPI_ERR_ISR_OVF);
+			paintbox_mpi_process_ovf_interrupts(pb, status,
+					timestamp);
+		}
+
+		status = readl(pb->io_ipu.ipu_base + MPI_ERR_ISR);
+	} while (status);
 
 	spin_unlock(&pb->io_ipu.mipi_lock);
 
@@ -1614,16 +1766,23 @@ irqreturn_t paintbox_mipi_output_interrupt(struct paintbox_data *pb,
 	spin_lock(&pb->io_ipu.mipi_lock);
 
 	status = readl(pb->io_ipu.ipu_base + MPO_ISR);
-	if (status) {
-		writel(status, pb->io_ipu.ipu_base + MPO_ISR);
-		paintbox_mpo_process_eof_interrupts(pb, status, timestamp);
-	}
 
-	status = readl(pb->io_ipu.ipu_base + MPO_ISR_OVF);
-	if (status) {
-		writel(status, pb->io_ipu.ipu_base + MPO_ISR_OVF);
-		paintbox_mpo_process_eof_interrupts(pb, status, timestamp);
-	}
+	do {
+		if (status) {
+			writel(status, pb->io_ipu.ipu_base + MPO_ISR);
+			paintbox_mpo_process_eof_interrupts(pb, status,
+					timestamp);
+		}
+
+		status = readl(pb->io_ipu.ipu_base + MPO_ISR_OVF);
+		if (status) {
+			writel(status, pb->io_ipu.ipu_base + MPO_ISR_OVF);
+			paintbox_mpo_process_eof_interrupts(pb, status,
+					timestamp);
+		}
+
+		status = readl(pb->io_ipu.ipu_base + MPO_ISR);
+	} while (status);
 
 	spin_unlock(&pb->io_ipu.mipi_lock);
 
@@ -1801,6 +1960,15 @@ static int paintbox_mipi_input_init(struct paintbox_data *pb)
 			ipu->num_mipi_input_interfaces;
 	int ret;
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	/* For MIPI we want to disable the interrupt at the IER to prevent
+	 * false positive interrupts on unused streams in the ISR register.
+	 * This can occur when virtual channel 0 is used.
+	 */
+	writel(0, pb->io_ipu.ipu_base + MPI_IER);
+	writel(0, pb->io_ipu.ipu_base + MPI_ERR_IER);
+#endif
+
 	pb->io_ipu.selected_input_stream_id = MPI_STRM_SEL_DEF &
 			MPI_STRM_SEL_MPI_STRM_SEL_M;
 
@@ -1878,6 +2046,14 @@ static int paintbox_mipi_output_init(struct paintbox_data *pb)
 	unsigned int streams_per_interface = ipu->num_mipi_output_streams /
 			ipu->num_mipi_output_interfaces;
 	int ret;
+
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	/* For MIPI we want to disable the interrupt at the IER to prevent
+	 * false positive interrupts on unused streams in the ISR register.
+	 * This can occur when virtual channel 0 is used.
+	 */
+	writel(0, pb->io_ipu.ipu_base + MPO_IER);
+#endif
 
 	pb->io_ipu.selected_output_stream_id = MPO_STRM_SEL_DEF &
 			MPO_STRM_SEL_MPO_STRM_SEL_M;

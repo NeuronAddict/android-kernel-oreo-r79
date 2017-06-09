@@ -1344,6 +1344,7 @@ int dma_test_channel_reset_ioctl(struct paintbox_data *pb,
 }
 #endif
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 /* This function must be called in an interrupt context */
 void dma_set_mipi_error(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel, int err)
@@ -1372,6 +1373,7 @@ void dma_set_mipi_error(struct paintbox_data *pb,
 
 	spin_unlock(&pb->dma.dma_lock);
 }
+#endif
 
 /* This function must be called in an interrupt context */
 void dma_report_mipi_output_completed(struct paintbox_data *pb,
@@ -1573,8 +1575,9 @@ static void paintbox_dma_pm_disable_if_idle(struct paintbox_data *pb,
 /* This function must be called in an interrupt context and pb->dma.dma_lock
  * must be held.
  */
-static void paintbox_dma_process_eof_interrupts(struct paintbox_data *pb,
-		uint32_t status, ktime_t timestamp)
+static void paintbox_dma_process_ms_err_and_eof_interrupts(
+		struct paintbox_data *pb, uint32_t status, ktime_t timestamp,
+		bool process_ms_err)
 {
 	unsigned int channel_id;
 
@@ -1596,6 +1599,14 @@ static void paintbox_dma_process_eof_interrupts(struct paintbox_data *pb,
 			 */
 			paintbox_pm_disable_dma_channel(pb, channel);
 			continue;
+		}
+
+		if (process_ms_err) {
+			/* In the case of a MIPI overflow error we set the
+			 * transfer error and then use the EOF handler to
+			 * finalize the transfer.
+			 */
+			transfer->error = -EIO;
 		}
 
 		paintbox_dma_eof_interrupt(pb, channel, transfer, timestamp);
@@ -1652,13 +1663,15 @@ irqreturn_t paintbox_dma_channel_interrupt(struct paintbox_data *pb,
 	status = readl(pb->dma.dma_base + DMA_IRQ_ISR);
 	if (status) {
 		writel(status, pb->dma.dma_base + DMA_IRQ_ISR);
-		paintbox_dma_process_eof_interrupts(pb, status, timestamp);
+		paintbox_dma_process_ms_err_and_eof_interrupts(pb, status,
+				timestamp, false /* process_ms_err */);
 	}
 
 	status = readl(pb->dma.dma_base + DMA_IRQ_ISR_OVF);
 	if (status) {
 		writel(status, pb->dma.dma_base + DMA_IRQ_ISR_OVF);
-		paintbox_dma_process_eof_interrupts(pb, status, timestamp);
+		paintbox_dma_process_ms_err_and_eof_interrupts(pb, status,
+				timestamp, false /* process_ms_err */);
 	}
 
 	return IRQ_HANDLED;
@@ -1673,39 +1686,36 @@ irqreturn_t paintbox_dma_channel_error_interrupt(struct paintbox_data *pb,
 	if (status) {
 		writeq(status, pb->dma.dma_base + DMA_IRQ_ERR_ISR);
 
-		/* TODO(ahampson):  Add support for MS_ERR interrupt.
-		 * b/38339261
-		 */
+		if (status & DMA_IRQ_ERR_ISR_MS_ERR_MASK)
+			paintbox_dma_process_ms_err_and_eof_interrupts(pb,
+					(status &
+					DMA_IRQ_ERR_ISR_MS_ERR_MASK) >>
+					DMA_IRQ_ERR_ISR_MS_ERR_SHIFT,
+					timestamp, true /* process_ms_err */);
 
-		paintbox_dma_process_va_err_interrupts(pb, status &
-				DMA_IRQ_ERR_ISR_VA_ERR_MASK, timestamp);
+
+		if (status & DMA_IRQ_ERR_ISR_VA_ERR_MASK)
+			paintbox_dma_process_va_err_interrupts(pb, status &
+					DMA_IRQ_ERR_ISR_VA_ERR_MASK, timestamp);
 	}
 
 	status = readq(pb->dma.dma_base + DMA_IRQ_ERR_ISR_OVF);
 	if (status) {
 		writeq(status, pb->dma.dma_base + DMA_IRQ_ERR_ISR_OVF);
 
-		/* TODO(ahampson):  Add support for MS_ERR interrupt.
-		 * b/38339261
-		 */
+		if (status & DMA_IRQ_ERR_ISR_MS_ERR_MASK)
+			paintbox_dma_process_ms_err_and_eof_interrupts(pb,
+					(status &
+					DMA_IRQ_ERR_ISR_MS_ERR_MASK) >>
+					DMA_IRQ_ERR_ISR_MS_ERR_SHIFT,
+					timestamp, true /* process_ms_err */);
 
-		paintbox_dma_process_va_err_interrupts(pb, status &
-				DMA_IRQ_ERR_ISR_OVF_VA_ERR_MASK, timestamp);
+
+		if (status & DMA_IRQ_ERR_ISR_VA_ERR_MASK)
+			paintbox_dma_process_va_err_interrupts(pb, status &
+					DMA_IRQ_ERR_ISR_VA_ERR_MASK, timestamp);
 	}
 
-	return IRQ_HANDLED;
-}
-
-/* This function must be called in an interrupt context */
-irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
-		uint32_t channel_mask, ktime_t timestamp)
-{
-	/* TODO(ahampson):  Eventually the top level interrupt handler will be
-	 * changed so EOF and error interrupts will be processed separately.
-	 * In the interim both handlers will be called.
-	 */
-	paintbox_dma_channel_interrupt(pb, timestamp);
-	paintbox_dma_channel_error_interrupt(pb, timestamp);
 	return IRQ_HANDLED;
 }
 #else

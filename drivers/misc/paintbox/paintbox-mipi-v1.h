@@ -50,7 +50,7 @@ static inline unsigned int mipi_stream_to_dma_channel_id(
 }
 
 /* The caller to this function must hold pb->io_ipu.mipi_lock. */
-int mipi_output_clear_and_set_control(struct paintbox_data *pb,
+static inline int mipi_output_clear_and_set_control(struct paintbox_data *pb,
 		struct paintbox_mipi_stream *stream, uint32_t ctrl_clear_mask,
 		uint32_t ctrl_set_mask)
 {
@@ -77,22 +77,106 @@ static inline int mipi_input_enable_stream(struct paintbox_data *pb,
 	return 0;
 }
 
-static inline int mipi_input_enable_irqs_and_stream(struct paintbox_data *pb,
-		struct paintbox_mipi_stream *stream, uint32_t imr_mask)
+static inline void mipi_input_set_imr(struct paintbox_data *pb,
+		uint32_t set_mask)
 {
 	uint32_t val;
 
-	if (imr_mask & MIPI_INPUT_SOF_IMR) {
-		val = readl(pb->io_ipu.ipu_base + MPI_IMR);
-		val |= 1 << (stream->stream_id + MPI_IMR_SOF0_SHIFT);
-		writel(val, pb->io_ipu.ipu_base + MPI_IMR);
-	}
+	val = readl(pb->io_ipu.ipu_base + MPI_IMR);
+	val |= set_mask;
+	writel(val, pb->io_ipu.ipu_base + MPI_IMR);
 
-	if (imr_mask & MIPI_INPUT_OVF_IMR) {
-		val = readl(pb->io_ipu.ipu_base + MPI_ERR_IMR);
-		val |= 1 << (stream->stream_id + MPI_ERR_IMR_OVF0_SHIFT);
-		writel(val, pb->io_ipu.ipu_base + MPI_ERR_IMR);
-	}
+	/* With MIPI we enable and disable at the IER, as well as the IMR. */
+	val = readl(pb->io_ipu.ipu_base + MPI_IER);
+	val |= set_mask;
+	writel(val, pb->io_ipu.ipu_base + MPI_IER);
+}
+
+static inline void mipi_input_set_err_imr(struct paintbox_data *pb,
+		uint32_t set_mask)
+{
+	uint32_t val;
+
+	val = readl(pb->io_ipu.ipu_base + MPI_ERR_IMR);
+	val |= set_mask;
+	writel(val, pb->io_ipu.ipu_base + MPI_ERR_IMR);
+
+	/* With MIPI we enable and disable at the IER, as well as the IMR. */
+	val = readl(pb->io_ipu.ipu_base + MPI_ERR_IER);
+	val |= set_mask;
+	writel(val, pb->io_ipu.ipu_base + MPI_ERR_IER);
+}
+
+static inline void mipi_input_clear_imr(struct paintbox_data *pb,
+		uint32_t clear_mask)
+{
+	uint32_t val;
+
+	/* With MIPI we enable and disable at the IER, as well as the IMR. */
+	val = readl(pb->io_ipu.ipu_base + MPI_IER);
+	val &= ~clear_mask;
+	writel(val, pb->io_ipu.ipu_base + MPI_IER);
+
+	val = readl(pb->io_ipu.ipu_base + MPI_IMR);
+	val &= ~clear_mask;
+	writel(val, pb->io_ipu.ipu_base + MPI_IMR);
+}
+
+static inline void mipi_input_clear_err_imr(struct paintbox_data *pb,
+		uint32_t clear_mask)
+{
+	uint32_t val;
+
+	/* With MIPI we enable and disable at the IER, as well as the IMR. */
+	val = readl(pb->io_ipu.ipu_base + MPI_ERR_IER);
+	val &= ~clear_mask;
+	writel(val, pb->io_ipu.ipu_base + MPI_ERR_IER);
+
+	val = readl(pb->io_ipu.ipu_base + MPI_ERR_IMR);
+	val &= ~clear_mask;
+	writel(val, pb->io_ipu.ipu_base + MPI_ERR_IMR);
+}
+
+static inline void mipi_output_set_imr(struct paintbox_data *pb,
+		uint32_t set_mask)
+{
+	uint32_t val;
+
+	val = readl(pb->io_ipu.ipu_base + MPO_IMR);
+	val |= set_mask;
+	writel(val, pb->io_ipu.ipu_base + MPO_IMR);
+
+	/* With MIPI we enable and disable at the IER, as well as the IMR. */
+	val = readl(pb->io_ipu.ipu_base + MPO_IER);
+	val |= set_mask;
+	writel(val, pb->io_ipu.ipu_base + MPO_IER);
+}
+
+static inline void mipi_output_clear_imr(struct paintbox_data *pb,
+		uint32_t clear_mask)
+{
+	uint32_t val;
+
+	/* With MIPI we enable and disable at the IER, as well as the IMR. */
+	val = readl(pb->io_ipu.ipu_base + MPO_IER);
+	val &= ~clear_mask;
+	writel(val, pb->io_ipu.ipu_base + MPO_IER);
+
+	val = readl(pb->io_ipu.ipu_base + MPO_IMR);
+	val &= ~clear_mask;
+	writel(val, pb->io_ipu.ipu_base + MPO_IMR);
+}
+
+static inline int mipi_input_enable_irqs_and_stream(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream, uint32_t imr_mask)
+{
+	if (imr_mask & MIPI_INPUT_SOF_IMR)
+		mipi_input_set_imr(pb, 1 << (stream->stream_id +
+				MPI_IMR_SOF0_SHIFT));
+
+	if (imr_mask & MIPI_INPUT_OVF_IMR)
+		mipi_input_set_err_imr(pb, 1 << (stream->stream_id +
+				MPI_ERR_IMR_OVF0_SHIFT));
 
 	mipi_input_enable_stream(pb, stream);
 
@@ -111,19 +195,13 @@ static inline int mipi_input_disable_stream(struct paintbox_data *pb,
 static inline int mipi_input_disable_irqs_and_stream(struct paintbox_data *pb,
 		struct paintbox_mipi_stream *stream, uint32_t imr_mask)
 {
-	uint32_t val;
+	if (imr_mask & MIPI_INPUT_SOF_IMR)
+		mipi_input_clear_imr(pb, 1 << (stream->stream_id +
+				MPI_IMR_SOF0_SHIFT));
 
-	if (imr_mask & MIPI_INPUT_SOF_IMR) {
-		val = readl(pb->io_ipu.ipu_base + MPI_IMR);
-		val &= ~(1 << (stream->stream_id + MPI_IMR_SOF0_SHIFT));
-		writel(val, pb->io_ipu.ipu_base + MPI_IMR);
-	}
-
-	if (imr_mask & MIPI_INPUT_OVF_IMR) {
-		val = readl(pb->io_ipu.ipu_base + MPI_ERR_IMR);
-		val &= ~(1 << (stream->stream_id + MPI_ERR_IMR_OVF0_SHIFT));
-		writel(val, pb->io_ipu.ipu_base + MPI_ERR_IMR);
-	}
+	if (imr_mask & MIPI_INPUT_OVF_IMR)
+		mipi_input_clear_err_imr(pb, 1 << (stream->stream_id +
+				MPI_ERR_IMR_OVF0_SHIFT));
 
 	mipi_input_disable_stream(pb, stream);
 

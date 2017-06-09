@@ -240,17 +240,39 @@ static irqreturn_t paintbox_io_interrupt(int irq, void *arg)
 				IPU_ISR_MPO_INTR_MASK) >>
 				IPU_ISR_MPO_INTR_SHIFT, timestamp);
 
-	/* TODO(showarth): when connected in RTL, VA_ERR will be set in
-	 * IPU_ISR_DMA_ERR and DMA_ERR_ISR.
-	 */
+
+
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	if (status & IPU_ISR_DMA_CHAN_INTR_MASK)
+		paintbox_dma_channel_interrupt(pb, timestamp);
+
+	if (status & IPU_ISR_DMA_ERR_INTR_MASK) {
+		uint32_t error_status;
+
+		error_status = readl(pb->io.apb_base + DMA_ERR_ISR);
+		writel(error_status, pb->io.apb_base + DMA_ERR_ISR);
+		paintbox_dma_channel_error_interrupt(pb, timestamp);
+	}
+#else
 	if (status & IPU_ISR_DMA_CHAN_INTR_MASK)
 		paintbox_dma_interrupt(pb, status & IPU_ISR_DMA_CHAN_INTR_MASK,
 				timestamp);
+#endif
 
 	if (status & IPU_ISR_STP_INTR_MASK)
 		paintbox_stp_interrupt(pb, (status &
 				IPU_ISR_STP_INTR_MASK) >>
 				IPU_ISR_STP_INTR_SHIFT, timestamp);
+
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	if (status & IPU_ISR_STP_ERR_INTR_MASK) {
+		uint32_t error_status;
+
+		error_status = readl(pb->io.apb_base + STP_ERR_ISR);
+		writel(error_status, pb->io.apb_base + STP_ERR_ISR);
+		paintbox_stp_error_interrupt(pb, error_status, timestamp);
+	}
+#endif
 
 	if (pb->io.stats.time_stats_enabled) {
 		ktime_t duration = ktime_sub(ktime_get_boottime(), timestamp);
@@ -334,6 +356,48 @@ void paintbox_disable_mipi_input_interface_error_interrupt(
 
 	if (!mif_err_imr) {
 		pb->io.regs.ipu_imr &= ~IPU_IMR_MIF_ERR_INTR_MASK;
+		writeq(pb->io.regs.ipu_imr, pb->io.apb_base + IPU_IMR);
+	}
+
+	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
+}
+
+void paintbox_enable_stp_error_interrupt(struct paintbox_data *pb,
+		unsigned int stp_id)
+{
+	uint32_t stp_index = stp_id_to_index(stp_id);
+	uint32_t stp_err_imr;
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
+
+	stp_err_imr = readl(pb->io.apb_base + STP_ERR_IMR);
+	stp_err_imr |= 1 << (stp_index + STP_ERR_IMR_STP_ERR_SHIFT);
+	writel(stp_err_imr, pb->io.apb_base + STP_ERR_IMR);
+
+	if (!(pb->io.regs.ipu_imr & IPU_IMR_STP_ERR_INTR_MASK)) {
+		pb->io.regs.ipu_imr |= IPU_IMR_STP_ERR_INTR_MASK;
+		writeq(pb->io.regs.ipu_imr, pb->io.apb_base + IPU_IMR);
+	}
+
+	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
+}
+
+void paintbox_disable_stp_error_interrupt(struct paintbox_data *pb,
+		unsigned int stp_id)
+{
+	uint32_t stp_index = stp_id_to_index(stp_id);
+	uint32_t stp_err_imr;
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
+
+	stp_err_imr = readl(pb->io.apb_base + STP_ERR_IMR);
+	stp_err_imr &= ~(1 << (stp_index + STP_ERR_ISR_STP_ERR_SHIFT));
+	writel(stp_err_imr, pb->io.apb_base + STP_ERR_IMR);
+
+	if (!stp_err_imr) {
+		pb->io.regs.ipu_imr &= ~IPU_IMR_STP_ERR_INTR_MASK;
 		writeq(pb->io.regs.ipu_imr, pb->io.apb_base + IPU_IMR);
 	}
 

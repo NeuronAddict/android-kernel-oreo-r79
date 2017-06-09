@@ -20,6 +20,7 @@ obj-$(CONFIG_PAINTBOX)				+= paintbox-lbp-debug.o
 obj-$(CONFIG_PAINTBOX)				+= paintbox-mipi.o
 obj-$(CONFIG_PAINTBOX)				+= paintbox-mipi-debug.o
 obj-$(CONFIG_PAINTBOX_V0)			+= paintbox-mipi-v0.o
+obj-$(CONFIG_PAINTBOX_V1)			+= paintbox-mipi-v1.o
 obj-$(CONFIG_PAINTBOX)				+= paintbox-mmu.o
 obj-$(CONFIG_PAINTBOX)				+= paintbox-pmon.o
 obj-$(CONFIG_PAINTBOX)				+= paintbox-power.o
