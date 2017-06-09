@@ -486,6 +486,7 @@
 		compatible = "uio_pdrv_genirq", "google,paintbox";
 		reg = <0x0 0x6004E000 0x0 0x3FFF>;
 		interrupts = <GIC_SPI 168 IRQ_TYPE_EDGE_RISING>;
+		status = "okay";
 	};
 	
         mnh-timer {
@@ -496,4 +497,5 @@
 	/* TODO(b/32513841): This is a fake cma device just for register trace testing purpose. */
 	paintbox_cma {
 		compatible = "google,paintbox_cma";
+		status = "disabled";
 	};
