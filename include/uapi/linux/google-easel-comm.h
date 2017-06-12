@@ -21,7 +21,11 @@
 #define EASELCOMM_SERVICE_COUNT 64
 
 /* Easel message identifier.  Compatible with libeasel defines. */
-typedef uint64_t easelcomm_msgid_t;
+typedef __u64 easelcomm_msgid_t;
+
+struct easelcomm_wait {
+	__s32 timeout_ms;           /* timeout in ms; -1 means indefinite */
+};
 
 /*
  * Userspace/kernel interface message descriptor.  libeasel converts
@@ -30,19 +34,20 @@ typedef uint64_t easelcomm_msgid_t;
  * userspace.
  */
 struct easelcomm_kmsg_desc {
-        /* 64-bit IDs go first for 32/64-bit struct packing conformity */
-        easelcomm_msgid_t message_id;  /* message ID */
-        easelcomm_msgid_t in_reply_to; /* msg ID replied to if non-zero */
-        uint32_t message_size;         /* size in bytes of the message data */
-        uint32_t dma_buf_size;         /* size of the DMA buffer transfer */
-        uint32_t need_reply;           /* non-zero if reply requested */
-        uint32_t replycode;            /* replycode if in_reply_to != 0 */
+	/* 64-bit IDs go first for 32/64-bit struct packing conformity */
+	easelcomm_msgid_t message_id;  /* message ID */
+	easelcomm_msgid_t in_reply_to; /* msg ID replied to if non-zero */
+	__u32 message_size;         /* size in bytes of the message data */
+	__u32 dma_buf_size;         /* size of the DMA buffer transfer */
+	__u32 need_reply;           /* non-zero if reply requested */
+	__u32 replycode;            /* replycode if in_reply_to != 0 */
+	struct easelcomm_wait wait;
 };
 
 enum easelcomm_dma_buffer_type {
-        EASELCOMM_DMA_BUFFER_UNUSED = 0,
-        EASELCOMM_DMA_BUFFER_USER,
-        EASELCOMM_DMA_BUFFER_DMA_BUF
+	EASELCOMM_DMA_BUFFER_UNUSED = 0,
+	EASELCOMM_DMA_BUFFER_USER,
+	EASELCOMM_DMA_BUFFER_DMA_BUF
 };
 
 /*
@@ -53,11 +58,12 @@ enum easelcomm_dma_buffer_type {
  * data is being read or the DMA destination buffer is being set.
  */
 struct easelcomm_kbuf_desc {
-        easelcomm_msgid_t message_id;  /* ID of message for this transfer */
-        void __user *buf;              /* local buffer source or dest */
-        int dma_buf_fd;                /* fd of local dma_buf */
-        int buf_type;                  /* use enum easelcomm_dma_buffer_type */
-        uint32_t buf_size;             /* size of the local buffer */
+	easelcomm_msgid_t message_id;  /* ID of message for this transfer */
+	void __user *buf;              /* local buffer source or dest */
+	int dma_buf_fd;                /* fd of local dma_buf */
+	int buf_type;                  /* use enum easelcomm_dma_buffer_type */
+	__u32 buf_size;                /* size of the local buffer */
+	struct easelcomm_wait wait;
 };
 
 /*
@@ -87,7 +93,7 @@ struct easelcomm_kbuf_desc {
  * information.
  */
 #define EASELCOMM_IOC_SENDMSG      _IOWR(EASELCOMM_IOC_MAGIC, 1, \
-                                        struct easelcomm_kmsg_desc *)
+					struct easelcomm_kmsg_desc *)
 /*
  * Read the message data for an incoming message received from the
  * remote.  The supplied remote message ID was returned by a previous
@@ -97,7 +103,7 @@ struct easelcomm_kbuf_desc {
  * local kernel copy of the message.
  */
 #define EASELCOMM_IOC_READDATA      _IOW(EASELCOMM_IOC_MAGIC, 2, \
-                                        struct easelcomm_kbuf_desc *)
+					struct easelcomm_kbuf_desc *)
 /*
  * Write the message data for an outgoing message being sent to the
  * remote.  The supplied remote message ID was returned by a previous
@@ -109,7 +115,7 @@ struct easelcomm_kbuf_desc {
  * completion of this ioctl frees the local kernel copy of the message.
  */
 #define EASELCOMM_IOC_WRITEDATA     _IOW(EASELCOMM_IOC_MAGIC, 3, \
-                                        struct easelcomm_kbuf_desc *)
+					struct easelcomm_kbuf_desc *)
 /*
  * Initiate a DMA write for an outgoing message that includes a DMA
  * transfer.  The supplied local message ID was returned by a previous
@@ -119,7 +125,7 @@ struct easelcomm_kbuf_desc {
  * this ioctl frees the local kernel copy of the message.
  */
 #define EASELCOMM_IOC_SENDDMA       _IOW(EASELCOMM_IOC_MAGIC, 4, \
-                                        struct easelcomm_kbuf_desc *)
+					struct easelcomm_kbuf_desc *)
 /*
  * Specify the local destination for a DMA transfer requested by an incoming
  * message.  The supplied remote message ID was returned by a previous
@@ -130,7 +136,7 @@ struct easelcomm_kbuf_desc {
  * ioctl frees the local kernel copy of the message.
  */
 #define EASELCOMM_IOC_RECVDMA       _IOW(EASELCOMM_IOC_MAGIC, 5, \
-                                        struct easelcomm_kbuf_desc *)
+					struct easelcomm_kbuf_desc *)
 /*
  * Wait for and return a descriptor for a reply from the remote to a
  * local message that requests a reply.  The message ID in the supplied
@@ -140,7 +146,7 @@ struct easelcomm_kbuf_desc {
  * by a RECVDMA if a DMA transfer is requested by the reply.
  */
 #define EASELCOMM_IOC_WAITREPLY    _IOWR(EASELCOMM_IOC_MAGIC, 6, \
-                                        struct easelcomm_kmsg_desc *)
+					struct easelcomm_kmsg_desc *)
 /*
  * Wait for and return a descriptor for an incoming message from the remote
  * (that is not a reply to a local message).  This ioctl waits for the next
@@ -150,8 +156,8 @@ struct easelcomm_kbuf_desc {
  * Returns error ESHUTDOWN if a SHUTDOWN ioctl is issued for the file
  * descriptor or the file descriptor has been closed.
  */
-#define EASELCOMM_IOC_WAITMSG       _IOR(EASELCOMM_IOC_MAGIC, 7, \
-                                        struct easelcomm_kmsg_desc *)
+#define EASELCOMM_IOC_WAITMSG       _IOWR(EASELCOMM_IOC_MAGIC, 7, \
+					struct easelcomm_kmsg_desc *)
 /*
  * Shut down the local easelcomm connection for the given file descriptor.
  * Any other threads blocked on a WAITMSG using the same file descriptor will
