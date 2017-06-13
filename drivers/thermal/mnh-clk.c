@@ -25,6 +25,7 @@
 #include <linux/interrupt.h>
 #include <linux/gpio.h>
 #include <linux/intel-hwio.h>
+#include <linux/spinlock.h>
 #include <soc/mnh/mnh-hwio-scu.h>
 #include <soc/mnh/mnh-hwio-cpu.h>
 #include <soc/mnh/mnh-hwio-ddr-ctl.h>
@@ -161,6 +162,7 @@ struct mnh_freq_cooling_device {
 	enum mnh_refclk_type refclk;
 	const struct freq_reg_table *cpu_pllcfg;
 	const struct freq_reg_table *ipu_pllcfg;
+	spinlock_t reset_lock;
 };
 
 static struct mnh_freq_cooling_device *mnh_dev;
@@ -747,6 +749,8 @@ static void mnh_ddr_disable_lp(void)
  */
 int mnh_clock_init_gating(int enabled)
 {
+	unsigned long irq_flags;
+
 	if (!mnh_dev)
 		return -ENODEV;
 
@@ -754,8 +758,14 @@ int mnh_clock_init_gating(int enabled)
 
 	if (enabled != 1 && enabled != 0)
 		return -EINVAL;
+
+	spin_lock_irqsave(&mnh_dev->reset_lock, irq_flags);
+
 	/* Add periph clk gates */
 	HW_OUTf(mnh_dev->regs, SCU, RSTC, PERI_DMA_RST, enabled);
+
+	spin_unlock_irqrestore(&mnh_dev->reset_lock, irq_flags);
+
 	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, PERI_DMA_CLKEN_SW,
 		!enabled);
 	HW_OUTf(mnh_dev->regs, SCU, MEM_PWR_MGMNT, HALT_BTROM_PD_EN, enabled);
@@ -778,6 +788,8 @@ EXPORT_SYMBOL(mnh_clock_init_gating);
 
 int mnh_bypass_clock_gating(int enabled)
 {
+	unsigned long irq_flags;
+
 	if (!mnh_dev)
 		return -ENODEV;
 
@@ -814,7 +826,12 @@ int mnh_bypass_clock_gating(int enabled)
 			enabled);
 	}
 
+
+	spin_lock_irqsave(&mnh_dev->reset_lock, irq_flags);
+
 	HW_OUTf(mnh_dev->regs, SCU, RSTC, WDT_RST, enabled);
+
+	spin_unlock_irqrestore(&mnh_dev->reset_lock, irq_flags);
 
 	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, PVT_CLKEN, !enabled);
 	HW_OUTf(mnh_dev->regs, SCU, PERIPH_CLK_CTRL, WDT_CLKEN_SW, !enabled);
@@ -882,6 +899,24 @@ int mnh_ipu_clock_gating(int enabled)
 }
 EXPORT_SYMBOL(mnh_ipu_clock_gating);
 
+int mnh_ipu_reset(void)
+{
+	unsigned long irq_flags;
+
+	dev_dbg(mnh_dev->dev, "%s\n", __func__);
+	if (!mnh_dev)
+		return -ENOENT;
+
+	spin_lock_irqsave(&mnh_dev->reset_lock, irq_flags);
+
+	HW_OUTf(mnh_dev->regs, SCU, RSTC, IPU_RST, 1);
+	HW_OUTf(mnh_dev->regs, SCU, RSTC, IPU_RST, 0);
+
+	spin_unlock_irqrestore(&mnh_dev->reset_lock, irq_flags);
+
+	return 0;
+}
+EXPORT_SYMBOL(mnh_ipu_reset);
 
 /* Frequency calculation by PLL configuration
  * @cfg: struct freq_reg_table with pll config information.
@@ -1458,6 +1493,8 @@ int mnh_clk_init(struct platform_device *pdev, void __iomem *baseadress)
 	mnh_dev = tmp_mnh_dev;
 	mnh_dev->cpu_freq = mnh_cpu_freq_to_index();
 	mnh_dev->ipu_freq = mnh_ipu_freq_to_index();
+
+	spin_lock_init(&mnh_dev->reset_lock);
 
 	mnh_clock_init_gating(1);
 
