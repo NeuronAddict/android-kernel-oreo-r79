@@ -1,0 +1,1 @@
+exec git diff --cached | scripts/checkpatch.pl --no-signoff -q -
