@@ -823,6 +823,20 @@ int mnh_bypass_clock_gating(int enabled)
 }
 EXPORT_SYMBOL(mnh_bypass_clock_gating);
 
+int mnh_pcie_axi_clock_enable(int enabled)
+{
+	if (!mnh_dev)
+		return -ENODEV;
+
+	if (enabled != 1 && enabled != 0)
+		return -EINVAL;
+
+	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, PCIE_AXI_CLKEN, enabled);
+
+	return 0;
+}
+EXPORT_SYMBOL(mnh_pcie_axi_clock_enable);
+
 int mnh_axi_clock_gating(int enabled)
 {
 	if (!mnh_dev)
@@ -832,7 +846,6 @@ int mnh_axi_clock_gating(int enabled)
 		return -EINVAL;
 
 	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, HALT_AXICG_EN, enabled);
-	HW_OUTf(mnh_dev->regs, SCU, CCU_CLK_CTL, PCIE_AXI_CLKEN, !enabled);
 
 	return 0;
 }
