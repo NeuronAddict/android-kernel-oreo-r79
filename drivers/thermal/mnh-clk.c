@@ -742,7 +742,7 @@ static void mnh_ddr_enable_lp(void)
 	fsp = HW_INf(mnh_dev->regs, SCU, LPDDR4_LOW_POWER_STS,
 				LPDDR4_CUR_FSP);
 
-	if (fsp > LPDDR_FREQ_NUM_FSPS)
+	if (fsp >= LPDDR_FREQ_NUM_FSPS)
 		fsp = LPDDR_FREQ_MAX;
 
 	dev_dbg(mnh_dev->dev, "%s\n", __func__);
