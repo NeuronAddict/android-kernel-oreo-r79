@@ -46,6 +46,7 @@ enum mnh_lpddr_freq_type {
 	LPDDR_FREQ_FSP2,
 	LPDDR_FREQ_FSP3,
 	LPDDR_FREQ_MAX = LPDDR_FREQ_FSP3,
+	LPDDR_FREQ_NUM_FSPS,
 	LPDDR_FREQ_SW = 7
 };
 
@@ -133,6 +134,13 @@ int mnh_clk_init(struct platform_device *pdev, void __iomem *baseadress);
  *
  */
 int mnh_bypass_clock_gating(int enabled);
+
+/**
+ * @enabled: 0 or 1, to enable pcie axi clock
+ * Return: 0 on success, an error code otherwise.
+ *
+ */
+int mnh_pcie_axi_clock_enable(int enabled);
 
 /**
  * @enabled: 0 or 1, to enable clock gating via SCU

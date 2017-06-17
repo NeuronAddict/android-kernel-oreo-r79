@@ -79,6 +79,9 @@ struct mnh_pcie_ep_power_state target_state;
 uint32_t rw_address_sysfs, rw_size_sysfs;
 struct mnh_pcie_irq sysfs_irq;
 
+/* Mutex to guard pcie axi clock enable */
+DEFINE_MUTEX(pcie_axi_clken_mutex);
+
 static int pcie_ll_destroy(struct mnh_dma_ll *ll);
 static int pcie_set_l_one(uint32_t enable, uint32_t clkpm);
 static void pcie_set_power_mode_state(
@@ -224,6 +227,9 @@ static void pcie_set_low_power(unsigned int enabled)
 {
 	dev_dbg(pcie_ep_dev->dev, "%s enabled=%d\n", __func__, enabled);
 	mnh_axi_clock_gating(enabled);
+	mutex_lock(&pcie_axi_clken_mutex);
+	mnh_pcie_axi_clock_enable(!enabled);
+	mutex_unlock(&pcie_axi_clken_mutex);
 }
 
 static void force_link_up(void)
@@ -1373,14 +1379,26 @@ EXPORT_SYMBOL(mnh_set_rb_base);
 /* API to read data from AP */
 int mnh_pcie_read(uint8_t *buff, uint32_t size, uint64_t adr)
 {
-	return pcie_read_data(buff, size, adr);
+	int ret;
+
+	mutex_lock(&pcie_axi_clken_mutex);
+	mnh_pcie_axi_clock_enable(true);
+	ret = pcie_read_data(buff, size, adr);
+	mutex_unlock(&pcie_axi_clken_mutex);
+	return ret;
 }
 EXPORT_SYMBOL(mnh_pcie_read);
 
 /* API to write data from AP */
 int mnh_pcie_write(uint8_t *buff, uint32_t size, uint64_t adr)
 {
-	return pcie_write_data(buff, size, adr);
+	int ret;
+
+	mutex_lock(&pcie_axi_clken_mutex);
+	mnh_pcie_axi_clock_enable(true);
+	ret = pcie_write_data(buff, size, adr);
+	mutex_unlock(&pcie_axi_clken_mutex);
+	return ret;
 }
 EXPORT_SYMBOL(mnh_pcie_write);
 

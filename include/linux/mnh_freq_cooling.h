@@ -19,6 +19,7 @@
 int mnh_cpu_freq_change(int index);
 int mnh_ipu_freq_change(int index);
 int mnh_lpddr_freq_change(int index);
+int mnh_ipu_reset(void);
 
 #endif
 
