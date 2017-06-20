@@ -36,9 +36,6 @@ int write_lbp_memory_ioctl(struct paintbox_data *pb,
 int read_lbp_memory_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 
-int paintbox_lbp_init(struct paintbox_data *pb);
-void paintbox_lbp_deinit(struct paintbox_data *pb);
-
 /* The caller to these functions must hold pb->lock */
 int validate_lbp(struct paintbox_data *pb, struct paintbox_session *session,
 		int pool_id);
@@ -84,5 +81,17 @@ static inline void paintbox_lb_select(struct paintbox_data *pb,
 	writel(lbp_id | lb_id << LBP_SEL_LB_SEL_SHIFT,
 			pb->lbp.reg_base + LBP_SEL);
 }
+
+int paintbox_lbp_init(struct paintbox_data *pb);
+
+/* The caller to this function must hold pb->lock */
+void paintbox_lbp_post_ipu_reset(struct paintbox_data *pb);
+
+/* The caller to this function must hold pb->lock */
+void paintbox_lbp_release(struct paintbox_data *pb,
+		struct paintbox_session *session);
+
+/* All sessions must be released before remove can be called. */
+void paintbox_lbp_remove(struct paintbox_data *pb);
 
 #endif /* __PAINTBOX_LBP_H__ */

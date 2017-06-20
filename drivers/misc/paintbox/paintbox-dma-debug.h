@@ -94,11 +94,17 @@ int paintbox_dump_dma_channel_registers(struct paintbox_debug *debug, char *buf,
 		size_t len);
 
 void paintbox_dma_debug_init(struct paintbox_data *pb);
+void paintbox_dma_debug_remove(struct paintbox_data *pb);
 void paintbox_dma_channel_debug_init(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel);
+void paintbox_dma_channel_debug_remove(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel);
 #else
 static inline void paintbox_dma_debug_init(struct paintbox_data *pb) { }
+static inline void paintbox_dma_debug_remove(struct paintbox_data *pb) { }
 static inline void paintbox_dma_channel_debug_init(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel) { }
+static inline void paintbox_dma_channel_debug_remove(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel) { }
 #endif
 

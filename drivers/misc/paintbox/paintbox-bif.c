@@ -165,7 +165,7 @@ static void paintbox_bif_dma_timeout_interrupt(struct paintbox_data *pb,
 	 * until the IPU comes out of reset.  Note it might be necessary to
 	 * reset the whole Easel chip if the AXI bus is messed up.  As part of
 	 * the reset process any MIPI or STP waiters should be released.
-	 * b/33455713
+	 * b/34518459
 	 */
 }
 
@@ -193,7 +193,7 @@ static void paintbox_bif_mmu_timeout_interrupt(struct paintbox_data *pb,
 	 * until the IPU comes out of reset.  Note it might be necessary to
 	 * reset the whole Easel chip if the AXI bus is messed up.  As part of
 	 * the reset process any MIPI or STP waiters should be released.
-	 * b/33455713
+	 * b/34518459
 	 */
 }
 
@@ -226,7 +226,7 @@ static void paintbox_bif_mmu_bus_error_interrupt(struct paintbox_data *pb,
 
 	/* TODO(ahampson):  Initiate a reset of the IPU and block new operations
 	 * until the IPU comes out of reset.  As part of the reset process any
-	 * MIPI or STP waiters should be released.  b/33455713
+	 * MIPI or STP waiters should be released.  b/34518459
 	 */
 }
 
@@ -242,7 +242,7 @@ static inline void paintbox_bif_dma_bus_error_interrupt_overflow(
 
 	/* TODO(ahampson):  Since we are unable to determine which DMA channel
 	 * had the bus error should we report the error on all channels and let
-	 * the runtime restart the job?
+	 * the runtime restart the job?  b/62372805
 	 */
 }
 
@@ -331,6 +331,18 @@ void paintbox_bif_interrupt(struct paintbox_data *pb)
 		paintbox_bif_dma_bus_error_interrupt_overflow(pb);
 }
 
+/* The caller to this function must hold pb->lock except when called from
+ * init.
+ */
+void paintbox_bif_post_ipu_reset(struct paintbox_data *pb)
+{
+	writel(BIF_IMR_TO_ERR_MMU_RD_MASK | BIF_IMR_TO_ERR_DMA_WR_MASK |
+			BIF_IMR_BUS_ERR_MMU_MASK | BIF_IMR_BUS_ERR_DMA_MASK |
+			BIF_IMR_TO_ERR_DMA_RD_MASK, pb->io.axi_base + BIF_IMR);
+
+	paintbox_enable_bif_interrupt(pb);
+}
+
 int paintbox_bif_init(struct paintbox_data *pb)
 {
 #ifdef CONFIG_PAINTBOX_DEBUG
@@ -348,25 +360,14 @@ int paintbox_bif_init(struct paintbox_data *pb)
 	return 0;
 }
 
+/* All sessions must be released before remove can be called. */
 void paintbox_bif_remove(struct paintbox_data *pb)
 {
+	paintbox_disable_bif_interrupt(pb);
+	writel(0, pb->io.axi_base + BIF_IMR);
+
 #ifdef CONFIG_PAINTBOX_DEBUG
 	paintbox_debug_free_reg_entries(&pb->io.axi_debug);
 	paintbox_debug_free_entry(&pb->io.axi_debug);
 #endif
-}
-
-void paintbox_bif_start(struct paintbox_data *pb)
-{
-	writel(BIF_IMR_TO_ERR_MMU_RD_MASK | BIF_IMR_TO_ERR_DMA_WR_MASK |
-			BIF_IMR_BUS_ERR_MMU_MASK | BIF_IMR_BUS_ERR_DMA_MASK |
-			BIF_IMR_TO_ERR_DMA_RD_MASK, pb->io.axi_base + BIF_IMR);
-
-	paintbox_enable_bif_interrupt(pb);
-}
-
-void paintbox_bif_shutdown(struct paintbox_data *pb)
-{
-	paintbox_disable_bif_interrupt(pb);
-	writel(0, pb->io.axi_base + BIF_IMR);
 }

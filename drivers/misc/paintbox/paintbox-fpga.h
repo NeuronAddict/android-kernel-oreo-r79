@@ -21,6 +21,7 @@
 #include "paintbox-common.h"
 
 #ifdef CONFIG_PAINTBOX_FPGA_SUPPORT
+/* This function must be called with pb->io.io_lock held. */
 void paintbox_fpga_soft_reset(struct paintbox_data *pb);
 
 int paintbox_fpga_init(struct paintbox_data *pb);

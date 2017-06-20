@@ -78,6 +78,12 @@ static int paintbox_open(struct inode *ip, struct file *fp)
 
 	fp->private_data = session;
 
+	mutex_lock(&pb->lock);
+
+	pb->session_count++;
+
+	mutex_unlock(&pb->lock);
+
 	return 0;
 }
 
@@ -86,10 +92,6 @@ static int paintbox_release(struct inode *ip, struct file *fp)
 	struct paintbox_session *session = fp->private_data;
 	struct paintbox_data *pb = session->dev;
 	struct paintbox_irq *irq, *irq_next;
-	struct paintbox_dma_channel *channel, *channel_next;
-	struct paintbox_stp *stp, *stp_next;
-	struct paintbox_lbp *lbp, *lbp_next;
-	struct paintbox_mipi_stream *stream, *stream_next;
 #ifdef CONFIG_PAINTBOX_DEBUG
 	ktime_t start_time;
 
@@ -99,43 +101,18 @@ static int paintbox_release(struct inode *ip, struct file *fp)
 
 	mutex_lock(&pb->lock);
 
-	/* TODO(ahampson): Cancel any pending DMA transfers */
+	/* TODO(ahampson): Cleanup release sequence.  b/62372748 */
 
-	/* Unbind any interrupts bound to the session's dma channels. */
-	list_for_each_entry_safe(channel, channel_next, &session->dma_list,
-			session_entry) {
-		unbind_dma_interrupt(pb, session, channel);
-	}
+	paintbox_mipi_release(pb, session);
+	paintbox_dma_release(pb, session);
+	paintbox_stp_release(pb, session);
 
 	/* Disable any interrupts associated with the session */
 	list_for_each_entry_safe(irq, irq_next, &session->irq_list,
 			session_entry)
 		release_interrupt(pb, session, irq);
 
-	/* Disable any dma channels associated with the channel */
-	list_for_each_entry_safe(channel, channel_next, &session->dma_list,
-			session_entry)
-		release_dma_channel(pb, session, channel);
-
-	/* Release any STPs associated with the session */
-	list_for_each_entry_safe(stp, stp_next, &session->stp_list,
-			session_entry)
-		release_stp(pb, session, stp);
-
-	/* Release any Line Buffer Pools associated with the channel */
-	list_for_each_entry_safe(lbp, lbp_next, &session->lbp_list,
-			session_entry)
-		release_lbp(pb, session, lbp);
-
-	/* Release any MIPI Input Streams associated with the channel */
-	list_for_each_entry_safe(stream, stream_next, &session->mipi_input_list,
-			session_entry)
-		release_mipi_stream(pb, session, stream);
-
-	/* Release any MIPI Output Streams associated with the channel */
-	list_for_each_entry_safe(stream, stream_next,
-			&session->mipi_output_list, session_entry)
-		release_mipi_stream(pb, session, stream);
+	paintbox_lbp_release(pb, session);
 
 	paintbox_irq_wait_for_release_complete(pb, session);
 
@@ -148,6 +125,9 @@ static int paintbox_release(struct inode *ip, struct file *fp)
 
 	if (pb->dma.pmon_session == session)
 		pb->dma.pmon_session = NULL;
+
+	if (WARN_ON(--pb->session_count < 0))
+		pb->session_count = 0;
 
 	mutex_unlock(&pb->lock);
 
@@ -188,7 +168,7 @@ static long paintbox_get_caps_ioctl(struct paintbox_data *pb,
 #endif
 
 #ifdef CONFIG_PAINTBOX_IOMMU
-	caps.iommu_enabled = pb->mmu.enabled;
+	caps.iommu_enabled = pb->mmu.iommu_enabled;
 #endif
 
 	caps.hardware_id = pb->hardware_id;
@@ -489,19 +469,6 @@ static const struct file_operations paintbox_fops = {
 	.unlocked_ioctl = paintbox_ioctl,
 };
 
-static void paintbox_deinit(struct paintbox_data *pb)
-{
-	/* TODO(ahampson): Figure out proper IPU shutdown sequence. */
-	paintbox_bif_shutdown(pb);
-
-	paintbox_bif_remove(pb);
-	paintbox_lbp_deinit(pb);
-
-	paintbox_stp_deinit(pb);
-
-	kfree(pb->dma.channels);
-}
-
 static int paintbox_get_capabilities(struct paintbox_data *pb)
 {
 	uint64_t hardware_id;
@@ -634,10 +601,6 @@ static int paintbox_probe(struct platform_device *pdev)
 	if (ret < 0)
 		return ret;
 
-	ret = paintbox_bif_init(pb);
-	if (ret < 0)
-		return ret;
-
 	ret = paintbox_mipi_init(pb);
 	if (ret < 0)
 		return ret;
@@ -665,7 +628,7 @@ static int paintbox_probe(struct platform_device *pdev)
 	if (ret < 0)
 		return ret;
 
-	paintbox_bif_start(pb);
+	paintbox_bif_init(pb);
 
 	ret = paintbox_mmu_init(pb);
 	if (ret < 0)
@@ -702,11 +665,16 @@ static int paintbox_remove(struct platform_device *pdev)
 
 	misc_deregister(&pb->misc_device);
 	paintbox_irq_remove(pb);
-	paintbox_deinit(pb);
+	paintbox_mmu_remove(pb);
+	paintbox_bif_remove(pb);
+	paintbox_mipi_remove(pb);
+	paintbox_dma_remove(pb);
+	paintbox_lbp_remove(pb);
+	paintbox_stp_remove(pb);
 	paintbox_pm_remove(pb);
 	paintbox_fpga_remove(pb);
 	paintbox_pm_disable_io(pb);
-	devm_free_irq(&pdev->dev, pb->io.irq, pb);
+	paintbox_io_apb_remove(pb);
 
 	devm_iounmap(&pdev->dev, pb->reg_base);
 	paintbox_debug_remove(pb);

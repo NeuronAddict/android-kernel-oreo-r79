@@ -307,7 +307,7 @@ void paintbox_stp_debug_init(struct paintbox_data *pb, struct paintbox_stp *stp)
 			paintbox_stp_reg_entry_read);
 }
 
-void paintbox_stp_debug_deinit(struct paintbox_data *pb,
+void paintbox_stp_debug_remove(struct paintbox_data *pb,
 		struct paintbox_stp *stp)
 {
 	paintbox_debug_free_reg_entries(&stp->debug);

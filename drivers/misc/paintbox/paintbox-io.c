@@ -322,6 +322,46 @@ void paintbox_io_disable_interrupt(struct paintbox_data *pb,
 }
 
 #if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+void paintbox_enable_dma_channel_error_interrupt(struct paintbox_data *pb,
+		unsigned int channel_id)
+{
+	uint32_t dma_err_imr;
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
+
+	dma_err_imr = readl(pb->io.apb_base + DMA_ERR_IMR);
+	dma_err_imr |= 1 << (channel_id + DMA_ERR_IMR_DMA_CHAN_ERR_SHIFT);
+	writel(dma_err_imr, pb->io.apb_base + DMA_ERR_IMR);
+
+	if (!(pb->io.regs.ipu_imr & IPU_IMR_DMA_ERR_INTR_MASK)) {
+		pb->io.regs.ipu_imr |= IPU_IMR_DMA_ERR_INTR_MASK;
+		writeq(pb->io.regs.ipu_imr, pb->io.apb_base + IPU_IMR);
+	}
+
+	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
+}
+
+void paintbox_disable_dma_channel_error_interrupt(struct paintbox_data *pb,
+		unsigned int channel_id)
+{
+	uint32_t dma_err_imr;
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&pb->io.io_lock, irq_flags);
+
+	dma_err_imr = readl(pb->io.apb_base + DMA_ERR_IMR);
+	dma_err_imr &= ~(1 << (channel_id + DMA_ERR_IMR_DMA_CHAN_ERR_SHIFT));
+	writel(dma_err_imr, pb->io.apb_base + DMA_ERR_IMR);
+
+	if (!dma_err_imr) {
+		pb->io.regs.ipu_imr &= ~IPU_IMR_DMA_ERR_INTR_MASK;
+		writeq(pb->io.regs.ipu_imr, pb->io.apb_base + IPU_IMR);
+	}
+
+	spin_unlock_irqrestore(&pb->io.io_lock, irq_flags);
+}
+
 void paintbox_enable_mipi_input_interface_error_interrupt(
 		struct paintbox_data *pb, unsigned int interface_id)
 {
@@ -421,6 +461,18 @@ bool get_mipi_output_interface_interrupt_state(struct paintbox_data *pb,
 }
 #endif
 
+/* All sessions must be released before remove can be called. */
+void paintbox_io_apb_remove(struct paintbox_data *pb)
+{
+	devm_free_irq(&pb->pdev->dev, pb->io.irq, pb);
+
+#ifdef CONFIG_PAINTBOX_DEBUG
+	paintbox_debug_free_reg_entries(&pb->io.apb_debug);
+	paintbox_debug_free_entry(&pb->io.apb_debug);
+	debugfs_remove(pb->io.stats.time_stats_enable_dentry);
+#endif
+}
+
 int paintbox_io_apb_init(struct paintbox_data *pb)
 {
 	int ret;
@@ -453,11 +505,6 @@ int paintbox_io_apb_init(struct paintbox_data *pb)
 
 	/* Update the number of available interrupts reported to the user space.
 	 * This value is also used to allocate the number of IRQ waiter objects.
-	 *
-	 * TODO(ahampson):  The IRQ waiter code should be modified to allocate
-	 * IRQ waiter objects on demand.  The fixed relationship between the
-	 * number of IRQ waiters and the number of interrupts is arbitrary and
-	 * should be cleaned up.  b/31684858
 	 */
 	pb->io.num_interrupts = pb->dma.num_channels + pb->stp.num_stps
 			+ NUM_BIF_INTERRUPTS + NUM_MMU_INTERRUPTS;

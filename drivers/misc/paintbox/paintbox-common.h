@@ -74,6 +74,9 @@ struct paintbox_session {
 	 */
 	uint32_t dma_gather_channel_mask;
 
+	/* Number of STPs used by this session */
+	int stp_count;
+
 };
 
 struct paintbox_debug_reg_entry;
@@ -132,6 +135,8 @@ struct paintbox_ioctl_stat {
 struct paintbox_power {
 #ifdef CONFIG_PAINTBOX_DEBUG
 	struct paintbox_debug debug;
+	struct dentry *stay_on_dentry;
+	bool stay_on;
 #endif
 	unsigned int active_core_count;
 
@@ -158,7 +163,10 @@ struct paintbox_mmu {
 	struct paintbox_iommu_pdata pdata;
 	struct device iommu_dev;
 	struct iommu_group *group;
-	bool enabled;
+	struct mutex lock;
+	uint64_t table_base_paddr;
+	bool iommu_enabled;
+	bool hw_enabled;
 #endif
 
 	/* points to the session that has allocated the mmu pmon counters.
@@ -633,6 +641,7 @@ struct paintbox_data {
 	uint32_t hardware_id;
 	uint64_t perf_stp_sample_mask;
 	struct task_struct *perf_thread;
+	int session_count;
 
 #ifdef CONFIG_PAINTBOX_DEBUG
 	struct dentry *debug_root;

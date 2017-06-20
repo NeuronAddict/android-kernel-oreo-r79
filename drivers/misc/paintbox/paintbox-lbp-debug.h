@@ -52,13 +52,20 @@ int paintbox_dump_lb_registers(struct paintbox_debug *debug, char *buf,
 		size_t len);
 void paintbox_lbp_debug_init(struct paintbox_data *pb,
 		struct paintbox_lbp *lbp);
+void paintbox_lbp_debug_remove(struct paintbox_data *pb,
+		struct paintbox_lbp *lbp);
 void paintbox_lb_debug_init(struct paintbox_data *pb, struct paintbox_lbp *lbp,
 		struct paintbox_lb *lb);
+void paintbox_lb_debug_remove(struct paintbox_data *pb, struct paintbox_lb *lb);
 #else
 static inline void paintbox_lbp_debug_init(struct paintbox_data *pb,
 		struct paintbox_lbp *lbp) { }
+static inline void paintbox_lbp_debug_remove(struct paintbox_data *pb,
+		struct paintbox_lbp *lbp) { }
 static inline void paintbox_lb_debug_init(struct paintbox_data *pb,
 		struct paintbox_lbp *lbp, struct paintbox_lb *lb) { }
+static inline void paintbox_lb_debug_remove(struct paintbox_data *pb,
+		struct paintbox_lb *lb) { }
 #endif
 
 #endif /* __PAINTBOX_LBP_DEBUG_H__ */

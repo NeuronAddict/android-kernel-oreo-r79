@@ -38,7 +38,7 @@ int dma_setup_mipi_to_dram_transfer(struct paintbox_data *pb,
 	int ret;
 
 /* TODO(ahampson):  Temporarily make MIPI DMA configuration validation a debug
- * only operation.
+ * only operation.  b/62353362
  */
 #ifdef DEBUG
 	if (config->dst.dram.len_bytes > DMA_CHAN_VA_BDRY_LEN_MAX) {

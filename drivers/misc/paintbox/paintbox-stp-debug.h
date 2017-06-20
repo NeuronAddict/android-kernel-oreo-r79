@@ -26,7 +26,7 @@
 #ifdef CONFIG_PAINTBOX_DEBUG
 void paintbox_stp_debug_init(struct paintbox_data *pb,
 		struct paintbox_stp *stp);
-void paintbox_stp_debug_deinit(struct paintbox_data *pb,
+void paintbox_stp_debug_remove(struct paintbox_data *pb,
 		struct paintbox_stp *stp);
 
 int paintbox_dump_stp_registers(struct paintbox_debug *debug, char *buf,
@@ -34,7 +34,7 @@ int paintbox_dump_stp_registers(struct paintbox_debug *debug, char *buf,
 #else
 static inline void paintbox_stp_debug_init(struct paintbox_data *pb,
 		struct paintbox_stp *stp) { }
-static inline void paintbox_stp_debug_deinit(struct paintbox_data *pb,
+static inline void paintbox_stp_debug_remove(struct paintbox_data *pb,
 		struct paintbox_stp *stp) { }
 #endif
 

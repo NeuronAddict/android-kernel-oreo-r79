@@ -77,6 +77,7 @@ struct paintbox_stp *get_stp(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned int stp_id, int *err)
 {
 	int ret = validate_stp(pb, session, stp_id);
+
 	if (ret < 0) {
 		*err = ret;
 		return NULL;
@@ -191,6 +192,8 @@ int allocate_stp_ioctl(struct paintbox_data *pb,
 	stp->session = session;
 	list_add_tail(&stp->session_entry, &session->stp_list);
 
+	session->stp_count++;
+
 #ifndef CONFIG_PAINTBOX_FPGA_SUPPORT
 	paintbox_pm_stp_enable(pb, stp);
 #endif
@@ -251,6 +254,7 @@ void release_stp(struct paintbox_data *pb, struct paintbox_session *session,
 	stp_mask <<= stp_index;
 	if (pb->perf_stp_sample_mask & stp_mask) {
 		uint64_t next_mask = pb->perf_stp_sample_mask & ~stp_mask;
+
 		stp_pc_histogram_enable(pb, next_mask);
 	}
 
@@ -263,16 +267,16 @@ void release_stp(struct paintbox_data *pb, struct paintbox_session *session,
 
 	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
 
-	/* TODO(ahampson): We will probably need to poll this register to wait
-	 * for the cancel to take effect.
-	 */
-
 #ifndef CONFIG_PAINTBOX_FPGA_SUPPORT
 	paintbox_pm_stp_disable(pb, stp);
 #endif
 
 	/* Remove the processor from the session. */
 	list_del(&stp->session_entry);
+
+	if (WARN_ON(--session->stp_count < 0))
+		session->stp_count = 0;
+
 	stp->session = NULL;
 }
 
@@ -407,13 +411,14 @@ int resume_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 		unsigned long arg)
 {
 	unsigned int stp_id = (unsigned int)arg;
+
 	dev_dbg(&pb->pdev->dev, "stp%u resume\n", stp_id);
 	/* Resume bit is self-clearing */
 	return stp_ctrl_set(pb, session, stp_id, STP_CTRL_RESUME_MASK);
 }
 
 /* The caller to this function must hold pb->lock */
-int paintbox_stp_reset(struct paintbox_data *pb, struct paintbox_stp *stp)
+static int paintbox_stp_reset(struct paintbox_data *pb, struct paintbox_stp *stp)
 {
 	unsigned long irq_flags;
 	uint64_t ctrl;
@@ -450,6 +455,51 @@ int paintbox_stp_reset(struct paintbox_data *pb, struct paintbox_stp *stp)
 	return 0;
 }
 
+/* The caller to this function must hold pb->lock */
+int paintbox_stp_reset_all(struct paintbox_data *pb,
+		struct paintbox_session *session)
+{
+	struct paintbox_stp *stp, *stp_next;
+	unsigned long irq_flags;
+
+#ifdef CONFIG_PAINTBOX_SIMULATOR_SUPPORT
+	/* Make sure the STP is idle before stopping it.  Currently
+	 * this is only done for the Simulator.  The FPGA does not have
+	 * a similar mechanism. How the post-DMA interrupt cleanup on
+	 * the hardware will work is TBD.
+	 *
+	 * TODO(ahampson):  This should be moved into QEMU or Simulator
+	 * Server.
+	 * b/34815472
+	 */
+	list_for_each_entry_safe(stp, stp_next, &session->stp_list,
+			session_entry) {
+		int ret;
+
+		ret = sim_wait_for_idle(pb, stp);
+		if (ret < 0)
+			return ret;
+	}
+#endif
+
+	spin_lock_irqsave(&pb->stp.lock, irq_flags);
+
+	paintbox_stp_select_all(pb);
+	writel(STP_CTRL_RESET_MASK, pb->stp.reg_base + STP_CTRL);
+	writel(0, pb->stp.reg_base + STP_CTRL);
+
+	list_for_each_entry_safe(stp, stp_next, &session->stp_list,
+			session_entry) {
+		stp->enabled = false;
+		stp_pc_histogram_clear(stp,
+				pb->stp.inst_mem_size_in_instructions);
+	}
+
+	spin_unlock_irqrestore(&pb->stp.lock, irq_flags);
+
+	return 0;
+}
+
 int reset_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 		unsigned long arg)
 {
@@ -480,12 +530,27 @@ int paintbox_reset_all_stp_ioctl(struct paintbox_data *pb,
 
 	mutex_lock(&pb->lock);
 
-	list_for_each_entry_safe(stp, stp_next, &session->stp_list,
-			session_entry) {
-		int ret = paintbox_stp_reset(pb, stp);
+	/* Fast path of broadcasting: broadcasting reset to all STPs when:
+	 *	1) there is only 1 session exist; or
+	 *	2) one of the sessions has all STPs
+	 */
+	if (pb->session_count == 1 || session->stp_count == pb->stp.num_stps) {
+		int ret;
+
+		ret = paintbox_stp_reset_all(pb, session);
 		if (ret < 0) {
 			mutex_unlock(&pb->lock);
 			return ret;
+		}
+	} else {
+		list_for_each_entry_safe(stp, stp_next, &session->stp_list,
+				session_entry) {
+			int ret = paintbox_stp_reset(pb, stp);
+
+			if (ret < 0) {
+				mutex_unlock(&pb->lock);
+				return ret;
+			}
 		}
 	}
 
@@ -791,7 +856,7 @@ static void paintbox_stp_handle_interrupt(struct paintbox_data *pb,
 			paintbox_irq_waiter_signal(pb, stp->irq, timestamp,
 					int_code, 0 /* error */);
 
-		/* TODO(showarth): signal error to irq waiter */
+		/* TODO(showarth): signal error to irq waiter.  b/62351992 */
 	}
 
 	status = readl(pb->stp.reg_base + STP_ISR_OVF);
@@ -888,16 +953,57 @@ irqreturn_t paintbox_stp_error_interrupt(struct paintbox_data *pb,
 }
 #endif
 
-static void init_stp_entry(struct paintbox_data *pb, unsigned int stp_index)
+/* The caller to this function must hold pb->lock */
+void paintbox_stp_post_ipu_reset(struct paintbox_data *pb)
 {
-	struct paintbox_stp *stp = &pb->stp.stps[stp_index];
+	ktime_t timestamp = ktime_get_boottime();
+	unsigned int stp_index;
 
-	stp->stp_id = stp_index_to_id(stp_index);
+	pb->stp.selected_stp_id = STP_SEL_DEF & STP_SEL_STP_SEL_M;
 
-	paintbox_stp_debug_init(pb, stp);
+	for (stp_index = 0; stp_index < pb->stp.num_stps; stp_index++) {
+		struct paintbox_stp *stp = &pb->stp.stps[stp_index];
 
-	dev_dbg(&pb->pdev->dev, "stp%u: base %p len %lu\n", stp->stp_id,
-			pb->stp.reg_base, STP_BLOCK_LEN);
+		paintbox_stp_disable_interrupts(pb, stp);
+
+		paintbox_irq_waiter_signal(pb, stp->irq, timestamp, 0,
+				-ENOTRECOVERABLE);
+
+		stp_pc_histogram_clear(stp,
+				pb->stp.inst_mem_size_in_instructions);
+	}
+
+	/* TODO(ahampson):  Determine what power management steps are needed
+	 * post reset.
+	 */
+}
+
+/* The caller to this function must hold pb->lock */
+void paintbox_stp_release(struct paintbox_data *pb,
+		struct paintbox_session *session)
+{
+	struct paintbox_stp *stp, *stp_next;
+
+	list_for_each_entry_safe(stp, stp_next, &session->stp_list,
+			session_entry)
+		release_stp(pb, session, stp);
+}
+
+/* All sessions must be released before remove can be called. */
+void paintbox_stp_remove(struct paintbox_data *pb)
+{
+	unsigned int stp_index;
+
+	for (stp_index = 0; stp_index < pb->stp.num_stps; stp_index++) {
+		struct paintbox_stp *stp = &pb->stp.stps[stp_index];
+
+		paintbox_stp_debug_remove(pb, stp);
+
+		if (stp->stalled)
+			kfree(stp->stalled);
+	}
+
+	kfree(pb->stp.stps);
 }
 
 int paintbox_stp_init(struct paintbox_data *pb)
@@ -913,30 +1019,16 @@ int paintbox_stp_init(struct paintbox_data *pb)
 
 	pb->stp.selected_stp_id = STP_SEL_DEF & STP_SEL_STP_SEL_M;
 
-	for (stp_index = 0; stp_index < pb->stp.num_stps; stp_index++)
-		init_stp_entry(pb, stp_index);
+	for (stp_index = 0; stp_index < pb->stp.num_stps; stp_index++) {
+		struct paintbox_stp *stp = &pb->stp.stps[stp_index];
 
-	return 0;
-}
+		stp->stp_id = stp_index_to_id(stp_index);
 
-static void deinit_stp_entry(struct paintbox_data *pb, unsigned int stp_index)
-{
-	struct paintbox_stp *stp = &pb->stp.stps[stp_index];
+		paintbox_stp_debug_init(pb, stp);
 
-	paintbox_stp_debug_deinit(pb, stp);
-
-	if (stp->stalled)
-		kfree(stp->stalled);
-}
-
-int paintbox_stp_deinit(struct paintbox_data *pb)
-{
-	unsigned int stp_index;
-
-	for (stp_index = 0; stp_index < pb->stp.num_stps; stp_index++)
-		deinit_stp_entry(pb, stp_index);
-
-	kfree(pb->stp.stps);
+		dev_dbg(&pb->pdev->dev, "stp%u: base %p len %lu\n", stp->stp_id,
+				pb->stp.reg_base, STP_BLOCK_LEN);
+	}
 
 	return 0;
 }

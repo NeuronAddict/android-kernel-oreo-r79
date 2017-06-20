@@ -1153,6 +1153,14 @@ void paintbox_dma_channel_debug_init(struct paintbox_data *pb,
 	}
 }
 
+void paintbox_dma_channel_debug_remove(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel)
+{
+	debugfs_remove(channel->time_stats_enable_dentry);
+	paintbox_debug_free_reg_entries(&channel->debug);
+	paintbox_debug_free_entry(&channel->debug);
+}
+
 void paintbox_dma_debug_init(struct paintbox_data *pb)
 {
 	unsigned int i, reg_index;
@@ -1207,5 +1215,12 @@ void paintbox_dma_debug_init(struct paintbox_data *pb)
 			return;
 		}
 	}
+}
+
+void paintbox_dma_debug_remove(struct paintbox_data *pb)
+{
+	paintbox_debug_free_reg_entries(&pb->dma.debug);
+	paintbox_debug_free_entry(&pb->dma.debug);
+	debugfs_remove(pb->dma.bif_outstanding_dentry);
 }
 #endif

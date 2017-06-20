@@ -134,7 +134,7 @@ static int ipu_import_dma_buf(struct paintbox_data *pb,
 
 #ifdef CONFIG_PAINTBOX_IOMMU
 	/* Map the scatter list into the IOVA space. */
-	if (pb->mmu.enabled) {
+	if (pb->mmu.iommu_enabled) {
 		DEFINE_DMA_ATTRS(attrs);
 
 		dma_set_attr(DMA_ATTR_SKIP_CPU_SYNC, &attrs);
@@ -188,7 +188,7 @@ static void ipu_release_dma_buf(struct paintbox_data *pb,
 		struct paintbox_dma_transfer *transfer)
 {
 #ifdef CONFIG_PAINTBOX_IOMMU
-	if (pb->mmu.enabled) {
+	if (pb->mmu.iommu_enabled) {
 		DEFINE_DMA_ATTRS(attrs);
 
 		dma_set_attr(DMA_ATTR_SKIP_CPU_SYNC, &attrs);

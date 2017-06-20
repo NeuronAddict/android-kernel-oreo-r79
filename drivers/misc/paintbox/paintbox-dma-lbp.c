@@ -44,7 +44,7 @@ static int set_dma_lbp_parameters(struct paintbox_data *pb,
 		struct dma_lbp_config *config)
 {
 	/* TODO(ahampson):  Temporarily make LBP DMA configuration validation a
-	 * debug only operation.
+	 * debug only operation.  b/62353362
 	 */
 #ifdef DEBUG
 	struct paintbox_lb *lb;
@@ -110,7 +110,7 @@ int dma_setup_dram_to_lbp_transfer(struct paintbox_data *pb,
 	int ret;
 
 	/* TODO(ahampson):  Temporarily make LBP DMA configuration validation a
-	 * debug only operation.
+	 * debug only operation.  b/62353362
 	 */
 #ifdef DEBUG
 	if (config->src.dram.len_bytes > DMA_CHAN_VA_BDRY_LEN_MAX) {
@@ -172,7 +172,7 @@ int dma_setup_lbp_to_dram_transfer(struct paintbox_data *pb,
 	int ret;
 
 	/* TODO(ahampson):  Temporarily make LBP DMA configuration validation a
-	 * debug only operation.
+	 * debug only operation.  b/62353362
 	 */
 #ifdef DEBUG
 	if (config->dst.dram.len_bytes > DMA_CHAN_VA_BDRY_LEN_MAX) {
@@ -237,7 +237,7 @@ int dma_setup_mipi_to_lbp_transfer(struct paintbox_data *pb,
 		channel->stats.non_dram_setup_start_time = ktime_get_boottime();
 
 	/* TODO(ahampson):  Temporarily make LBP DMA configuration validation a
-	 * debug only operation.
+	 * debug only operation.  b/62353362
 	 */
 #ifdef DEBUG
 	if (config->dst.lbp.gather) {
@@ -297,7 +297,7 @@ int dma_setup_lbp_to_mipi_transfer(struct paintbox_data *pb,
 		channel->stats.non_dram_setup_start_time = ktime_get_boottime();
 
 	/* TODO(ahampson):  Temporarily make LBP DMA configuration validation a
-	 * debug only operation.
+	 * debug only operation.  b/62353362
 	 */
 #ifdef DEBUG
 	if (config->src.lbp.gather) {
