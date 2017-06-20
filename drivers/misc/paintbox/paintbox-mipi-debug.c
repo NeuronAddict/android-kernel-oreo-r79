@@ -766,10 +766,22 @@ void paintbox_mipi_output_stream_debug_init(struct paintbox_data *pb,
 			mipi_reg_entry_write, mipi_reg_entry_read);
 }
 
+void paintbox_mipi_stream_debug_remove(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream)
+{
+	paintbox_debug_free_reg_entries(&stream->debug);
+	paintbox_debug_free_entry(&stream->debug);
+}
+
 void paintbox_mipi_debug_init(struct paintbox_data *pb)
 {
 	paintbox_debug_create_entry(pb, &pb->io_ipu.debug, pb->debug_root,
 			"mipi", -1, paintbox_dump_mipi_common_registers, NULL,
 			&pb->io_ipu);
+}
+
+void paintbox_mipi_debug_remove(struct paintbox_data *pb)
+{
+	paintbox_debug_free_entry(&pb->io_ipu.debug);
 }
 #endif

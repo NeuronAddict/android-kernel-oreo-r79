@@ -168,8 +168,7 @@ struct dma_transfer_config {
 	bool auto_start_transfer;
 };
 
-/* TODO(ahampson):  We can remove this when the IOMMU based transfers are
- * finished.
+/* TODO(ahampson):  We can remove this when b/62371806 is fixed.
  */
 struct dma_transfer_read {
 	uint32_t channel_id;

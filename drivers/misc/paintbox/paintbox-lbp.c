@@ -38,7 +38,7 @@
 #define LB_BLOCK_TRANSFER_WIDTH  4
 
 /* TODO(ahampson):  Temporarily make the line buffer configuration validation a
- * debug only operation.
+ * debug only operation.  b/62353362
  */
 #ifdef DEBUG
 static int validate_lb_config(struct paintbox_data *pb,
@@ -824,6 +824,63 @@ void paintbox_lbp_set_pmon_rptr_id(struct paintbox_data *pb, uint64_t rptr_id)
 	writeq(lbp_ctrl, pb->lbp.reg_base + LBP_CTRL);
 }
 
+/* The caller to this function must hold pb->lock */
+void paintbox_lbp_post_ipu_reset(struct paintbox_data *pb)
+{
+	unsigned int lbp_id, lb_id;
+
+	pb->lbp.selected_lbp_id = LBP_SEL_DEF & LBP_SEL_LBP_SEL_M;
+	pb->lbp.selected_lb_id = (LBP_SEL_DEF & LBP_SEL_LB_SEL_MASK) >>
+			LBP_SEL_LB_SEL_SHIFT;
+
+	for (lbp_id = 0; lbp_id < pb->lbp.num_lbps; lbp_id++) {
+		struct paintbox_lbp *lbp = &pb->lbp.lbps[lbp_id];
+
+		for (lb_id = 0; lb_id < pb->lbp.max_lbs; lb_id++) {
+			struct paintbox_lb *lb = &lbp->lbs[lb_id];
+
+			lb->configured = true;
+		}
+	}
+
+	/* TODO(ahampson):  Determine what power management steps are needed
+	 * post reset.
+	 */
+}
+
+/* The caller to this function must hold pb->lock */
+void paintbox_lbp_release(struct paintbox_data *pb,
+		struct paintbox_session *session)
+{
+	struct paintbox_lbp *lbp, *lbp_next;
+
+	list_for_each_entry_safe(lbp, lbp_next, &session->lbp_list,
+			session_entry)
+		release_lbp(pb, session, lbp);
+}
+
+/* All sessions must be released before remove can be called. */
+void paintbox_lbp_remove(struct paintbox_data *pb)
+{
+	unsigned int lbp_id, lb_id;
+
+	for (lbp_id = 0; lbp_id < pb->lbp.num_lbps; lbp_id++) {
+		struct paintbox_lbp *lbp = &pb->lbp.lbps[lbp_id];
+
+		paintbox_lbp_debug_remove(pb, lbp);
+
+		for (lb_id = 0; lb_id < pb->lbp.max_lbs; lb_id++) {
+			struct paintbox_lb *lb = &lbp->lbs[lb_id];
+
+			paintbox_lb_debug_remove(pb, lb);
+		}
+
+		kfree(pb->lbp.lbps[lbp_id].lbs);
+	}
+
+	kfree(pb->lbp.lbps);
+}
+
 static int init_lbp(struct paintbox_data *pb, unsigned int lbp_index)
 {
 	struct paintbox_lbp *lbp;
@@ -900,12 +957,3 @@ int paintbox_lbp_init(struct paintbox_data *pb)
 	return 0;
 }
 
-void paintbox_lbp_deinit(struct paintbox_data *pb)
-{
-	unsigned int i;
-
-	for (i = 0; i < pb->lbp.num_lbps; i++)
-		kfree(pb->lbp.lbps[i].lbs);
-
-	kfree(pb->lbp.lbps);
-}

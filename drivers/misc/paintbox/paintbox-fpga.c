@@ -23,14 +23,15 @@
 
 #define FPGA_SOFT_RESET             0x00
 #define FPGA_SOFT_RESET_EN          (1 << 0)
-#define FPGA_SOFT_RESET_HOLD_PERIOD 1 /* ms */
+#define FPGA_SOFT_RESET_HOLD_PERIOD 100 /* us */
 
+/* This function must be called with pb->io.io_lock held. */
 void paintbox_fpga_soft_reset(struct paintbox_data *pb)
 {
 #ifdef CONFIG_PAINTBOX_FPGA_SOFT_RESET
 	writel(FPGA_SOFT_RESET_EN, pb->fpga_reg_base + FPGA_SOFT_RESET);
 
-	msleep(FPGA_SOFT_RESET_HOLD_PERIOD);
+	udelay(FPGA_SOFT_RESET_HOLD_PERIOD);
 
 	writel(0, pb->fpga_reg_base + FPGA_SOFT_RESET);
 #endif

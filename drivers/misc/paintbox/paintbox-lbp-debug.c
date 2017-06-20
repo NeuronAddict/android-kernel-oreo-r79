@@ -502,6 +502,19 @@ void paintbox_lbp_debug_init(struct paintbox_data *pb, struct paintbox_lbp *lbp)
 			paintbox_lbp_reg_entry_read);
 }
 
+void paintbox_lbp_debug_remove(struct paintbox_data *pb,
+		struct paintbox_lbp *lbp)
+{
+	paintbox_debug_free_reg_entries(&lbp->debug);
+	paintbox_debug_free_entry(&lbp->debug);
+}
+
+void paintbox_lb_debug_remove(struct paintbox_data *pb, struct paintbox_lb *lb)
+{
+	paintbox_debug_free_reg_entries(&lb->debug);
+	paintbox_debug_free_entry(&lb->debug);
+}
+
 void paintbox_lb_debug_init(struct paintbox_data *pb, struct paintbox_lbp *lbp,
 		struct paintbox_lb *lb)
 {

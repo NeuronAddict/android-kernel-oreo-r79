@@ -61,7 +61,12 @@ void paintbox_mipi_input_stream_debug_init(struct paintbox_data *pb,
 		struct paintbox_mipi_stream *stream);
 void paintbox_mipi_output_stream_debug_init(struct paintbox_data *pb,
 		struct paintbox_mipi_stream *stream);
+
+void paintbox_mipi_stream_debug_remove(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *stream);
+
 void paintbox_mipi_debug_init(struct paintbox_data *pb);
+void paintbox_mipi_debug_remove(struct paintbox_data *pb);
 #else
 static inline void paintbox_mipi_input_stream_debug_init(
 		struct paintbox_data *pb, struct paintbox_mipi_stream *stream)
@@ -71,7 +76,12 @@ static inline void paintbox_mipi_output_stream_debug_init(
 		struct paintbox_data *pb, struct paintbox_mipi_stream *stream)
 { }
 
+static inline void paintbox_mipi_stream_debug_remove(
+		struct paintbox_data *pb, struct paintbox_mipi_stream *stream)
+{ }
+
 static inline void paintbox_mipi_debug_init(struct paintbox_data *pb) { }
+static inline void paintbox_mipi_debug_remove(struct paintbox_data *pb) { }
 #endif
 
 #endif  /* __PAINTBOX_MIPI_DEBUG_H__ */

@@ -64,8 +64,6 @@ int get_completed_transfer_count_ioctl(struct paintbox_data *pb,
 int flush_dma_transfers_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 
-int paintbox_dma_init(struct paintbox_data *pb);
-
 /* These functions must be called in an interrupt context */
 #if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
@@ -151,5 +149,17 @@ static inline void paintbox_dma_select_channel(struct paintbox_data *pb,
 			DMA_CTRL_DMA_CHAN_SEL_MASK,
 			pb->dma.dma_base + DMA_CTRL);
 }
+
+int paintbox_dma_init(struct paintbox_data *pb);
+
+/* The caller to this function must hold pb->lock */
+void paintbox_dma_post_ipu_reset(struct paintbox_data *pb);
+
+/* The caller to this function must hold pb->lock */
+void paintbox_dma_release(struct paintbox_data *pb,
+		struct paintbox_session *session);
+
+/* All sessions must be released before remove can be called. */
+void paintbox_dma_remove(struct paintbox_data *pb);
 
 #endif  /* __PAINTBOX_DMA_H__ */

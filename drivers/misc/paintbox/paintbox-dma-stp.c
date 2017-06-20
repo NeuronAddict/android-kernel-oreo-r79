@@ -36,7 +36,7 @@
 #include "paintbox-stp.h"
 
 /* TODO(ahampson):  Temporarily make stp dma configuration validation a debug
- * only operation.
+ * only operation.  b/62353362
  */
 #ifdef DEBUG
 /* DRAM to STP transfers must be aligned to 32 byte SRAM offset */
@@ -148,7 +148,7 @@ static int set_dma_stp_parameters(struct paintbox_data *pb,
 	switch (stp_config->sram_target) {
 	case SRAM_TARGET_STP_INSTRUCTION_RAM:
 		/* TODO(ahampson):  Temporarily make stp dma configuration
-		 * validation a debug only operation.
+		 * validation a debug only operation.  b/62353362
 		 */
 #ifdef DEBUG
 		ret = validate_stp_inst_sram_transfer(pb, channel, stp,
@@ -162,7 +162,7 @@ static int set_dma_stp_parameters(struct paintbox_data *pb,
 		break;
 	case SRAM_TARGET_STP_CONSTANT_RAM:
 		/* TODO(ahampson):  Temporarily make stp dma configuration
-		 * validation a debug only operation.
+		 * validation a debug only operation.  b/62353362
 		 */
 #ifdef DEBUG
 		ret = validate_stp_cnst_sram_transfer(pb, channel, stp,
@@ -176,7 +176,7 @@ static int set_dma_stp_parameters(struct paintbox_data *pb,
 		break;
 	case SRAM_TARGET_STP_SCALAR_RAM:
 		/* TODO(ahampson):  Temporarily make stp dma configuration
-		 * validation a debug only operation.
+		 * validation a debug only operation.  b/62353362
 		 */
 #ifdef DEBUG
 		ret = validate_stp_scalar_sram_transfer(pb, channel, stp,
@@ -221,7 +221,7 @@ int dma_setup_dram_to_stp_transfer(struct paintbox_data *pb,
 	int ret;
 
 	/* TODO(ahampson):  Temporarily make stp dma configuration validation a
-	 * debug only operation.
+	 * debug only operation.  b/62353362
 	 */
 #ifdef DEBUG
 	if (config->src.dram.len_bytes > DMA_CHAN_VA_BDRY_LEN_MAX) {
@@ -261,10 +261,6 @@ int dma_setup_dram_to_stp_transfer(struct paintbox_data *pb,
 	if (ret < 0)
 		goto err_exit;
 
-	/* TODO(ahampson):  Not supported in the simulator (b/28197242).  Once
-	 * simulator support is added this code will need to be completed.
-	 * Kernel support for this transfer mode is tracked in b/28341158.
-	 */
 	ret = set_dma_transfer_region_parameters(pb, channel, transfer, config);
 	if (ret < 0)
 		goto err_exit;

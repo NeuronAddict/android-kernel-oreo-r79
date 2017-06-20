@@ -46,6 +46,14 @@ static inline void paintbox_disable_dma_channel_interrupt(
 	paintbox_io_disable_interrupt(pb, 1ULL << channel_id);
 }
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+void paintbox_enable_dma_channel_error_interrupt(struct paintbox_data *pb,
+		unsigned int channel_id);
+
+void paintbox_disable_dma_channel_error_interrupt(struct paintbox_data *pb,
+		unsigned int channel_id);
+#endif
+
 static inline void paintbox_enable_stp_interrupt(struct paintbox_data *pb,
 		unsigned int stp_id)
 {
@@ -125,6 +133,9 @@ static inline void paintbox_disable_mipi_output_interface_interrupt(
 }
 
 int paintbox_io_apb_init(struct paintbox_data *pb);
+
+/* All sessions must be released before remove can be called. */
+void paintbox_io_apb_remove(struct paintbox_data *pb);
 
 #ifdef CONFIG_PAINTBOX_DEBUG
 int paintbox_dump_io_apb_registers(struct paintbox_debug *debug, char *buf,

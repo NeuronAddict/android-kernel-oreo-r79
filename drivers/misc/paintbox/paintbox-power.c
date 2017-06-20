@@ -63,6 +63,9 @@ static const char *io_pm_reg_names[IO_AON_NUM_REGS] = {
 	REG_NAME_ENTRY(CLK_GATE_CONTROL_STP_IDLE_GATE_DIS),
 	REG_NAME_ENTRY(CLK_GATE_CONTROL_LBP_IDLE_GATE_DIS),
 	REG_NAME_ENTRY(CLK_GATE_CONTROL),
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	REG_NAME_ENTRY(IDLE_CLK_COUNT),
+#endif
 	REG_NAME_ENTRY(IPU_CORE_PAIRS_EN),
 	REG_NAME_ENTRY(CORE_POWER_ON_N),
 	REG_NAME_ENTRY(CORE_ISO_ON),
@@ -70,6 +73,10 @@ static const char *io_pm_reg_names[IO_AON_NUM_REGS] = {
 	REG_NAME_ENTRY(IPU_DMA_CHAN_EN),
 #if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
 	REG_NAME_ENTRY(IPU_MIF_CLK_EN),
+	REG_NAME_ENTRY(IO_POWER_ON_N),
+	REG_NAME_ENTRY(IO_ISO_ON),
+	REG_NAME_ENTRY(IO_RAM_ON_N),
+	REG_NAME_ENTRY(SOFT_RESET),
 #endif
 };
 
@@ -114,9 +121,25 @@ int paintbox_pm_dump_registers(struct paintbox_debug *debug, char *buf,
 	if (ret < 0)
 		goto err_exit;
 
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	ret = paintbox_pm_dump_reg(pb, IDLE_CLK_COUNT, buf, &written, len);
+	if (ret < 0)
+		goto err_exit;
+#endif
+
 	ret = paintbox_pm_dump_reg(pb, IPU_CORE_PAIRS_EN, buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
+
+	ret = paintbox_pm_dump_reg(pb, IPU_DMA_CHAN_EN, buf, &written, len);
+	if (ret < 0)
+		goto err_exit;
+
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	ret = paintbox_pm_dump_reg(pb, IPU_MIF_CLK_EN, buf, &written, len);
+	if (ret < 0)
+		goto err_exit;
+#endif
 
 	ret = paintbox_pm_dump_reg(pb, CORE_POWER_ON_N, buf, &written, len);
 	if (ret < 0)
@@ -130,12 +153,20 @@ int paintbox_pm_dump_registers(struct paintbox_debug *debug, char *buf,
 	if (ret < 0)
 		goto err_exit;
 
-	ret = paintbox_pm_dump_reg(pb, IPU_DMA_CHAN_EN, buf, &written, len);
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	ret = paintbox_pm_dump_reg(pb, IO_POWER_ON_N, buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
 
-#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
-	ret = paintbox_pm_dump_reg(pb, IPU_MIF_CLK_EN, buf, &written, len);
+	ret = paintbox_pm_dump_reg(pb, IO_ISO_ON, buf, &written, len);
+	if (ret < 0)
+		goto err_exit;
+
+	ret = paintbox_pm_dump_reg(pb, IO_RAM_ON_N, buf, &written, len);
+	if (ret < 0)
+		goto err_exit;
+
+	ret = paintbox_pm_dump_reg(pb, SOFT_RESET, buf, &written, len);
 	if (ret < 0)
 		goto err_exit;
 #endif
@@ -412,12 +443,10 @@ void paintbox_pm_lbp_enable(struct paintbox_data *pb, struct paintbox_lbp *lbp)
 {
 	lbp->pm_enabled = true;
 
-	/* TODO(ahampson):  Figure out how to handle LBP0 if it is a special
-	 * case.
-	 */
-
 	/* IPU cores are power controlled in pairs so round up the requested
 	 * cores if it is an odd numbered core.
+	 *
+	 * LBP0 is part of the IO block and is controlled separately.
 	 */
 	paintbox_core_power_enable(pb, (lbp->pool_id + 1) & ~1);
 }
@@ -450,6 +479,12 @@ static void paintbox_core_power_down_walk(struct paintbox_data *pb)
 void paintbox_pm_stp_disable(struct paintbox_data *pb, struct paintbox_stp *stp)
 {
 	stp->pm_enabled = false;
+
+#ifdef CONFIG_PAINTBOX_DEBUG
+	if (pb->power.stay_on)
+		return;
+#endif
+
 	paintbox_core_power_down_walk(pb);
 }
 
@@ -458,9 +493,12 @@ void paintbox_pm_lbp_disable(struct paintbox_data *pb, struct paintbox_lbp *lbp)
 {
 	lbp->pm_enabled = false;
 
-	/* TODO(ahampson):  Figure out how to handle LBP0 if it is a special
-	 * case.
-	 */
+#ifdef CONFIG_PAINTBOX_DEBUG
+	if (pb->power.stay_on)
+		return;
+#endif
+
+	/* LBP0 is part of the IO block and is controlled separately. */
 
 	paintbox_core_power_down_walk(pb);
 }
@@ -521,6 +559,54 @@ void paintbox_pm_disable_mipi_output_interface(struct paintbox_data *pb,
 }
 #endif
 
+#ifdef CONFIG_PAINTBOX_DEBUG
+static int paintbox_power_stay_on_show(struct seq_file *s, void *p)
+{
+	struct paintbox_data *pb = s->private;
+	seq_printf(s, "%d\n", pb->power.stay_on);
+	return 0;
+}
+
+static int paintbox_power_stay_on_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, paintbox_power_stay_on_show, inode->i_private);
+}
+
+static ssize_t paintbox_power_stay_on_write(struct file *file,
+		const char __user *user_buf, size_t count, loff_t *ppos)
+{
+	struct seq_file *s = (struct seq_file *)file->private_data;
+	struct paintbox_data *pb = s->private;
+	int ret, val;
+
+	ret = kstrtoint_from_user(user_buf, count, 0, &val);
+	if (ret == 0) {
+		mutex_lock(&pb->lock);
+
+		if (pb->power.stay_on && val == 0)
+			paintbox_core_power_down_walk(pb);
+
+		pb->power.stay_on = !!val;
+
+		mutex_unlock(&pb->lock);
+
+		return count;
+	}
+
+	dev_err(&pb->pdev->dev, "%s: invalid value, err = %d", __func__, ret);
+	return ret < 0 ? ret : count;
+}
+
+static const struct file_operations stay_on_fops = {
+	.open = paintbox_power_stay_on_open,
+	.write = paintbox_power_stay_on_write,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+	.owner = THIS_MODULE,
+};
+#endif
+
 int paintbox_pm_init(struct paintbox_data *pb)
 {
 #ifdef CONFIG_PAINTBOX_DEBUG
@@ -531,14 +617,22 @@ int paintbox_pm_init(struct paintbox_data *pb)
 	paintbox_debug_create_reg_entries(pb, &pb->power.debug, io_pm_reg_names,
 			IO_AON_NUM_REGS, paintbox_pm_reg_entry_write,
 			paintbox_pm_reg_entry_read);
+
+	pb->power.stay_on_dentry = debugfs_create_file("stay_on",
+			S_IRUSR | S_IRGRP | S_IWUSR, pb->power.debug.debug_dir,
+			pb, &stay_on_fops);
+	if (IS_ERR(pb->power.stay_on_dentry)) {
+		dev_err(&pb->pdev->dev, "%s: err = %ld",__func__,
+				PTR_ERR(pb->power.stay_on_dentry));
+		return PTR_ERR(pb->power.stay_on_dentry);
+	}
 #endif
 
 	spin_lock_init(&pb->power.power_lock);
 
 	/* TODO(ahampson):  Add support for debugfs entry that allows a user to
-	 * force a certain number of active cores.
+	 * force a certain number of active cores. b/62352592
 	 */
-	/* TODO(ahampson):  Add support for force leave enable */
 
 	dev_dbg(&pb->pdev->dev, "io_aon: base %p len %lu\n", pb->io.aon_base,
 			IO_AON_BLOCK_LEN);
@@ -549,6 +643,7 @@ int paintbox_pm_init(struct paintbox_data *pb)
 void paintbox_pm_remove(struct paintbox_data *pb)
 {
 #ifdef CONFIG_PAINTBOX_DEBUG
+	debugfs_remove(pb->power.stay_on_dentry);
 	paintbox_debug_free_reg_entries(&pb->power.debug);
 	paintbox_debug_free_entry(&pb->power.debug);
 #endif

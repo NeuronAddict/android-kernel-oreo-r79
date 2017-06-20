@@ -48,9 +48,6 @@ int bind_stp_interrupt_ioctl(struct paintbox_data *pb,
 int unbind_stp_interrupt_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 
-int paintbox_stp_init(struct paintbox_data *pb);
-int paintbox_stp_deinit(struct paintbox_data *pb);
-
 /* The caller to this function must hold pb->lock */
 int validate_stp(struct paintbox_data *pb, struct paintbox_session *session,
 		unsigned int stp_id);
@@ -86,7 +83,7 @@ static inline unsigned int stp_index_to_id(unsigned int stp_index)
 	return stp_index + 1;
 }
 
-/* The caller to this function must hold pb->dma.dma_lock. */
+/* The caller to this function must hold pb->stp.lock. */
 static inline void paintbox_stp_select(struct paintbox_data *pb,
 		unsigned int stp_id)
 {
@@ -95,6 +92,14 @@ static inline void paintbox_stp_select(struct paintbox_data *pb,
 
 	pb->stp.selected_stp_id = stp_id;
 	writel(stp_id, pb->stp.reg_base + STP_SEL);
+}
+
+/* This function select all stp and enters broadcasting mode
+ * The caller to this function must hold pb->stp.lock
+ */
+static inline void paintbox_stp_select_all(struct paintbox_data *pb)
+{
+	paintbox_stp_select(pb, STP_SEL_DEF);
 }
 
 /* The caller to this function must hold pb->stp.lock and must set the STP
@@ -111,5 +116,17 @@ static inline uint64_t paintbox_stp_stat_read(struct paintbox_data *pb)
 	return readq(pb->stp.reg_base + STP_STAT);
 }
 #endif
+
+int paintbox_stp_init(struct paintbox_data *pb);
+
+/* The caller to this function must hold pb->lock */
+void paintbox_stp_post_ipu_reset(struct paintbox_data *pb);
+
+/* The caller to this function must hold pb->lock */
+void paintbox_stp_release(struct paintbox_data *pb,
+		struct paintbox_session *session);
+
+/* All sessions must be released before remove can be called. */
+void paintbox_stp_remove(struct paintbox_data *pb);
 
 #endif /* __PAINTBOX_STP_H__ */

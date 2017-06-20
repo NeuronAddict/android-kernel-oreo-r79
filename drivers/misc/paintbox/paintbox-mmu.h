@@ -13,17 +13,32 @@
  * GNU General Public License for more details.
  */
 
+#ifndef __PAINTBOX_MMU_H__
+#define __PAINTBOX_MMU_H__
+
 #include <linux/kernel.h>
 #include <linux/types.h>
 
 #include "paintbox-common.h"
 #include "paintbox-debug.h"
 
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_PAINTBOX_DEBUG
 int paintbox_dump_mmu_registers(struct paintbox_debug *debug, char *buf,
 		size_t len);
 #endif
 
 void paintbox_mmu_interrupt(struct paintbox_data *pb);
 
+#ifdef CONFIG_PAINTBOX_IOMMU
+/* The caller to this function must hold pb->lock */
+void paintbox_mmu_post_ipu_reset(struct paintbox_data *pb);
+#else
+static inline void paintbox_mmu_post_ipu_reset(struct paintbox_data *pb) { }
+#endif
+
 int paintbox_mmu_init(struct paintbox_data *pb);
+
+/* All sessions must be released before remove can be called. */
+void paintbox_mmu_remove(struct paintbox_data *pb);
+
+#endif  /* __PAINTBOX_MMU_H__ */

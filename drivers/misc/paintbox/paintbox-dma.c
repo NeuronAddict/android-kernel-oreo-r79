@@ -105,6 +105,9 @@ static void paintbox_dma_enable_channel_interrupts(struct paintbox_data *pb,
 	/* Enable the DMA channel interrupt in the top-level IPU_IMR */
 	paintbox_enable_dma_channel_interrupt(pb, channel->channel_id);
 
+	/* Enable the DMA channel error interrupt in the top-level IPU_IMR */
+	paintbox_enable_dma_channel_error_interrupt(pb, channel->channel_id);
+
 	dev_dbg(&pb->pdev->dev, "dma channel%u: interrupts enabled\n",
 			channel->channel_id);
 }
@@ -130,6 +133,7 @@ static void paintbox_dma_disable_channel_interrupts(struct paintbox_data *pb,
 	writeq(pb->dma.regs.irq_err_imr, pb->dma.dma_base + DMA_IRQ_ERR_IMR);
 
 	paintbox_disable_dma_channel_interrupt(pb, channel->channel_id);
+	paintbox_disable_dma_channel_error_interrupt(pb, channel->channel_id);
 
 	dev_dbg(&pb->pdev->dev, "dma channel%u: interrupts disabled\n",
 			channel->channel_id);
@@ -354,7 +358,7 @@ static void dma_report_completion(struct paintbox_data *pb,
 	 * read queue that is emptied by read_dma_transfer_ioctl().  All other
 	 * transfers go on a discard queue and are cleaned up by a work queue.
 	 *
-	 * TODO(ahampson): Remove the read queue support when b/35196591 is
+	 * TODO(ahampson): Remove the read queue support when b/62371806 is
 	 * fixed.
 	 */
 	if (transfer->buffer_type == DMA_DRAM_BUFFER_USER &&
@@ -1261,7 +1265,6 @@ static void dma_report_channel_error_locked(struct paintbox_data *pb,
 	}
 }
 
-
 /* This function must be called in an interrupt context */
 void dma_report_channel_error(struct paintbox_data *pb,
 		unsigned int channel_id, int err)
@@ -1296,7 +1299,7 @@ static void paintbox_dma_reset_locked(struct paintbox_data *pb)
 	/* TODO(ahampson):  There should be no need to hold the DMA reset
 	 * register high for a minimum period but the FPGA will lockup if the
 	 * reset register is cleared immediately following a VA Error Interrupt.
-	 * This needs to be evaluated on the real hardware.
+	 * This needs to be evaluated on the real hardware.  b/35779292
 	 *
 	 */
 	udelay(DMA_RESET_HOLD_PERIOD);
@@ -1798,6 +1801,92 @@ irqreturn_t paintbox_dma_interrupt(struct paintbox_data *pb,
 }
 #endif
 
+/* Outside of init the caller to this function must hold pb->dma.dma_lock */
+static void paintbox_dma_channel_register_init(
+		struct paintbox_dma_channel *channel)
+{
+	channel->regs.chan_img_format = DMA_CHAN_IMG_FORMAT_DEF;
+	channel->regs.chan_img_size = DMA_CHAN_IMG_SIZE_DEF;
+	channel->regs.chan_img_pos = DMA_CHAN_IMG_POS_DEF;
+	channel->regs.chan_img_layout = DMA_CHAN_IMG_LAYOUT_DEF;
+	channel->regs.chan_bif_xfer = DMA_CHAN_BIF_XFER_DEF;
+	channel->regs.chan_va = DMA_CHAN_VA_DEF;
+	channel->regs.chan_va_bdry = DMA_CHAN_VA_BDRY_DEF;
+	channel->regs.chan_noc_xfer = DMA_CHAN_NOC_XFER_DEF;
+	channel->regs.chan_node = DMA_CHAN_NODE_DEF;
+}
+
+/* The caller to this function must hold pb->lock */
+void paintbox_dma_post_ipu_reset(struct paintbox_data *pb)
+{
+	unsigned long irq_flags;
+	unsigned int channel_id;
+
+	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
+
+	pb->dma.selected_dma_channel_id = (DMA_CTRL_DEF &
+			DMA_CTRL_DMA_CHAN_SEL_MASK) >>
+			DMA_CTRL_DMA_CHAN_SEL_SHIFT;
+
+	pb->dma.regs.chan_ctrl = DMA_CHAN_CTRL_DEF;
+
+	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
+
+	for (channel_id = 0; channel_id < pb->dma.num_channels; channel_id++) {
+		struct paintbox_dma_channel *channel =
+				&pb->dma.channels[channel_id];
+
+		spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
+
+		dma_report_channel_error_locked(pb, channel_id,
+				-ENOTRECOVERABLE);
+
+		paintbox_dma_disable_channel_interrupts(pb, channel);
+		paintbox_pm_disable_dma_channel(pb, channel);
+
+		paintbox_dma_channel_register_init(channel);
+
+		spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
+
+		drain_queue(pb, &channel->pending_list,
+				&channel->pending_count);
+		drain_queue(pb, &channel->active_list,
+				&channel->active_count);
+	}
+}
+
+/* The caller to this function must hold pb->lock */
+void paintbox_dma_release(struct paintbox_data *pb,
+		struct paintbox_session *session)
+{
+	struct paintbox_dma_channel *channel, *channel_next;
+
+	/* Disable any dma channels associated with the channel */
+	list_for_each_entry_safe(channel, channel_next, &session->dma_list,
+			session_entry) {
+		unbind_dma_interrupt(pb, session, channel);
+		release_dma_channel(pb, session, channel);
+	}
+}
+
+/* All sessions must be released before remove can be called. */
+void paintbox_dma_remove(struct paintbox_data *pb)
+{
+	unsigned int channel_id;
+
+	flush_work(&pb->dma.discard_queue_work);
+
+	for (channel_id = 0; channel_id < pb->dma.num_channels; channel_id++) {
+		struct paintbox_dma_channel *channel =
+				&pb->dma.channels[channel_id];
+		paintbox_dma_channel_debug_remove(pb, channel);
+	}
+
+	kfree(pb->dma.channels);
+
+	paintbox_dma_debug_remove(pb);
+}
+
 int paintbox_dma_init(struct paintbox_data *pb)
 {
 	unsigned int channel_id;
@@ -1820,9 +1909,7 @@ int paintbox_dma_init(struct paintbox_data *pb)
 	INIT_LIST_HEAD(&pb->dma.discard_list);
 	INIT_LIST_HEAD(&pb->dma.free_list);
 
-#ifdef CONFIG_DEBUG_FS
 	paintbox_dma_debug_init(pb);
-#endif
 
 	pb->dma.channels = kzalloc(sizeof(struct paintbox_dma_channel) *
 			pb->dma.num_channels, GFP_KERNEL);
@@ -1836,23 +1923,14 @@ int paintbox_dma_init(struct paintbox_data *pb)
 		struct paintbox_dma_channel *channel =
 				&pb->dma.channels[channel_id];
 		channel->channel_id = channel_id;
-		channel->regs.chan_img_format = DMA_CHAN_IMG_FORMAT_DEF;
-		channel->regs.chan_img_size = DMA_CHAN_IMG_SIZE_DEF;
-		channel->regs.chan_img_pos = DMA_CHAN_IMG_POS_DEF;
-		channel->regs.chan_img_layout = DMA_CHAN_IMG_LAYOUT_DEF;
-		channel->regs.chan_bif_xfer = DMA_CHAN_BIF_XFER_DEF;
-		channel->regs.chan_va = DMA_CHAN_VA_DEF;
-		channel->regs.chan_va_bdry = DMA_CHAN_VA_BDRY_DEF;
-		channel->regs.chan_noc_xfer = DMA_CHAN_NOC_XFER_DEF;
-		channel->regs.chan_node = DMA_CHAN_NODE_DEF;
+
+		paintbox_dma_channel_register_init(channel);
 
 		INIT_LIST_HEAD(&channel->pending_list);
 		INIT_LIST_HEAD(&channel->active_list);
 		INIT_LIST_HEAD(&channel->completed_list);
 		init_completion(&channel->stop_completion);
-#ifdef CONFIG_DEBUG_FS
 		paintbox_dma_channel_debug_init(pb, channel);
-#endif
 	}
 
 	INIT_WORK(&pb->dma.discard_queue_work, paintbox_dma_discard_queue_work);

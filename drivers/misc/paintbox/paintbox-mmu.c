@@ -177,7 +177,7 @@ static void paintbox_mmu_table_walk_error_interrupt(struct paintbox_data *pb,
 
 	/* TODO(ahampson):  Initiate a reset of the IPU and block new operations
 	 * until the IPU comes out of reset.  As part of the reset process any
-	 * MIPI or STP waiters should be released.  b/33455713
+	 * MIPI or STP waiters should be released.  b/34518459
 	 */
 }
 
@@ -210,7 +210,7 @@ static void paintbox_mmu_flush_error_interrupt(struct paintbox_data *pb,
 
 	/* TODO(ahampson):  Initiate a reset of the IPU and block new operations
 	 * until the IPU comes out of reset.  As part of the reset process any
-	 * MIPI or STP waiters should be released.  b/33455713
+	 * MIPI or STP waiters should be released.  b/34518459
 	 */
 }
 
@@ -243,7 +243,7 @@ static void paintbox_mmu_prefetch_error_interrupt(struct paintbox_data *pb,
 
 	/* TODO(ahampson):  Initiate a reset of the IPU and block new operations
 	 * until the IPU comes out of reset.  As part of the reset process any
-	 * MIPI or STP waiters should be released.  b/33455713
+	 * MIPI or STP waiters should be released.  b/34518459
 	 */
 }
 
@@ -427,9 +427,19 @@ err_exit:
 	return;
 }
 
-static void paintbox_mmu_enable(void *priv, uint64_t table_base_paddr)
+static void paintbox_mmu_enable_locked(struct paintbox_data *pb,
+		uint64_t table_base_paddr)
 {
-	struct paintbox_data *pb = (struct paintbox_data *)priv;
+	writel(MMU_IMR_PREFETCH_MEMRD_ERR_MASK |
+			MMU_IMR_TWE_ACCESS_VIO_MASK |
+			MMU_IMR_TWE_MEMRD_ERR_MASK |
+			MMU_IMR_FLUSH_MEMRD_ERR_MASK |
+			MMU_IMR_TWE_INVALID_TABLE_MASK |
+			MMU_IMR_FLUSH_FULL_ERR_MASK |
+			MMU_IMR_FLUSH_INVALID_TABLE_MASK,
+			pb->io.axi_base + MMU_IMR);
+
+	paintbox_enable_mmu_interrupt(pb);
 
 #if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 	paintbox_disable_mmu_bif_idle_clock_gating(pb);
@@ -449,11 +459,37 @@ static void paintbox_mmu_enable(void *priv, uint64_t table_base_paddr)
 #endif
 }
 
+
+static void paintbox_mmu_enable(void *priv, uint64_t table_base_paddr)
+{
+	struct paintbox_data *pb = (struct paintbox_data *)priv;
+
+	mutex_lock(&pb->mmu.lock);
+
+	pb->mmu.table_base_paddr = table_base_paddr;
+
+	paintbox_mmu_enable_locked(pb, table_base_paddr);
+
+	pb->mmu.hw_enabled = true;
+
+	mutex_unlock(&pb->mmu.lock);
+}
+
 static void paintbox_mmu_disable(void *priv)
 {
 	struct paintbox_data *pb = (struct paintbox_data *)priv;
 
+	mutex_lock(&pb->mmu.lock);
+
+	pb->mmu.hw_enabled = false;
+	pb->mmu.table_base_paddr = 0;
+
 	writel(0, pb->io.axi_base + MMU_CTRL);
+	writel(0, pb->io.axi_base + MMU_IMR);
+
+	paintbox_disable_mmu_interrupt(pb);
+
+	mutex_unlock(&pb->mmu.lock);
 }
 
 /* Normally an IOMMU is a separate device that provides translation services for
@@ -522,7 +558,7 @@ int paintbox_mmu_iommu_init(struct paintbox_data *pb)
 	return 0;
 }
 
-int paintbox_mmu_iommu_attach(struct paintbox_data *pb)
+int paintbox_mmu_start(struct paintbox_data *pb)
 {
 	struct bus_type *bus = &paintbox_bus_type;
 	const struct iommu_ops *iommu_ops = bus->iommu_ops;
@@ -565,7 +601,7 @@ int paintbox_mmu_iommu_attach(struct paintbox_data *pb)
 			(struct iommu_ops *)paintbox_bus_type.iommu_ops,
 			false /* coherent */);
 
-	pb->mmu.enabled = true;
+	pb->mmu.iommu_enabled = true;
 
 	return 0;
 }
@@ -573,7 +609,7 @@ int paintbox_mmu_iommu_attach(struct paintbox_data *pb)
 /* Note this this a debug inferface and it should only be used when the DMA and
  * MMU blocks do not have active transfers.
  */
-int paintbox_mmu_iommu_detach(struct paintbox_data *pb)
+void paintbox_mmu_shutdown(struct paintbox_data *pb)
 {
 	/* Teardown the DMA ops.  This will detach the IPU device from the
 	 * Paintbox IOMMU.
@@ -588,9 +624,7 @@ int paintbox_mmu_iommu_detach(struct paintbox_data *pb)
 	/* Set the DMA ops for the IPU device back to the default, swiotlb */
 	arch_setup_dma_ops(&pb->pdev->dev, 0, 0, NULL, false /* coherent */);
 
-	pb->mmu.enabled = false;
-
-	return 0;
+	pb->mmu.iommu_enabled = false;
 }
 #endif
 
@@ -599,7 +633,7 @@ int paintbox_mmu_iommu_detach(struct paintbox_data *pb)
 static int paintbox_mmu_enable_show(struct seq_file *s, void *p)
 {
 	struct paintbox_data *pb = s->private;
-	seq_printf(s, "%d\n", pb->mmu.enabled);
+	seq_printf(s, "%d\n", pb->mmu.iommu_enabled);
 	return 0;
 }
 
@@ -617,14 +651,14 @@ static ssize_t paintbox_mmu_enable_write(struct file *file,
 
 	ret = kstrtoint_from_user(user_buf, count, 0, &val);
 	if (ret == 0) {
-		if (!pb->mmu.enabled && val == 1) {
-			ret = paintbox_mmu_iommu_attach(pb);
+		if (!pb->mmu.iommu_enabled && val == 1) {
+			ret = paintbox_mmu_start(pb);
 			return ret < 0 ? ret : count;
 		}
 
-		if (pb->mmu.enabled && val == 0) {
-			ret = paintbox_mmu_iommu_detach(pb);
-			return ret < 0 ? ret : count;
+		if (pb->mmu.iommu_enabled && val == 0) {
+			paintbox_mmu_shutdown(pb);
+			return count;
 		}
 	}
 
@@ -670,38 +704,57 @@ int paintbox_mmu_debug_init(struct paintbox_data *pb)
 
 int paintbox_mmu_init(struct paintbox_data *pb)
 {
-#ifdef CONFIG_PAINTBOX_IOMMU
-	int ret;
-#endif
-
-	writel(MMU_IMR_PREFETCH_MEMRD_ERR_MASK |
-			MMU_IMR_TWE_ACCESS_VIO_MASK |
-			MMU_IMR_TWE_MEMRD_ERR_MASK |
-			MMU_IMR_FLUSH_MEMRD_ERR_MASK |
-			MMU_IMR_TWE_INVALID_TABLE_MASK |
-			MMU_IMR_FLUSH_FULL_ERR_MASK |
-			MMU_IMR_FLUSH_INVALID_TABLE_MASK,
-			pb->io.axi_base + MMU_IMR);
-
-	paintbox_enable_mmu_interrupt(pb);
+	int ret = 0;
 
 #ifdef CONFIG_PAINTBOX_DEBUG
 	paintbox_mmu_debug_init(pb);
 #endif
 
 #ifdef CONFIG_PAINTBOX_IOMMU
+	mutex_init(&pb->mmu.lock);
+
 	ret = paintbox_mmu_iommu_init(pb);
 	if (ret < 0)
 		return ret;
 
 #ifdef CONFIG_PAINTBOX_IOMMU_ENABLED
-	ret = paintbox_mmu_iommu_attach(pb);
-	if (ret < 0)
-		return ret;
+	ret = paintbox_mmu_start(pb);
 #endif
 #endif
 
-	return 0;
+	return ret;
+}
+
+#ifdef CONFIG_PAINTBOX_IOMMU
+/* The caller to this function must hold pb->lock */
+void paintbox_mmu_post_ipu_reset(struct paintbox_data *pb)
+{
+	mutex_lock(&pb->mmu.lock);
+
+	if (pb->mmu.hw_enabled)
+		paintbox_mmu_enable_locked(pb, pb->mmu.table_base_paddr);
+
+	mutex_unlock(&pb->mmu.lock);
+}
+#endif
+
+/* All sessions must be released before remove can be called. */
+void paintbox_mmu_remove(struct paintbox_data *pb)
+{
+#ifdef CONFIG_PAINTBOX_IOMMU
+	paintbox_mmu_shutdown(pb);
+#endif
+
+#ifdef CONFIG_PAINTBOX_DEBUG
+	debugfs_remove(pb->mmu.enable_dentry);
+	paintbox_debug_free_reg_entries(&pb->mmu.debug);
+	paintbox_debug_free_entry(&pb->mmu.debug);
+#endif
+
+#ifdef CONFIG_PAINTBOX_IOMMU
+	device_unregister(&pb->mmu.iommu_dev);
+	mutex_destroy(&pb->mmu.lock);
+#endif
 }
 
 /* The Linux IOMMU is designed around an IOMMU providing translation services to

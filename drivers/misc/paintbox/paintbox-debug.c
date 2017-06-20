@@ -27,6 +27,7 @@
 #include "paintbox-io.h"
 #include "paintbox-lbp-debug.h"
 #include "paintbox-mipi-debug.h"
+#include "paintbox-power.h"
 #include "paintbox-stp-debug.h"
 #include "paintbox-regs.h"
 
@@ -97,6 +98,7 @@ int dump_ipu_register(struct paintbox_data *pb, void __iomem *group_base,
 
 /* TODO(ahampson):  Remove the 32bit version and rename this one
  * dump_ipu_register() when all the register groups have been converted.
+ * b/62373740
  */
 int dump_ipu_register64(struct paintbox_data *pb, void __iomem *group_base,
 		uint32_t reg_offset, const char *reg_name, char *buf,
@@ -122,7 +124,7 @@ int dump_ipu_register_with_value(struct paintbox_data *pb,
 
 /* TODO(ahampson):  Remove the 32bit version and rename this one
  * dump_ipu_register_with_value() when all the register groups have been
- * converted.
+ * converted.  b/62373740
  */
 int dump_ipu_register_with_value64(struct paintbox_data *pb,
 		void __iomem *group_base, uint32_t reg_offset,
@@ -495,7 +497,9 @@ static const char *ioctl_names[PB_NUM_IOCTLS] = {
 	PB_IOCTL_NAME_ENTRY(PB_FLUSH_ALL_INTERRUPTS)
 };
 
-/* TODO(ahampson, showarth):  refactor this to use a common helper function. */
+/* TODO(ahampson, showarth):  refactor this to use a common helper function.
+ * b/62373731
+ */
 void paintbox_debug_log_cache_stats(struct paintbox_data *pb, ktime_t start,
 		ktime_t end)
 {
@@ -844,7 +848,13 @@ static int paintbox_reg_dump_show(struct seq_file *s, void *unused)
 
 	mutex_lock(&pb->lock);
 
-	/* TODO(showarth):  Add V1 support for AON registers */
+	ret = paintbox_pm_dump_registers(&pb->power.debug, buf + written,
+			len - written);
+	if (ret < 0)
+		goto err_exit;
+
+	written += ret;
+
 	ret = paintbox_dump_io_apb_registers(&pb->io.apb_debug, buf + written,
 			len - written);
 	if (ret < 0)

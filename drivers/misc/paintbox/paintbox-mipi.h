@@ -136,8 +136,6 @@ irqreturn_t paintbox_mipi_input_error_interrupt(struct paintbox_data *pb,
 irqreturn_t paintbox_mipi_output_interrupt(struct paintbox_data *pb,
 		uint32_t stream_mask, ktime_t timestamp);
 
-int paintbox_mipi_init(struct paintbox_data *pb);
-
 #ifdef CONFIG_PAINTBOX_TEST_SUPPORT
 int mipi_test_stream_reset_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg,
@@ -183,5 +181,17 @@ static inline void paintbox_mipi_select_stream(struct paintbox_data *pb,
 		paintbox_mipi_select_output_stream(pb, stream->stream_id);
 
 }
+
+int paintbox_mipi_init(struct paintbox_data *pb);
+
+/* The caller to this function must hold pb->lock */
+void paintbox_mipi_post_ipu_reset(struct paintbox_data *pb);
+
+/* The caller to this function must hold pb->lock */
+void paintbox_mipi_release(struct paintbox_data *pb,
+		struct paintbox_session *session);
+
+/* All sessions must be released before remove can be called. */
+void paintbox_mipi_remove(struct paintbox_data *pb);
 
 #endif  /* __PAINTBOX_MIPI_H__ */
