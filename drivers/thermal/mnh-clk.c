@@ -44,8 +44,11 @@
 #define MR_READ_SBIT 23
 #define LP_CMD_SBIT 5
 
+#define INIT_REFRESH_RATE 0x06
+
 /* consider moving to struct */
-u32 mnh_ddr_refresh_msec = 250;
+u8 previous_refresh_rate;
+u32 mnh_ddr_refresh_msec = 100;
 struct delayed_work mnh_ddr_adjust_refresh_work;
 
 #define MNH_CPU_IN(reg) \
@@ -945,6 +948,24 @@ int mnh_ddr_read_mode_reg(u8 modereg, u8 *val0, u8 *val1)
 	return ret;
 }
 
+int mnh_ddr_adjust_refresh_suspend(void)
+{
+	int ret = cancel_delayed_work(&mnh_ddr_adjust_refresh_work);
+	/*
+	AP will re-init (resume) ddr with hottest settings
+	and we will adjust appropriately on resume,
+	just like cold-boot case.
+	*/
+	previous_refresh_rate = INIT_REFRESH_RATE;
+	return ret;
+}
+
+int mnh_ddr_adjust_refresh_resume(void)
+{
+	return schedule_delayed_work(&mnh_ddr_adjust_refresh_work,
+			mnh_ddr_refresh_msec);
+}
+
 static u16 mnh_ddr_update_refresh(u8 old_rate, u16 old_interval,
 	u8 new_rate)
 {
@@ -986,7 +1007,6 @@ static u16 mnh_ddr_update_refresh(u8 old_rate, u16 old_interval,
 
 static void mnh_ddr_adjust_refresh(u8 refresh_rate)
 {
-	static u8 previous_refresh_rate = 0x03;
 	u16 tref[LPDDR_FREQ_NUM_FSPS];
 	int fsp;
 
@@ -994,6 +1014,9 @@ static void mnh_ddr_adjust_refresh(u8 refresh_rate)
 	refresh_rate &= 0x07;
 
 	if (refresh_rate != previous_refresh_rate) {
+		pr_info("%s 0x%02x -> 0x%02x\n",
+			__func__, previous_refresh_rate,
+			refresh_rate);
 		tref[0]		= MNH_DDR_CTL_INf(56,  TREF_F0);
 		tref[1]		= MNH_DDR_CTL_INf(57,  TREF_F1);
 		tref[2]		= MNH_DDR_CTL_INf(58,  TREF_F2);
@@ -1050,16 +1073,13 @@ static void mnh_ddr_adjust_refresh_worker(struct work_struct *work)
 		got_tuf = 1;
 	}
 
-	pr_debug("%s refresh rate: 0x%02x tuf: %d\n",
-			__func__, refresh_rate, got_tuf);
-	if (got_tuf)
-		mnh_ddr_adjust_refresh(refresh_rate);
+	mnh_ddr_adjust_refresh(refresh_rate);
 
 	if (!ret) {
 		/* AP can easily read this from here */
 		combined_val = (u32)val0 | (u32)val1 << 16;
 		HW_OUTx(mnh_dev->regs, SCU,
-			GPS, 1, combined_val);
+			GPS, 3, combined_val);
 	}
 refresh_again:
 	schedule_delayed_work(&mnh_ddr_adjust_refresh_work,
@@ -1776,7 +1796,7 @@ int mnh_clk_init(struct platform_device *pdev, void __iomem *baseadress)
 	spin_lock_init(&mnh_dev->reset_lock);
 
 	init_sysfs(mnh_dev->dev, kernel_kobj);
-
+	previous_refresh_rate = INIT_REFRESH_RATE;
 	INIT_DELAYED_WORK(&mnh_ddr_adjust_refresh_work,
 		mnh_ddr_adjust_refresh_worker);
 	schedule_delayed_work(&mnh_ddr_adjust_refresh_work,

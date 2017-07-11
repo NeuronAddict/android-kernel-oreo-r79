@@ -78,6 +78,21 @@ static int mnh_freq_cooling_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static int mnh_freq_cooling_suspend(struct platform_device *pdev)
+{
+	int ret = mnh_ddr_adjust_refresh_suspend();
+	pr_err("%s %d", __func__, ret);
+
+	return 0;
+}
+
+static int mnh_freq_cooling_resume(struct platform_device *pdev)
+{
+	int ret = mnh_ddr_adjust_refresh_resume();
+	pr_err("%s %d", __func__, ret);
+	return 0;
+}
+
 /*
  * of_device_id structure
  */
@@ -94,6 +109,8 @@ MODULE_DEVICE_TABLE(of, mnh_freq_cooling_of_match);
 static struct platform_driver mnh_freq_cooling_driver = {
 	.probe = mnh_freq_cooling_probe,
 	.remove = mnh_freq_cooling_remove,
+	.suspend = mnh_freq_cooling_suspend,
+	.resume = mnh_freq_cooling_resume,
 	.driver = {
 		.name = "intel, mnh_freq_cooling",
 			.owner = THIS_MODULE,
