@@ -48,11 +48,13 @@ firmware_config {
 		pin = <23>;
 		cfg = <0x0>;
 	};
+	*/
 	gpio@9 {
 		compatible = "intel,mnh_cfg_pin";
 		pin = <24>;
-		cfg = <0x0>;
+		cfg = <0x18>;
 	};
+	/*
 	gpio@10 {
 		compatible = "intel,mnh_cfg_pin";
 		pin = <25>;
