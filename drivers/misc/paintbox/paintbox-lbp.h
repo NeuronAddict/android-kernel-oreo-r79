@@ -35,6 +35,10 @@ int write_lbp_memory_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
 int read_lbp_memory_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
+#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
+int lbp_test_broadcast_write_memory_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg);
+#endif
 
 /* The caller to these functions must hold pb->lock */
 int validate_lbp(struct paintbox_data *pb, struct paintbox_session *session,

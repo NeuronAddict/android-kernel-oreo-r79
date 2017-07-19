@@ -54,37 +54,22 @@ bool ion_buffer_cached(struct ion_buffer *buffer)
 
 static inline struct page *ion_buffer_page(struct page *page)
 {
-	return (struct page *)((unsigned long)page & ~(3UL));
-}
-
-static inline bool ion_buffer_page_is_write_dirty(struct page *page)
-{
-	return !!((unsigned long)page & 1UL);
+	return (struct page *)((unsigned long)page & ~(1UL));
 }
 
 static inline bool ion_buffer_page_is_dirty(struct page *page)
 {
-	return !!((unsigned long)page & 3UL);
+	return !!((unsigned long)page & 1UL);
 }
 
-static inline void ion_buffer_page_write_dirty(struct page **page)
+static inline void ion_buffer_page_dirty(struct page **page)
 {
 	*page = (struct page *)((unsigned long)(*page) | 1UL);
 }
 
-static inline void ion_buffer_page_read_dirty(struct page **page)
-{
-	*page = (struct page *)((unsigned long)(*page) | 2UL);
-}
-
-static inline void ion_buffer_page_write_clean(struct page **page)
-{
-	*page = (struct page *)((unsigned long)(*page) & ~(1UL));
-}
-
 static inline void ion_buffer_page_clean(struct page **page)
 {
-	*page = (struct page *)((unsigned long)(*page) & ~(3UL));
+	*page = (struct page *)((unsigned long)(*page) & ~(1UL));
 }
 
 /* this function should only be called while dev->lock is held */
@@ -853,38 +838,6 @@ struct ion_vma_list {
 	struct vm_area_struct *vma;
 };
 
-static void ion_buffer_sync_pages_for_dma_to_device(struct ion_buffer *buffer,
-		struct device *dev, int pages, enum dma_data_direction dir)
-{
-	int i;
-
-	for (i = 0; i < pages; i++) {
-		struct page *page = buffer->pages[i];
-
-		if (ion_buffer_page_is_write_dirty(page)) {
-			ion_pages_sync_for_device(dev, ion_buffer_page(page),
-					PAGE_SIZE, dir);
-			ion_buffer_page_write_clean(buffer->pages + i);
-		}
-	}
-}
-
-static void ion_buffer_sync_pages_for_dma_from_device(struct ion_buffer *buffer,
-		struct device *dev, int pages, enum dma_data_direction dir)
-{
-	int i;
-
-	for (i = 0; i < pages; i++) {
-		struct page *page = buffer->pages[i];
-
-		if (ion_buffer_page_is_dirty(page)) {
-			ion_pages_sync_for_device(dev, ion_buffer_page(page),
-					PAGE_SIZE, dir);
-			ion_buffer_page_clean(buffer->pages + i);
-		}
-	}
-}
-
 static void ion_buffer_sync_for_device(struct ion_buffer *buffer,
 				       struct device *dev,
 				       enum dma_data_direction dir)
@@ -900,38 +853,25 @@ static void ion_buffer_sync_for_device(struct ion_buffer *buffer,
 		return;
 
 	mutex_lock(&buffer->lock);
-	if (dir == DMA_TO_DEVICE) {
-		/* If the DMA direction is to the device and the buffer has been
-		 * written into by the CPU then flush the dirty pages from the
-		 * CPU cache.
-		 */
-		if (buffer->write_dirty) {
-			buffer->write_dirty = false;
+	if (buffer->dirty) {
+		buffer->dirty = false;
 
-			ion_buffer_sync_pages_for_dma_to_device(buffer, dev,
-					pages, dir);
+		for (i = 0; i < pages; i++) {
+			struct page *page = buffer->pages[i];
+
+			if (ion_buffer_page_is_dirty(page)) {
+				ion_pages_sync_for_device(dev,
+						ion_buffer_page(page),
+						PAGE_SIZE, dir);
+				ion_buffer_page_clean(buffer->pages + i);
+			}
 		}
-	} else if (dir == DMA_FROM_DEVICE) {
-		/* If the DMA direction is from the device and the buffer has
-		 * been written into or read by the CPU then invaldiate the
-		 * dirty pages in the CPU cache.
-		 */
-		if (buffer->read_dirty || buffer->write_dirty) {
-			buffer->write_dirty = false;
-			buffer->read_dirty = false;
+	}
+	list_for_each_entry(vma_list, &buffer->vmas, list) {
+		struct vm_area_struct *vma = vma_list->vma;
 
-			ion_buffer_sync_pages_for_dma_from_device(buffer, dev,
-					pages, dir);
-		}
-
-		/* Only zap user space mappings if the DMA is from the device.
-		 */
-		list_for_each_entry(vma_list, &buffer->vmas, list) {
-			struct vm_area_struct *vma = vma_list->vma;
-
-			zap_page_range(vma, vma->vm_start, vma->vm_end -
-					vma->vm_start, NULL);
-		}
+		zap_page_range(vma, vma->vm_start, vma->vm_end - vma->vm_start,
+			       NULL);
 	}
 	mutex_unlock(&buffer->lock);
 }
@@ -943,13 +883,8 @@ static int ion_vm_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	int ret;
 
 	mutex_lock(&buffer->lock);
-	if (vmf->flags & FAULT_FLAG_WRITE) {
-		buffer->write_dirty = true;
-		ion_buffer_page_write_dirty(buffer->pages + vmf->pgoff);
-	} else {
-		buffer->read_dirty = true;
-		ion_buffer_page_read_dirty(buffer->pages + vmf->pgoff);
-	}
+	buffer->dirty = true;
+	ion_buffer_page_dirty(buffer->pages + vmf->pgoff);
 	BUG_ON(!buffer->pages || !buffer->pages[vmf->pgoff]);
 
 	pfn = page_to_pfn(ion_buffer_page(buffer->pages[vmf->pgoff]));

@@ -321,6 +321,12 @@ struct ipu_sram_write {
 	bool pad_to_align;
 };
 
+struct ipu_sram_write_broadcast {
+	const void __user *buf;
+	size_t len_bytes;
+	uint32_t sram_byte_addr;
+};
+
 struct ipu_sram_read {
 	void __user *buf;
 	size_t len_bytes;
@@ -697,5 +703,6 @@ struct mipi_interrupt_config {
 #define PB_TEST_DMA_CHANNEL_RESET     _IOW('t', 2, unsigned int)
 #define PB_TEST_MIPI_IN_RESET_STREAM  _IOW('t', 3, unsigned int)
 #define PB_TEST_MIPI_OUT_RESET_STREAM _IOW('t', 4, unsigned int)
+#define PB_TEST_LBP_BROADCAST_WRITE_MEMORY _IOW('t', 5, struct ipu_sram_write_broadcast)
 
 #endif /* __PAINTBOX_H__ */

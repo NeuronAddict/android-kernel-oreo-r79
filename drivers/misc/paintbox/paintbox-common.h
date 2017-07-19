@@ -47,6 +47,19 @@
 
 struct paintbox_data;
 
+enum non_ioctl_stats_type {
+	PB_STATS_DMA_ENQ,
+	PB_STATS_DMA_SETUP,
+	PB_STATS_DMA_MALLOC,
+	PB_STATS_CACHE_OP,
+	PB_STATS_WAIT_PRE,
+	PB_STATS_WAIT_POST,
+	PB_STATS_OPEN,
+	PB_STATS_CLOSE,
+	PB_STATS_IO_INTERRUPT_HANDLE,
+	PB_STATS_NUM_NON_IOCTL_STATS_TYPE
+};
+
 /* Data structure for all information related to a paintbox session.  A session
  * will be allocated on open() and deleted on release().
  */
@@ -77,6 +90,10 @@ struct paintbox_session {
 	/* Number of STPs used by this session */
 	int stp_count;
 
+#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
+	/* Number of LBPs used by this session */
+	int lbp_count;
+#endif
 };
 
 struct paintbox_debug_reg_entry;
@@ -195,14 +212,6 @@ struct paintbox_io {
 		uint64_t ipu_imr;
 		uint32_t dma_chan_en;
 	} regs;
-
-	struct {
-		struct dentry *time_stats_enable_dentry;
-		bool time_stats_enabled;
-		ktime_t irq_min_time;
-		ktime_t irq_max_time;
-		ktime_t irq_total_time;
-	} stats;
 };
 
 struct paintbox_mipi_interface {
@@ -648,15 +657,10 @@ struct paintbox_data {
 	struct dentry *regs_dentry;
 	struct {
 		ktime_t probe_time;
-		struct paintbox_ioctl_stat dma_enq;
-		struct paintbox_ioctl_stat dma_setup;
-		struct paintbox_ioctl_stat dma_malloc;
-		struct paintbox_ioctl_stat cache_op;
-		struct paintbox_ioctl_stat wait_pre;
-		struct paintbox_ioctl_stat wait_post;
-		struct paintbox_ioctl_stat close;
+		struct paintbox_ioctl_stat *non_ioctl_entries;
 		size_t dma_malloc_max_transfer_len;
 		struct dentry *ioctl_time_stats_dentry;
+		struct spinlock stats_lock;
 		struct mutex ioctl_lock;
 		struct paintbox_ioctl_stat *ioctl_entries;
 		bool ioctl_time_enabled;

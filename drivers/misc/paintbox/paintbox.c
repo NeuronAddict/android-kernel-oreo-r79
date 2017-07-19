@@ -59,7 +59,15 @@ static int paintbox_open(struct inode *ip, struct file *fp)
 	struct paintbox_data *pb;
 	struct miscdevice *m = fp->private_data;
 
+#ifdef CONFIG_PAINTBOX_DEBUG
+	ktime_t start_time;
+#endif
+
 	pb = container_of(m, struct paintbox_data, misc_device);
+#ifdef CONFIG_PAINTBOX_DEBUG
+	if (pb->stats.ioctl_time_enabled)
+		start_time = ktime_get_boottime();
+#endif
 
 	session = kzalloc(sizeof(struct paintbox_session), GFP_KERNEL);
 	if (!session)
@@ -84,6 +92,11 @@ static int paintbox_open(struct inode *ip, struct file *fp)
 
 	mutex_unlock(&pb->lock);
 
+#ifdef CONFIG_PAINTBOX_DEBUG
+	if (pb->stats.ioctl_time_enabled)
+		paintbox_debug_log_non_ioctl_stats(pb, PB_STATS_OPEN, start_time,
+				ktime_get_boottime(), true /*is_thread*/, 0);
+#endif
 	return 0;
 }
 
@@ -135,8 +148,8 @@ static int paintbox_release(struct inode *ip, struct file *fp)
 
 #ifdef CONFIG_PAINTBOX_DEBUG
 	if (pb->stats.ioctl_time_enabled)
-		paintbox_debug_log_close_stats(pb, start_time,
-				ktime_get_boottime());
+		paintbox_debug_log_non_ioctl_stats(pb, PB_STATS_CLOSE, start_time,
+				ktime_get_boottime(), true /*is_thread*/, 0);
 #endif
 
 	return 0;
@@ -439,11 +452,15 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 	case PB_TEST_MIPI_OUT_RESET_STREAM:
 		ret = mipi_test_stream_reset_ioctl(pb, session, arg, false);
 		break;
+	case PB_TEST_LBP_BROADCAST_WRITE_MEMORY:
+		ret = lbp_test_broadcast_write_memory_ioctl(pb, session, arg);
+		break;
 #else
 	case PB_TEST_DMA_RESET:
 	case PB_TEST_DMA_CHANNEL_RESET:
 	case PB_TEST_MIPI_IN_RESET_STREAM:
 	case PB_TEST_MIPI_OUT_RESET_STREAM:
+	case PB_TEST_LBP_BROADCAST_WRITE_MEMORY:
 		ret = -EINVAL;
 		break;
 #endif

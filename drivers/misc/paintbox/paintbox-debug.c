@@ -497,129 +497,42 @@ static const char *ioctl_names[PB_NUM_IOCTLS] = {
 	PB_IOCTL_NAME_ENTRY(PB_FLUSH_ALL_INTERRUPTS)
 };
 
-/* TODO(ahampson, showarth):  refactor this to use a common helper function.
- * b/62373731
- */
-void paintbox_debug_log_cache_stats(struct paintbox_data *pb, ktime_t start,
-		ktime_t end)
+void paintbox_debug_log_non_ioctl_stats(struct paintbox_data *pb,
+		enum non_ioctl_stats_type stats_type, ktime_t start,
+		ktime_t end, bool is_thread, size_t transfer_len)
 {
-	ktime_t duration = ktime_sub(end, start);
+	struct paintbox_ioctl_stat *entry;
+	ktime_t duration;
+	unsigned long irqflags;
 
-	if (ktime_after(duration, pb->stats.cache_op.max_time))
-		pb->stats.cache_op.max_time = duration;
+	if (is_thread)
+		spin_lock_irqsave(&pb->stats.stats_lock, irqflags);
+	else
+		spin_lock(&pb->stats.stats_lock);
 
-	if (ktime_before(duration, pb->stats.cache_op.min_time))
-		pb->stats.cache_op.min_time = duration;
+	duration = ktime_sub(end, start);
 
-	pb->stats.cache_op.total_time = ktime_add(pb->stats.cache_op.total_time,
-			duration);
+	entry = &pb->stats.non_ioctl_entries[stats_type];
 
-	pb->stats.cache_op.count++;
-}
+	if (ktime_after(duration, entry->max_time))
+		entry->max_time = duration;
 
-void paintbox_debug_log_dma_enq_stats(struct paintbox_data *pb, ktime_t start,
-		ktime_t end)
-{
-	ktime_t duration = ktime_sub(end, start);
+	if (ktime_before(duration, entry->min_time))
+		entry->min_time = duration;
 
-	if (ktime_after(duration, pb->stats.dma_enq.max_time))
-		pb->stats.dma_enq.max_time = duration;
+	entry->total_time = ktime_add(entry->total_time, duration);
 
-	if (ktime_before(duration, pb->stats.dma_enq.min_time))
-		pb->stats.dma_enq.min_time = duration;
+	if (stats_type == PB_STATS_DMA_MALLOC) {
+		if (transfer_len > pb->stats.dma_malloc_max_transfer_len)
+			pb->stats.dma_malloc_max_transfer_len = transfer_len;
+	}
 
-	pb->stats.dma_enq.total_time = ktime_add(pb->stats.dma_enq.total_time,
-			duration);
+	entry->count++;
 
-	pb->stats.dma_enq.count++;
-}
-
-void paintbox_debug_log_dma_setup_stats(struct paintbox_data *pb, ktime_t start,
-		ktime_t end)
-{
-	ktime_t duration = ktime_sub(end, start);
-
-	if (ktime_after(duration, pb->stats.dma_setup.max_time))
-		pb->stats.dma_setup.max_time = duration;
-
-	if (ktime_before(duration, pb->stats.dma_setup.min_time))
-		pb->stats.dma_setup.min_time = duration;
-
-	pb->stats.dma_setup.total_time =
-			ktime_add(pb->stats.dma_setup.total_time, duration);
-
-	pb->stats.dma_setup.count++;
-}
-
-void paintbox_debug_log_dma_malloc_stats(struct paintbox_data *pb, ktime_t start,
-		ktime_t end, size_t transfer_len)
-{
-	ktime_t duration = ktime_sub(end, start);
-
-	if (ktime_after(duration, pb->stats.dma_malloc.max_time))
-		pb->stats.dma_malloc.max_time = duration;
-
-	if (ktime_before(duration, pb->stats.dma_malloc.min_time))
-		pb->stats.dma_malloc.min_time = duration;
-
-	pb->stats.dma_malloc.total_time =
-			ktime_add(pb->stats.dma_malloc.total_time, duration);
-
-	if (transfer_len > pb->stats.dma_malloc_max_transfer_len)
-		pb->stats.dma_malloc_max_transfer_len = transfer_len;
-
-	pb->stats.dma_malloc.count++;
-}
-
-void paintbox_debug_log_wait_for_interrupt_pre_stats(struct paintbox_data *pb,
-		ktime_t start, ktime_t end)
-{
-	ktime_t duration = ktime_sub(end, start);
-
-	if (ktime_after(duration, pb->stats.wait_pre.max_time))
-		pb->stats.wait_pre.max_time = duration;
-
-	if (ktime_before(duration, pb->stats.wait_pre.min_time))
-		pb->stats.wait_pre.min_time = duration;
-
-	pb->stats.wait_pre.total_time =
-			ktime_add(pb->stats.wait_pre.total_time, duration);
-
-	pb->stats.wait_pre.count++;
-}
-
-void paintbox_debug_log_wait_for_interrupt_post_stats(struct paintbox_data *pb,
-		ktime_t start, ktime_t end)
-{
-	ktime_t duration = ktime_sub(end, start);
-
-	if (ktime_after(duration, pb->stats.wait_post.max_time))
-		pb->stats.wait_post.max_time = duration;
-
-	if (ktime_before(duration, pb->stats.wait_post.min_time))
-		pb->stats.wait_post.min_time = duration;
-
-	pb->stats.wait_post.total_time =
-			ktime_add(pb->stats.wait_post.total_time, duration);
-
-	pb->stats.wait_post.count++;
-}
-
-void paintbox_debug_log_close_stats(struct paintbox_data *pb, ktime_t start,
-		ktime_t end)
-{
-	ktime_t duration = ktime_sub(end, start);
-
-	if (ktime_after(duration, pb->stats.close.max_time))
-		pb->stats.close.max_time = duration;
-
-	if (ktime_before(duration, pb->stats.close.min_time))
-		pb->stats.close.min_time = duration;
-
-	pb->stats.close.total_time = ktime_add(pb->stats.close.total_time,
-			duration);
-
-	pb->stats.close.count++;
+	if (is_thread)
+		spin_unlock_irqrestore(&pb->stats.stats_lock, irqflags);
+	else
+		spin_unlock(&pb->stats.stats_lock);
 }
 
 void paintbox_debug_log_ioctl_stats(struct paintbox_data *pb, unsigned int cmd,
@@ -654,54 +567,80 @@ static int paintbox_ioctl_time_stats_show(struct seq_file *s, void *p)
 {
 	struct paintbox_data *pb = s->private;
 	unsigned int i;
+	struct paintbox_ioctl_stat *entry;
 
 	seq_printf(s, "probe %lldus\n", ktime_to_us(pb->stats.probe_time));
 
-	if (pb->stats.close.count)
+	entry = &pb->stats.non_ioctl_entries[PB_STATS_OPEN];
+	if (entry->count)
+		seq_printf(s, "open min %lldns max %lldns avg %lldns tot %lldns cnt %u\n",
+				ktime_to_ns(entry->min_time),
+				ktime_to_ns(entry->max_time),
+				ktime_to_ns(entry->total_time) /
+				entry->count,
+				ktime_to_ns(entry->total_time),
+				entry->count);
+
+	entry = &pb->stats.non_ioctl_entries[PB_STATS_CLOSE];
+	if (entry->count)
 		seq_printf(s, "close min %lldns max %lldns avg %lldns tot %lldns cnt %u\n",
-				ktime_to_ns(pb->stats.close.min_time),
-				ktime_to_ns(pb->stats.close.max_time),
-				ktime_to_ns(pb->stats.close.total_time) /
-				pb->stats.close.count,
-				ktime_to_ns(pb->stats.close.total_time),
-				pb->stats.close.count);
+				ktime_to_ns(entry->min_time),
+				ktime_to_ns(entry->max_time),
+				ktime_to_ns(entry->total_time) /
+				entry->count,
+				ktime_to_ns(entry->total_time),
+				entry->count);
 
-	if (pb->stats.dma_setup.count)
+	entry = &pb->stats.non_ioctl_entries[PB_STATS_IO_INTERRUPT_HANDLE];
+	if (entry->count)
+		seq_printf(s, "interrupt min %lldns max %lldns avg %lldns tot %lldns cnt %u\n",
+				ktime_to_ns(entry->min_time),
+				ktime_to_ns(entry->max_time),
+				ktime_to_ns(entry->total_time) /
+				entry->count,
+				ktime_to_ns(entry->total_time),
+				entry->count);
+
+	entry = &pb->stats.non_ioctl_entries[PB_STATS_DMA_SETUP];
+	if (entry->count)
 		seq_printf(s, "setup total min %lldns max %lldns avg %lldns tot %lldns cnt %u\n",
-				ktime_to_ns(pb->stats.dma_setup.min_time),
-				ktime_to_ns(pb->stats.dma_setup.max_time),
-				ktime_to_ns(pb->stats.dma_setup.total_time) /
-				pb->stats.dma_setup.count,
-				ktime_to_ns(pb->stats.dma_setup.total_time),
-				pb->stats.dma_setup.count);
+				ktime_to_ns(entry->min_time),
+				ktime_to_ns(entry->max_time),
+				ktime_to_ns(entry->total_time) /
+				entry->count,
+				ktime_to_ns(entry->total_time),
+				entry->count);
 
-	if (pb->stats.cache_op.count)
+	entry = &pb->stats.non_ioctl_entries[PB_STATS_CACHE_OP];
+	if (entry->count)
 		seq_printf(s, "\tdma buf map (+cache op) min %lldns max %lldns avg %lldns tot %lldns cnt %u\n",
-				ktime_to_ns(pb->stats.cache_op.min_time),
-				ktime_to_ns(pb->stats.cache_op.max_time),
-				ktime_to_ns(pb->stats.cache_op.total_time) /
-				pb->stats.cache_op.count,
-				ktime_to_ns(pb->stats.cache_op.total_time),
-				pb->stats.cache_op.count);
+				ktime_to_ns(entry->min_time),
+				ktime_to_ns(entry->max_time),
+				ktime_to_ns(entry->total_time) /
+				entry->count,
+				ktime_to_ns(entry->total_time),
+				entry->count);
 
-	if (pb->stats.dma_malloc.count)
+	entry = &pb->stats.non_ioctl_entries[PB_STATS_DMA_MALLOC];
+	if (entry->count)
 		seq_printf(s, "\tuser space copy min %lldns max %lldns avg %lldns tot %lldns max len %zu cnt %u\n",
-				ktime_to_ns(pb->stats.dma_malloc.min_time),
-				ktime_to_ns(pb->stats.dma_malloc.max_time),
-				ktime_to_ns(pb->stats.dma_malloc.total_time) /
-				pb->stats.dma_malloc.count,
-				ktime_to_ns(pb->stats.dma_malloc.total_time),
+				ktime_to_ns(entry->min_time),
+				ktime_to_ns(entry->max_time),
+				ktime_to_ns(entry->total_time) /
+				entry->count,
+				ktime_to_ns(entry->total_time),
 				pb->stats.dma_malloc_max_transfer_len,
-				pb->stats.dma_malloc.count);
+				entry->count);
 
-	if (pb->stats.dma_enq.count)
+	entry = &pb->stats.non_ioctl_entries[PB_STATS_DMA_ENQ];
+	if (entry->count)
 		seq_printf(s, "transfer queue min %lldns max %lldns avg %lldns tot %lldns cnt %u\n",
-				ktime_to_ns(pb->stats.dma_enq.min_time),
-				ktime_to_ns(pb->stats.dma_enq.max_time),
-				ktime_to_ns(pb->stats.dma_enq.total_time) /
-				pb->stats.dma_enq.count,
-				ktime_to_ns(pb->stats.dma_enq.total_time),
-				pb->stats.dma_enq.count);
+				ktime_to_ns(entry->min_time),
+				ktime_to_ns(entry->max_time),
+				ktime_to_ns(entry->total_time) /
+				entry->count,
+				ktime_to_ns(entry->total_time),
+				entry->count);
 
 	mutex_lock(&pb->stats.ioctl_lock);
 
@@ -711,15 +650,13 @@ static int paintbox_ioctl_time_stats_show(struct seq_file *s, void *p)
 	}
 
 	for (i = 0; i < PB_NUM_IOCTLS; i++) {
-		struct paintbox_ioctl_stat *entry;
-
 		entry = &pb->stats.ioctl_entries[i];
 
 		if (entry->count == 0)
 			continue;
 
 		if (i == _IOC_NR(PB_WAIT_FOR_INTERRUPT)) {
-			entry = &pb->stats.wait_pre;
+			entry = &pb->stats.non_ioctl_entries[PB_STATS_WAIT_PRE];
 			seq_printf(s, "PB_WAIT_FOR_INTERRUPT(pre) min %lldns max %lldns avg %lldns tot %lldns cnt %u\n",
 					ktime_to_ns(entry->min_time),
 					ktime_to_ns(entry->max_time),
@@ -728,7 +665,7 @@ static int paintbox_ioctl_time_stats_show(struct seq_file *s, void *p)
 					ktime_to_ns(entry->total_time),
 					entry->count);
 
-			entry = &pb->stats.wait_post;
+			entry = &pb->stats.non_ioctl_entries[PB_STATS_WAIT_POST];
 
 			seq_printf(s, "PB_WAIT_FOR_INTERRUPT(post) min %lldns max %lldns avg %lldns tot %lldns cnt %u\n",
 					ktime_to_ns(entry->min_time),
@@ -761,14 +698,6 @@ static int paintbox_ioctl_time_stats_open(struct inode *inode,
 			inode->i_private);
 }
 
-static void paintbox_clear_ioctl_stat(struct paintbox_ioctl_stat *stat)
-{
-	stat->min_time = ktime_set(KTIME_SEC_MAX, 0);
-	stat->max_time = ktime_set(0, 0);
-	stat->total_time = ktime_set(0, 0);
-	stat->count = 0;
-}
-
 static ssize_t paintbox_ioctl_time_stats_write(struct file *file,
 		const char __user *user_buf, size_t count, loff_t *ppos)
 {
@@ -784,7 +713,10 @@ static ssize_t paintbox_ioctl_time_stats_write(struct file *file,
 		if (!pb->stats.ioctl_time_enabled && val == 1) {
 			unsigned int i;
 
-			WARN_ON(pb->stats.ioctl_entries);
+			if (WARN_ON(pb->stats.ioctl_entries)) {
+				mutex_unlock(&pb->stats.ioctl_lock);
+				return -EPERM;
+			}
 
 			pb->stats.ioctl_entries = kcalloc(PB_NUM_IOCTLS,
 					sizeof(struct paintbox_ioctl_stat),
@@ -794,13 +726,23 @@ static ssize_t paintbox_ioctl_time_stats_write(struct file *file,
 				return -ENOMEM;
 			}
 
-			paintbox_clear_ioctl_stat(&pb->stats.cache_op);
-			paintbox_clear_ioctl_stat(&pb->stats.dma_enq);
-			paintbox_clear_ioctl_stat(&pb->stats.dma_setup);
-			paintbox_clear_ioctl_stat(&pb->stats.dma_malloc);
-			paintbox_clear_ioctl_stat(&pb->stats.wait_pre);
-			paintbox_clear_ioctl_stat(&pb->stats.wait_post);
-			paintbox_clear_ioctl_stat(&pb->stats.close);
+			if (WARN_ON(pb->stats.non_ioctl_entries)) {
+				mutex_unlock(&pb->stats.ioctl_lock);
+				return -EPERM;
+			}
+
+			pb->stats.non_ioctl_entries =
+				kcalloc(PB_STATS_NUM_NON_IOCTL_STATS_TYPE,
+					sizeof(struct paintbox_ioctl_stat),
+					GFP_KERNEL);
+			if (!pb->stats.non_ioctl_entries) {
+				mutex_unlock(&pb->stats.ioctl_lock);
+				return -ENOMEM;
+			}
+
+			for (i = 0; i<  PB_STATS_NUM_NON_IOCTL_STATS_TYPE; i++)
+				pb->stats.non_ioctl_entries[i].min_time =
+						ktime_set(KTIME_SEC_MAX, 0);
 			pb->stats.dma_malloc_max_transfer_len = 0;
 
 			for (i = 0; i < PB_NUM_IOCTLS; i++)
@@ -809,10 +751,12 @@ static ssize_t paintbox_ioctl_time_stats_write(struct file *file,
 			pb->stats.ioctl_time_enabled = true;
 		} else if (pb->stats.ioctl_time_enabled && val == 0) {
 			pb->stats.ioctl_time_enabled = false;
-			if (!WARN_ON(pb->stats.ioctl_entries)) {
-				kfree(pb->stats.ioctl_entries);
-				pb->stats.ioctl_entries = NULL;
-			}
+
+			kfree(pb->stats.ioctl_entries);
+			pb->stats.ioctl_entries = NULL;
+
+			kfree(pb->stats.non_ioctl_entries);
+			pb->stats.ioctl_entries = NULL;
 		}
 
 		mutex_unlock(&pb->stats.ioctl_lock);
@@ -1001,7 +945,7 @@ void paintbox_debug_init(struct paintbox_data *pb)
 		return;
 	}
 
-	pb->stats.ioctl_time_stats_dentry = debugfs_create_file("ioctl_stats",
+	pb->stats.ioctl_time_stats_dentry = debugfs_create_file("driver_stats",
 			S_IRUSR | S_IRGRP | S_IWUSR, pb->debug_root, pb,
 			&ioctl_time_stats_fops);
 	if (IS_ERR(pb->stats.ioctl_time_stats_dentry)) {
@@ -1011,6 +955,7 @@ void paintbox_debug_init(struct paintbox_data *pb)
 	}
 
 	mutex_init(&pb->stats.ioctl_lock);
+	spin_lock_init(&pb->stats.stats_lock);
 }
 
 void paintbox_debug_remove(struct paintbox_data *pb)

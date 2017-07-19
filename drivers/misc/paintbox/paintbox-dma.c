@@ -1019,7 +1019,8 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 #ifdef CONFIG_PAINTBOX_DEBUG
 	if (pb->stats.ioctl_time_enabled) {
 		enq_start = ktime_get_boottime();
-		paintbox_debug_log_dma_setup_stats(pb, setup_start, enq_start);
+		paintbox_debug_log_non_ioctl_stats(pb, PB_STATS_DMA_SETUP, setup_start,
+				enq_start, true /*is_thread*/, 0);
 	}
 #endif
 
@@ -1042,10 +1043,9 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 
 #ifdef CONFIG_PAINTBOX_DEBUG
-	if (pb->stats.ioctl_time_enabled) {
-		paintbox_debug_log_dma_enq_stats(pb, enq_start,
-				ktime_get_boottime());
-	}
+	if (pb->stats.ioctl_time_enabled)
+		paintbox_debug_log_non_ioctl_stats(pb,  PB_STATS_DMA_ENQ, enq_start,
+				ktime_get_boottime(), true /*is_thread*/, 0);
 #endif
 
 	if (channel->stats.time_stats_enabled)

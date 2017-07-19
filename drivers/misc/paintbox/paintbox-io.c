@@ -112,74 +112,6 @@ err_exit:
 			ret);
 	return ret;
 }
-
-int paintbox_dump_io_apb_stats(struct paintbox_debug *debug, char *buf,
-		size_t len)
-{
-	struct paintbox_data *pb = debug->pb;
-	int written;
-
-	written = scnprintf(buf, len, "IPU interrupts: %u IRQ activations %u\n",
-			pb->io.ipu_interrupts, pb->io.irq_activations);
-
-	if (pb->io.stats.time_stats_enabled) {
-		written += scnprintf(buf + written, len - written,
-				"Interrupt Processing Time\n");
-		written += scnprintf(buf + written, len - written,
-				"\tshortest %lldns longest %lldns average %lldns total %lldns\n",
-				ktime_to_ns(pb->io.stats.irq_min_time),
-				ktime_to_ns(pb->io.stats.irq_max_time),
-				pb->io.ipu_interrupts != 0 ?
-				ktime_to_ns(pb->io.stats.irq_total_time) /
-				pb->io.ipu_interrupts : 0,
-				ktime_to_ns(pb->io.stats.irq_total_time));
-	}
-
-	return written;
-}
-
-static int paintbox_io_apb_time_stats_enable_show(struct seq_file *s, void *p)
-{
-	struct paintbox_data *pb = s->private;
-
-	seq_printf(s, "%u\n", pb->io.stats.time_stats_enabled);
-	return 0;
-}
-
-static int paintbox_io_apb_time_stats_enable_open(struct inode *inode,
-		struct file *file)
-{
-	return single_open(file, paintbox_io_apb_time_stats_enable_show,
-			inode->i_private);
-}
-
-static ssize_t paintbox_io_apb_time_stats_enable_write(struct file *file,
-		const char __user *user_buf, size_t count, loff_t *ppos)
-{
-	struct seq_file *s = (struct seq_file *)file->private_data;
-	struct paintbox_data *pb = s->private;
-	unsigned int val;
-	int ret;
-
-	ret = kstrtouint_from_user(user_buf, count, 0, &val);
-	if (ret == 0) {
-		pb->io.stats.time_stats_enabled = !!val;
-		return count;
-	}
-
-	dev_err(&pb->pdev->dev, "%s: invalid value, err = %d", __func__, ret);
-
-	return ret;
-}
-
-static const struct file_operations io_apb_time_stats_enable_fops = {
-	.open = paintbox_io_apb_time_stats_enable_open,
-	.write = paintbox_io_apb_time_stats_enable_write,
-	.read = seq_read,
-	.llseek = seq_lseek,
-	.release = single_release,
-	.owner = THIS_MODULE,
-};
 #endif
 
 static irqreturn_t paintbox_io_interrupt(int irq, void *arg)
@@ -187,6 +119,13 @@ static irqreturn_t paintbox_io_interrupt(int irq, void *arg)
 	struct paintbox_data *pb = (struct paintbox_data *)arg;
 	uint64_t status;
 	ktime_t timestamp;
+
+#ifdef CONFIG_PAINTBOX_DEBUG
+	ktime_t start_time;
+
+	if (pb->stats.ioctl_time_enabled)
+		start_time = ktime_get_boottime();
+#endif
 
 	pb->io.irq_activations++;
 
@@ -274,19 +213,11 @@ static irqreturn_t paintbox_io_interrupt(int irq, void *arg)
 	}
 #endif
 
-	if (pb->io.stats.time_stats_enabled) {
-		ktime_t duration = ktime_sub(ktime_get_boottime(), timestamp);
-
-		pb->io.stats.irq_total_time =
-				ktime_add(pb->io.stats.irq_total_time,
-				duration);
-
-		if (ktime_after(duration, pb->io.stats.irq_max_time))
-			pb->io.stats.irq_max_time = duration;
-
-		if (ktime_before(duration, pb->io.stats.irq_min_time))
-			pb->io.stats.irq_min_time = duration;
-	}
+#ifdef CONFIG_PAINTBOX_DEBUG
+	if (pb->stats.ioctl_time_enabled)
+		paintbox_debug_log_non_ioctl_stats(pb,  PB_STATS_IO_INTERRUPT_HANDLE,
+				start_time, ktime_get_boottime(), false /*is_thread*/, 0);
+#endif
 
 	return IRQ_HANDLED;
 }
@@ -469,7 +400,6 @@ void paintbox_io_apb_remove(struct paintbox_data *pb)
 #ifdef CONFIG_PAINTBOX_DEBUG
 	paintbox_debug_free_reg_entries(&pb->io.apb_debug);
 	paintbox_debug_free_entry(&pb->io.apb_debug);
-	debugfs_remove(pb->io.stats.time_stats_enable_dentry);
 #endif
 }
 
@@ -483,24 +413,10 @@ int paintbox_io_apb_init(struct paintbox_data *pb)
 	pb->io.regs.dma_chan_en = IPU_DMA_CHAN_EN_DEF;
 
 #ifdef CONFIG_PAINTBOX_DEBUG
-	paintbox_debug_create_entry(pb, &pb->io.apb_debug, pb->debug_root,
-			"apb", -1, paintbox_dump_io_apb_registers,
-			paintbox_dump_io_apb_stats, &pb->io);
-
 	paintbox_debug_create_reg_entries(pb, &pb->io.apb_debug,
 			io_apb_reg_names, IO_APB_NUM_REGS,
 			paintbox_io_apb_reg_entry_write,
 			paintbox_io_apb_reg_entry_read);
-
-	pb->io.stats.time_stats_enable_dentry = debugfs_create_file(
-			"time_stats_enable", S_IRUSR | S_IRGRP | S_IWUSR,
-			pb->io.apb_debug.debug_dir, pb,
-			&io_apb_time_stats_enable_fops);
-	if (IS_ERR(pb->io.stats.time_stats_enable_dentry)) {
-		dev_err(&pb->pdev->dev, "%s: err = %ld", __func__,
-				PTR_ERR(pb->io.stats.time_stats_enable_dentry));
-		return PTR_ERR(pb->io.stats.time_stats_enable_dentry);
-	}
 #endif
 
 	/* Update the number of available interrupts reported to the user space.
@@ -524,9 +440,6 @@ int paintbox_io_apb_init(struct paintbox_data *pb)
 		 */
 		pb->io.num_interrupts += pb->io_ipu.num_mipi_output_streams;
 	}
-
-	pb->io.stats.time_stats_enabled = true;
-	pb->io.stats.irq_min_time = ktime_set(KTIME_SEC_MAX, 0);
 
 	ret = devm_request_irq(&pb->pdev->dev, pb->io.irq,
 			paintbox_io_interrupt, IRQF_SHARED, pb->pdev->name, pb);
