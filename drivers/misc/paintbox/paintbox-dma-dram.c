@@ -57,8 +57,8 @@ static int ipu_copy_user_to_dma_buffer(struct paintbox_data *pb,
 
 #ifdef CONFIG_PAINTBOX_DEBUG
 	if (pb->stats.ioctl_time_enabled)
-		paintbox_debug_log_dma_malloc_stats(pb, start_time,
-				ktime_get_boottime(), (size_t)config->len_bytes);
+		paintbox_debug_log_non_ioctl_stats(pb, PB_STATS_DMA_MALLOC, start_time,
+				ktime_get_boottime(), true /*is_thread*/, (size_t)config->len_bytes);
 #endif
 
 	return 0;
@@ -121,8 +121,8 @@ static int ipu_import_dma_buf(struct paintbox_data *pb,
 		}
 
 		if (pb->stats.ioctl_time_enabled)
-			paintbox_debug_log_cache_stats(pb, start_time,
-					end_time);
+			paintbox_debug_log_non_ioctl_stats(pb, PB_STATS_CACHE_OP, start_time,
+					end_time, true /*is_thread*/, 0);
 	}
 #endif
 

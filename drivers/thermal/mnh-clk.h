@@ -155,4 +155,7 @@ int mnh_axi_clock_gating(int enabled);
  */
 void mnh_clk_clean(struct device *dev);
 
+int mnh_ddr_adjust_refresh_suspend(void);
+int mnh_ddr_adjust_refresh_resume(void);
+
 #endif /* __MNH_CLK */

@@ -244,6 +244,10 @@ void release_lbp(struct paintbox_data *pb, struct paintbox_session *session,
 
 	/* Remove the line buffer pool from the session. */
 	list_del(&lbp->session_entry);
+#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
+	if (WARN_ON(--session->lbp_count < 0))
+		session->lbp_count = 0;
+#endif
 	lbp->session = NULL;
 }
 
@@ -271,6 +275,9 @@ int allocate_lbp_ioctl(struct paintbox_data *pb,
 
 	lbp->session = session;
 	list_add_tail(&lbp->session_entry, &session->lbp_list);
+#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
+	session->lbp_count++;
+#endif
 
 #ifndef CONFIG_PAINTBOX_FPGA_SUPPORT
 	paintbox_pm_lbp_enable(pb, lbp);
@@ -810,6 +817,71 @@ int reset_lb_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 
 	return 0;
 }
+
+#ifdef CONFIG_PAINTBOX_TEST_SUPPORT
+static int validate_sram_transfer_for_broadcast(struct paintbox_data *pb,
+		uint32_t sram_byte_addr, size_t len_bytes)
+{
+	if (sram_byte_addr + len_bytes > pb->lbp.mem_size_bytes) {
+		dev_err(&pb->pdev->dev,
+				"%s: lbp memory transfer out of range: SRAM addr 0x%08x + %lu > %u bytes\n",
+				__func__, sram_byte_addr,
+				len_bytes, pb->lbp.mem_size_bytes);
+		return -ERANGE;
+	}
+
+	return 0;
+}
+
+int lbp_test_broadcast_write_memory_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg)
+{
+	struct ipu_sram_write_broadcast __user *user_req;
+	struct ipu_sram_write_broadcast req;
+	struct paintbox_sram_config sram_config;
+	int ret;
+
+	user_req = (struct ipu_sram_write_broadcast __user *)arg;
+	if (copy_from_user(&req, user_req, sizeof(req)))
+		return -EFAULT;
+
+	ret = validate_sram_transfer_for_broadcast(pb,
+			req.sram_byte_addr, req.len_bytes);
+	if (ret < 0)
+		return ret;
+
+	create_lbp_sram_config(&sram_config,
+			LBP_SEL_DEF & LBP_SEL_LBP_SEL_MASK, false);
+
+	/* Entering broadcast path for LBP write when:
+	 *	1) there is only 1 session in existence; or
+	 *	2) one of the session has all LBPs
+	 */
+	mutex_lock(&pb->lock);
+
+	if (pb->session_count != 1 && session->lbp_count != pb->lbp.num_lbps)
+	{
+		mutex_unlock(&pb->lock);
+		return -EBUSY;
+	}
+
+	ret = sram_write_user_buffer(pb, &sram_config,
+			req.sram_byte_addr, req.buf, req.len_bytes);
+	if (ret < 0) {
+		dev_err(&pb->pdev->dev,
+				"%s: write error addr: 0x%04x ram_ctrl 0x%016llx err = %d\n",
+				__func__, req.sram_byte_addr,
+				readq(pb->lbp.reg_base + LBP_RAM_CTRL),
+				ret);
+		mutex_unlock(&pb->lock);
+		return ret;
+	}
+
+	mutex_unlock(&pb->lock);
+
+	return 0;
+}
+#endif
 
 /* The caller to this function must hold pb->lock and must have selected a pool
  * via paintbox_lbp_select

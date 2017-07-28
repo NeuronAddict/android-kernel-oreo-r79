@@ -48,20 +48,10 @@ int dump_ipu_register_with_value64(struct paintbox_data *pb,
 #ifdef CONFIG_PAINTBOX_DEBUG
 void paintbox_debug_log_ioctl_stats(struct paintbox_data *pb, unsigned int cmd,
 		ktime_t start, ktime_t end);
-void paintbox_debug_log_cache_stats(struct paintbox_data *pb, ktime_t start,
-		ktime_t end);
-void paintbox_debug_log_dma_enq_stats(struct paintbox_data *pb, ktime_t start,
-		ktime_t end);
-void paintbox_debug_log_dma_setup_stats(struct paintbox_data *pb, ktime_t start,
-		ktime_t end);
-void paintbox_debug_log_dma_malloc_stats(struct paintbox_data *pb, ktime_t start,
-		ktime_t end, size_t transfer_len);
-void paintbox_debug_log_wait_for_interrupt_pre_stats(struct paintbox_data *pb,
-		ktime_t start, ktime_t end);
-void paintbox_debug_log_wait_for_interrupt_post_stats(struct paintbox_data *pb,
-		ktime_t start, ktime_t end);
-void paintbox_debug_log_close_stats(struct paintbox_data *pb, ktime_t start,
-		ktime_t end);
+void paintbox_debug_log_non_ioctl_stats(struct paintbox_data *pb,
+		enum non_ioctl_stats_type stats_type, ktime_t start,
+		ktime_t end, bool is_thread, size_t transfer_len);
+
 
 void paintbox_debug_create_entry(struct paintbox_data *pb,
 		struct paintbox_debug *debug, struct dentry *debug_root,
