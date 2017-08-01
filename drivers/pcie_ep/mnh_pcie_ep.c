@@ -52,6 +52,7 @@
 #include <soc/mnh/mnh-hwio-pcie-ep.h>
 #include <soc/mnh/mnh-hwio-pcie-ss.h>
 #include <soc/mnh/mnh-hwio-scu.h>
+#include <soc/mnh/mnh-trace.h>
 #include <linux/pagemap.h>
 #include <linux/dma-buf.h>
 #include <linux/jiffies.h>
@@ -130,6 +131,31 @@ static int pcie_config_write(uint64_t address, uint32_t data)
 }
 
 #endif
+
+spinlock_t trace_lock;
+static void *mnh_scu_base;
+
+/* Log to SCU scratch register */
+void mnh_trace(uint32_t value)
+{
+	uint32_t *reg;
+
+	spin_lock(&trace_lock);
+
+	if (!mnh_scu_base)
+		mnh_scu_base = ioremap_nocache(MNH_SCU_PHYS_BASE, MNH_SCU_SIZE);
+
+	if (!mnh_scu_base)
+		goto bail;
+
+	reg = (mnh_scu_base + MNH_SCU_TRACE_OFFSET);
+	writel(value, reg);
+
+bail:
+	spin_unlock(&trace_lock);
+}
+EXPORT_SYMBOL(mnh_trace);
+
 static int check_sram_init_done(void)
 {
 
@@ -1451,119 +1477,98 @@ void mnh_free_coherent(size_t size, void *cpu_addr, dma_addr_t dma_addr)
 EXPORT_SYMBOL(mnh_free_coherent);
 
 
-
 static int config_mem(struct platform_device *pdev)
 {
+	/* config mem */
 	pcie_ep_dev->config_mem =
 		platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!pcie_ep_dev->config_mem)
-		return -ENOMEM;
+		goto exit_err;
 	if (!request_mem_region(pcie_ep_dev->config_mem->start,
 		resource_size(pcie_ep_dev->config_mem),
 		pcie_ep_dev->name)) {
 		dev_err(&pdev->dev, "unable to request mem region\n");
-		return -ENOMEM;
+		goto exit_err;
 	}
 	pcie_ep_dev->conf_mem =
 		ioremap_nocache(pcie_ep_dev->config_mem->start,
 			resource_size(pcie_ep_dev->config_mem));
-	if (!pcie_ep_dev->conf_mem) {
-		release_mem_region(pcie_ep_dev->config_mem->start,
-				resource_size(pcie_ep_dev->config_mem));
-		return -ENOMEM;
-	}
+	if (!pcie_ep_dev->conf_mem)
+		goto release_conf_mem;
+
+	/* cluster mem */
 	pcie_ep_dev->cluster_mem =
 		platform_get_resource(pdev, IORESOURCE_MEM, 1);
-	if (!pcie_ep_dev->cluster_mem) {
-		iounmap(&pcie_ep_dev->conf_mem);
-		release_mem_region(pcie_ep_dev->config_mem->start,
-				resource_size(pcie_ep_dev->config_mem));
-		return -ENOMEM;
-	}
+	if (!pcie_ep_dev->cluster_mem)
+		goto unmap_conf_mem;
 	if (!request_mem_region(pcie_ep_dev->cluster_mem->start,
 		resource_size(pcie_ep_dev->cluster_mem), pcie_ep_dev->name)) {
 		dev_err(&pdev->dev, "unable to request mem region\n");
-		iounmap(&pcie_ep_dev->conf_mem);
-		release_mem_region(pcie_ep_dev->config_mem->start,
-				resource_size(pcie_ep_dev->config_mem));
-		return -ENOMEM;
+		goto unmap_conf_mem;
 	}
 	pcie_ep_dev->clust_mem =
 		ioremap_nocache(pcie_ep_dev->cluster_mem->start,
 			resource_size(pcie_ep_dev->cluster_mem));
 	if (!pcie_ep_dev->clust_mem) {
 		dev_err(&pdev->dev, "unable to request mem region\n");
-		iounmap(&pcie_ep_dev->conf_mem);
-		release_mem_region(pcie_ep_dev->config_mem->start,
-				resource_size(pcie_ep_dev->config_mem));
-		release_mem_region(pcie_ep_dev->cluster_mem->start,
-				resource_size(pcie_ep_dev->cluster_mem));
-		return -ENOMEM;
+		goto release_clust_mem;
 	}
-	pcie_ep_dev->outbound_mem = platform_get_resource(pdev,
-					IORESOURCE_MEM, 2);
-	if (!pcie_ep_dev->outbound_mem) {
-		iounmap(&pcie_ep_dev->clust_mem);
-		iounmap(&pcie_ep_dev->conf_mem);
-		release_mem_region(pcie_ep_dev->config_mem->start,
-			resource_size(pcie_ep_dev->config_mem));
-		release_mem_region(pcie_ep_dev->cluster_mem->start,
-				resource_size(pcie_ep_dev->cluster_mem));
-		return -ENOMEM;
-	}
+
+	/* outbound mem */
+	pcie_ep_dev->outbound_mem =
+		platform_get_resource(pdev, IORESOURCE_MEM, 2);
+	if (!pcie_ep_dev->outbound_mem)
+		goto unmap_clust_mem;
 	if (!request_mem_region(pcie_ep_dev->outbound_mem->start,
 		resource_size(pcie_ep_dev->outbound_mem), pcie_ep_dev->name)) {
 		dev_err(&pdev->dev, "unable to request mem region\n");
-		iounmap(&pcie_ep_dev->clust_mem);
-		iounmap(&pcie_ep_dev->conf_mem);
-		release_mem_region(pcie_ep_dev->config_mem->start,
-				resource_size(pcie_ep_dev->config_mem));
-		release_mem_region(pcie_ep_dev->cluster_mem->start,
-				resource_size(pcie_ep_dev->cluster_mem));
-		return -ENOMEM;
-		}
+		goto unmap_clust_mem;
+	}
 	pcie_ep_dev->outb_mem = ioremap(pcie_ep_dev->outbound_mem->start,
 				resource_size(pcie_ep_dev->outbound_mem));
 	if (!pcie_ep_dev->outb_mem) {
 		dev_err(&pdev->dev, "unable to request mem region\n");
-		iounmap(&pcie_ep_dev->clust_mem);
-		iounmap(&pcie_ep_dev->conf_mem);
-		release_mem_region(pcie_ep_dev->config_mem->start,
-				resource_size(pcie_ep_dev->config_mem));
-		release_mem_region(pcie_ep_dev->cluster_mem->start,
-				resource_size(pcie_ep_dev->cluster_mem));
-		release_mem_region(pcie_ep_dev->outbound_mem->start,
-				resource_size(pcie_ep_dev->outbound_mem));
-		return -ENOMEM;
+		goto release_outb_mem;
 	}
-	pcie_ep_dev->scu_mem = platform_get_resource(pdev,
-					IORESOURCE_MEM, 3);
-	if (!pcie_ep_dev->scu_mem) {
-		iounmap(&pcie_ep_dev->clust_mem);
-		iounmap(&pcie_ep_dev->conf_mem);
-		iounmap(&pcie_ep_dev->outb_mem);
-		release_mem_region(pcie_ep_dev->config_mem->start,
-			resource_size(pcie_ep_dev->config_mem));
-		release_mem_region(pcie_ep_dev->cluster_mem->start,
-				resource_size(pcie_ep_dev->cluster_mem));
-		return -ENOMEM;
+
+	/* scu mem */
+	if (!request_mem_region(pcie_ep_dev->scu_mem->start,
+		resource_size(pcie_ep_dev->scu_mem), pcie_ep_dev->name)) {
+		dev_err(&pdev->dev, "unable to request mem region\n");
+		goto unmap_outb_mem;
 	}
-	pcie_ep_dev->scu = ioremap(pcie_ep_dev->scu_mem->start,
+	pcie_ep_dev->scu_mem =
+		platform_get_resource(pdev, IORESOURCE_MEM, 3);
+	if (!pcie_ep_dev->scu_mem)
+		goto unmap_outb_mem;
+	pcie_ep_dev->scu = ioremap_nocache(pcie_ep_dev->scu_mem->start,
 				resource_size(pcie_ep_dev->scu_mem));
 	if (!pcie_ep_dev->scu) {
-		dev_err(&pdev->dev, "unable to request mem region\n");
-		iounmap(&pcie_ep_dev->clust_mem);
-		iounmap(&pcie_ep_dev->conf_mem);
-		iounmap(&pcie_ep_dev->outb_mem);
-		release_mem_region(pcie_ep_dev->config_mem->start,
-				resource_size(pcie_ep_dev->config_mem));
-		release_mem_region(pcie_ep_dev->cluster_mem->start,
-				resource_size(pcie_ep_dev->cluster_mem));
-		release_mem_region(pcie_ep_dev->outbound_mem->start,
-				resource_size(pcie_ep_dev->outbound_mem));
-		return -ENOMEM;
+		dev_err(&pdev->dev, "unable to map scu region\n");
+		goto release_scu_mem;
 	}
 	return 0;
+
+release_scu_mem:
+	release_mem_region(pcie_ep_dev->scu_mem->start,
+		resource_size(pcie_ep_dev->scu_mem));
+unmap_outb_mem:
+	iounmap(&pcie_ep_dev->outb_mem);
+release_outb_mem:
+	release_mem_region(pcie_ep_dev->outbound_mem->start,
+		resource_size(pcie_ep_dev->outbound_mem));
+unmap_clust_mem:
+	iounmap(&pcie_ep_dev->clust_mem);
+release_clust_mem:
+	release_mem_region(pcie_ep_dev->cluster_mem->start,
+		resource_size(pcie_ep_dev->cluster_mem));
+unmap_conf_mem:
+	iounmap(&pcie_ep_dev->conf_mem);
+release_conf_mem:
+	release_mem_region(pcie_ep_dev->config_mem->start,
+		resource_size(pcie_ep_dev->config_mem));
+exit_err:
+	return -ENOMEM;
 }
 
 static int clear_mem(void)
@@ -1578,6 +1583,8 @@ static int clear_mem(void)
 				resource_size(pcie_ep_dev->cluster_mem));
 	release_mem_region(pcie_ep_dev->outbound_mem->start,
 				resource_size(pcie_ep_dev->outbound_mem));
+	release_mem_region(pcie_ep_dev->scu_mem->start,
+				resource_size(pcie_ep_dev->scu_mem));
 	return 0;
 }
 
@@ -1945,7 +1952,7 @@ static ssize_t sysfs_set_power_mode(struct device *dev,
 
 	if (kstrtoul(buf, 0, &val))
 		return -EINVAL;
-	dev_dbg(pcie_ep_dev->dev, "Setting power_mode 0x%x, 0x%x\n", val,
+	dev_dbg(pcie_ep_dev->dev, "Setting power_mode 0x%lx, 0x%lx\n", val,
 		val & HWIO_SCU_GP_POWER_MODE_PCIE_L1_2_EN_FLDMASK);
 
 	power_state.clkpm =
@@ -2095,6 +2102,7 @@ static int mnh_pcie_ep_probe(struct platform_device *pdev)
 {
 	int err;
 
+	mnh_trace(MNH_TRACE_PCIE_PROBE);
 	dev_info(&pdev->dev, "PCIE endpoint probe start\n");
 	pcie_ep_dev = kzalloc(sizeof(*pcie_ep_dev), GFP_KERNEL);
 	if (!pcie_ep_dev) {
@@ -2165,6 +2173,7 @@ static int mnh_pcie_ep_probe(struct platform_device *pdev)
 		goto fail_wake_irq;
 	}
 
+	mnh_trace(MNH_TRACE_PCIE_PROBE_DONE);
 
 	return 0;
 

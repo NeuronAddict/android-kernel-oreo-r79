@@ -64,6 +64,7 @@
 #include <asm/efi.h>
 #include <asm/xen/hypervisor.h>
 #include <asm/mmu_context.h>
+#include <soc/mnh/mnh-trace.h>
 
 phys_addr_t __fdt_pointer __initdata;
 
@@ -104,6 +105,7 @@ void __init smp_setup_processor_id(void)
 	 * access percpu variable inside lock_release
 	 */
 	set_my_cpu_offset(0);
+	mnh_trace(MNH_TRACE_SETUP_PROCESSOR);
 	pr_info("Booting Linux on physical CPU 0x%lx\n", (unsigned long)mpidr);
 }
 

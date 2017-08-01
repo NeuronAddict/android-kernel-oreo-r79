@@ -35,6 +35,7 @@
 #include <linux/slab.h>
 #include <linux/types.h>
 #include <linux/workqueue.h>
+#include <soc/mnh/mnh-trace.h>
 
 #ifdef EASELCOMM_AP
 /* Use only one DMA channel for app requests */
@@ -223,6 +224,7 @@ int easelcomm_hw_init(void)
 
 	ret = easelcomm_hw_easel_advertise_cmdchan(
 		(uint64_t)local_cmdchan_dma_addr);
+	mnh_trace(MNH_TRACE_EASELCOMM_INIT_DONE);
 	return ret;
 }
 EXPORT_SYMBOL(easelcomm_hw_init);

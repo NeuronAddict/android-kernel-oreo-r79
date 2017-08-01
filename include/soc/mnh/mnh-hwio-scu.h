@@ -91,6 +91,14 @@
 #define HWIO_SCU_GPS_GPS_FLDMASK (0xffffffff)
 #define HWIO_SCU_GPS_GPS_FLDSHFT (0)
 
+/* General Purpose Scratchpad */
+/*
+ * Allocation:
+ * 0 = pcie init done (from AP)
+ * 1 = Power mode register (from Easel)
+ * 2 = boot args mask (from AP)
+ * 3 = debug boot trace low (from Easel)
+ */
 #define HWIO_SCU_GP_REGNUM 4
 #define HWIO_SCU_GP_REGOFF 0x20
 #define HWIO_SCU_GP_ADDR(bAddr, regX) \
@@ -98,6 +106,14 @@
 	(bAddr + HWIO_SCU_GP_REGOFF + (regX * 4)) : 0)
 #define HWIO_SCU_GP_GP_FLDMASK (0xffffffff)
 #define HWIO_SCU_GP_GP_FLDSHFT (0)
+
+/* Used to map trace register */
+#define MNH_SCU_PHYS_BASE	0x04003000
+#define MNH_SCU_SIZE		0x1000
+#define MNH_SCU_SCRATCH_OFFSET	0x20
+#define MNH_SCU_TRACE_REG	3
+#define MNH_SCU_TRACE_OFFSET	\
+	(MNH_SCU_SCRATCH_OFFSET + (4 * MNH_SCU_TRACE_REG))
 
 #define HWIO_SCU_GP_POWER_MODE_REGOFF 0x24
 #define HWIO_SCU_GP_POWER_MODE_ADDR(bAddr, regX) (bAddr + HWIO_SCU_GP_POWER_MODE_REGOFF)

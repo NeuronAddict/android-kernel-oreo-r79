@@ -87,6 +87,7 @@
 #include <asm/setup.h>
 #include <asm/sections.h>
 #include <asm/cacheflush.h>
+#include <soc/mnh/mnh-trace.h>
 
 static int kernel_init(void *);
 
@@ -502,6 +503,7 @@ asmlinkage __visible void __init start_kernel(void)
 	boot_cpu_init();
 	page_address_init();
 	pr_notice("%s", linux_banner);
+	mnh_trace(MNH_TRACE_MAIN_BANNER);
 	setup_arch(&command_line);
 	mm_init_cpumask(&init_mm);
 	setup_command_line(command_line);
@@ -657,6 +659,8 @@ asmlinkage __visible void __init start_kernel(void)
 	}
 
 	ftrace_init();
+
+	mnh_trace(MNH_TRACE_MAIN_END);
 
 	/* Do the rest non-__init'ed, we're now alive */
 	rest_init();
@@ -933,6 +937,8 @@ static int __ref kernel_init(void *unused)
 {
 	int ret;
 
+	mnh_trace(MNH_TRACE_KERNEL_INIT);
+
 	kernel_init_freeable();
 	/* need to finish all async __init code before freeing the memory */
 	async_synchronize_full();
@@ -961,16 +967,20 @@ static int __ref kernel_init(void *unused)
 	 */
 	if (execute_command) {
 		ret = run_init_process(execute_command);
-		if (!ret)
+		if (!ret) {
+			mnh_trace(MNH_TRACE_INIT_RUNNING);
 			return 0;
+		}
 		panic("Requested init %s failed (error %d).",
 		      execute_command, ret);
 	}
 	if (!try_to_run_init_process("/sbin/init") ||
 	    !try_to_run_init_process("/etc/init") ||
 	    !try_to_run_init_process("/bin/init") ||
-	    !try_to_run_init_process("/bin/sh"))
+	    !try_to_run_init_process("/bin/sh")) {
+		mnh_trace(MNH_TRACE_INIT_RUNNING);
 		return 0;
+	}
 
 	panic("No working init found.  Try passing init= option to kernel. "
 	      "See Linux Documentation/init.txt for guidance.");
