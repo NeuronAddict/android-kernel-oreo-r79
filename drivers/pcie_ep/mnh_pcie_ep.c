@@ -2112,37 +2112,7 @@ static int mnh_pcie_ep_probe(struct platform_device *pdev)
 	if (err)
 		return err;
 
-	/* Register IRQs */
-
-	CSR_OUT(PCIE_SW_INTR_TRIGG, MNH_PCIE_SW_IRQ_CLEAR);
-	pcie_ep_dev->sw_irq = platform_get_irq(pdev, 0);
-	err = request_irq(pcie_ep_dev->sw_irq, pcie_handle_sw_irq,
-			IRQF_SHARED, DEVICE_NAME, pcie_ep_dev);
-	if (err) {
-		clear_mem();
-		return -EINVAL;
-	}
-	pcie_ep_dev->cluster_irq = platform_get_irq(pdev, 1);
-	err = request_irq(pcie_ep_dev->cluster_irq, pcie_handle_cluster_irq,
-			IRQF_SHARED, DEVICE_NAME, pcie_ep_dev->dev);
-	if (err) {
-		free_irq(pcie_ep_dev->sw_irq, pcie_ep_dev->dev);
-		clear_mem();
-		return -EINVAL;
-	}
-	pcie_ep_dev->wake_irq = platform_get_irq(pdev, 2);
-	err = request_irq(pcie_ep_dev->wake_irq, pcie_handle_wake_irq,
-			IRQF_SHARED, DEVICE_NAME, pcie_ep_dev->dev);
-	if (err) {
-		free_irq(pcie_ep_dev->cluster_irq, pcie_ep_dev->dev);
-		free_irq(pcie_ep_dev->sw_irq, pcie_ep_dev->dev);
-		clear_mem();
-		return -EINVAL;
-	}
-
-
-
-/* declare MSI worker */
+	/* declare MSI worker */
 	INIT_DELAYED_WORK(&msi_work, pcie_msi_worker);
 	INIT_DELAYED_WORK(&power_state_work, pcie_power_state_worker);
 	INIT_WORK(&wake_work, pcie_wake_worker);
@@ -2152,6 +2122,7 @@ static int mnh_pcie_ep_probe(struct platform_device *pdev)
 #if MNH_PCIE_DEBUG_ENABLE
 	init_sysfs();
 #endif
+
 	pcie_link_init();
 	err = 0;
 
@@ -2165,17 +2136,49 @@ static int mnh_pcie_ep_probe(struct platform_device *pdev)
 	}
 	if (err) {
 		dev_err(pcie_ep_dev->dev, "No usable DMA configuration, aborting\n");
-#if MNH_PCIE_DEBUG_ENABLE
-		clean_sysfs();
-#endif
-		clear_mem();
-		free_irq(pcie_ep_dev->sw_irq, pcie_ep_dev->dev);
-		free_irq(pcie_ep_dev->cluster_irq, pcie_ep_dev->dev);
-		return err;
+		goto fail_dma_set_mask;
+	}
+
+
+	/* Register IRQs */
+
+	CSR_OUT(PCIE_SW_INTR_TRIGG, MNH_PCIE_SW_IRQ_CLEAR);
+	pcie_ep_dev->sw_irq = platform_get_irq(pdev, 0);
+	err = request_irq(pcie_ep_dev->sw_irq, pcie_handle_sw_irq,
+			IRQF_SHARED, DEVICE_NAME, pcie_ep_dev);
+	if (err) {
+		err = -EINVAL;
+		goto fail_sw_irq;
+	}
+	pcie_ep_dev->cluster_irq = platform_get_irq(pdev, 1);
+	err = request_irq(pcie_ep_dev->cluster_irq, pcie_handle_cluster_irq,
+			IRQF_SHARED, DEVICE_NAME, pcie_ep_dev->dev);
+	if (err) {
+		err = -EINVAL;
+		goto fail_cluster_irq;
+	}
+	pcie_ep_dev->wake_irq = platform_get_irq(pdev, 2);
+	err = request_irq(pcie_ep_dev->wake_irq, pcie_handle_wake_irq,
+			IRQF_SHARED, DEVICE_NAME, pcie_ep_dev->dev);
+	if (err) {
+		err = -EINVAL;
+		goto fail_wake_irq;
 	}
 
 
 	return 0;
+
+fail_wake_irq:
+	free_irq(pcie_ep_dev->cluster_irq, pcie_ep_dev->dev);
+fail_cluster_irq:
+	free_irq(pcie_ep_dev->sw_irq, pcie_ep_dev->dev);
+fail_sw_irq:
+fail_dma_set_mask:
+#if MNH_PCIE_DEBUG_ENABLE
+	clean_sysfs();
+#endif
+	clear_mem();
+	return err;
 }
 
 static int mnh_pcie_ep_remove(struct platform_device *pdev)
