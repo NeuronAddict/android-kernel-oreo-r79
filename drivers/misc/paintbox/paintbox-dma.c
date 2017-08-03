@@ -1020,7 +1020,7 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 	if (pb->stats.ioctl_time_enabled) {
 		enq_start = ktime_get_boottime();
 		paintbox_debug_log_non_ioctl_stats(pb, PB_STATS_DMA_SETUP, setup_start,
-				enq_start, true /*is_thread*/, 0);
+				enq_start, 0);
 	}
 #endif
 
@@ -1045,7 +1045,7 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 #ifdef CONFIG_PAINTBOX_DEBUG
 	if (pb->stats.ioctl_time_enabled)
 		paintbox_debug_log_non_ioctl_stats(pb,  PB_STATS_DMA_ENQ, enq_start,
-				ktime_get_boottime(), true /*is_thread*/, 0);
+				ktime_get_boottime(), 0);
 #endif
 
 	if (channel->stats.time_stats_enabled)
@@ -1503,13 +1503,10 @@ void paintbox_dma_va_interrupt(struct paintbox_data *pb,
 		return;
 	}
 
-	dma_report_completion(pb, channel, transfer, timestamp, -EIO);
-
-	/* TODO(ahampson):  This will need to be escalated to a full IPU reset
-	 * once that logic is implemented.  A DMA reset will get the DMA block
-	 * moving again but it may have lost SSP pointers.  A full IPU reset
-	 * is the only way to fully recover.  b/34518459
+	/* Reporting non-recoverable to all channel since DMA VA error cannot
+	 * be recovered. This will trigger a full IPU reset.
 	 */
+	dma_report_error_all_channels(pb, -ENOTRECOVERABLE);
 #if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
 	paintbox_dma_reset_locked(pb);
 #endif
@@ -1814,45 +1811,6 @@ static void paintbox_dma_channel_register_init(
 	channel->regs.chan_va_bdry = DMA_CHAN_VA_BDRY_DEF;
 	channel->regs.chan_noc_xfer = DMA_CHAN_NOC_XFER_DEF;
 	channel->regs.chan_node = DMA_CHAN_NODE_DEF;
-}
-
-/* The caller to this function must hold pb->lock */
-void paintbox_dma_post_ipu_reset(struct paintbox_data *pb)
-{
-	unsigned long irq_flags;
-	unsigned int channel_id;
-
-	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
-
-	pb->dma.selected_dma_channel_id = (DMA_CTRL_DEF &
-			DMA_CTRL_DMA_CHAN_SEL_MASK) >>
-			DMA_CTRL_DMA_CHAN_SEL_SHIFT;
-
-	pb->dma.regs.chan_ctrl = DMA_CHAN_CTRL_DEF;
-
-	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
-
-	for (channel_id = 0; channel_id < pb->dma.num_channels; channel_id++) {
-		struct paintbox_dma_channel *channel =
-				&pb->dma.channels[channel_id];
-
-		spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
-
-		dma_report_channel_error_locked(pb, channel_id,
-				-ENOTRECOVERABLE);
-
-		paintbox_dma_disable_channel_interrupts(pb, channel);
-		paintbox_pm_disable_dma_channel(pb, channel);
-
-		paintbox_dma_channel_register_init(channel);
-
-		spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
-
-		drain_queue(pb, &channel->pending_list,
-				&channel->pending_count);
-		drain_queue(pb, &channel->active_list,
-				&channel->active_count);
-	}
 }
 
 /* The caller to this function must hold pb->lock */

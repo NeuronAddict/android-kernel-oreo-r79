@@ -954,31 +954,6 @@ irqreturn_t paintbox_stp_error_interrupt(struct paintbox_data *pb,
 #endif
 
 /* The caller to this function must hold pb->lock */
-void paintbox_stp_post_ipu_reset(struct paintbox_data *pb)
-{
-	ktime_t timestamp = ktime_get_boottime();
-	unsigned int stp_index;
-
-	pb->stp.selected_stp_id = STP_SEL_DEF & STP_SEL_STP_SEL_M;
-
-	for (stp_index = 0; stp_index < pb->stp.num_stps; stp_index++) {
-		struct paintbox_stp *stp = &pb->stp.stps[stp_index];
-
-		paintbox_stp_disable_interrupts(pb, stp);
-
-		paintbox_irq_waiter_signal(pb, stp->irq, timestamp, 0,
-				-ENOTRECOVERABLE);
-
-		stp_pc_histogram_clear(stp,
-				pb->stp.inst_mem_size_in_instructions);
-	}
-
-	/* TODO(ahampson):  Determine what power management steps are needed
-	 * post reset.
-	 */
-}
-
-/* The caller to this function must hold pb->lock */
 void paintbox_stp_release(struct paintbox_data *pb,
 		struct paintbox_session *session)
 {

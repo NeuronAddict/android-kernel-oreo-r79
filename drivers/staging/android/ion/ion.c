@@ -797,9 +797,9 @@ void ion_client_destroy(struct ion_client *client)
 }
 EXPORT_SYMBOL(ion_client_destroy);
 
-static void ion_buffer_sync_for_device(struct ion_buffer *buffer,
-				       struct device *dev,
-				       enum dma_data_direction direction);
+void ion_buffer_sync_for_device(struct ion_buffer *buffer,
+				struct device *dev,
+				enum dma_data_direction direction);
 
 static struct sg_table *ion_map_dma_buf(struct dma_buf_attachment *attachment,
 					enum dma_data_direction direction)
@@ -838,9 +838,9 @@ struct ion_vma_list {
 	struct vm_area_struct *vma;
 };
 
-static void ion_buffer_sync_for_device(struct ion_buffer *buffer,
-				       struct device *dev,
-				       enum dma_data_direction dir)
+void ion_buffer_sync_for_device(struct ion_buffer *buffer,
+				struct device *dev,
+				enum dma_data_direction dir)
 {
 	struct ion_vma_list *vma_list;
 	int pages = PAGE_ALIGN(buffer->size) / PAGE_SIZE;

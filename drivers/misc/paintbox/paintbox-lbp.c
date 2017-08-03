@@ -897,30 +897,6 @@ void paintbox_lbp_set_pmon_rptr_id(struct paintbox_data *pb, uint64_t rptr_id)
 }
 
 /* The caller to this function must hold pb->lock */
-void paintbox_lbp_post_ipu_reset(struct paintbox_data *pb)
-{
-	unsigned int lbp_id, lb_id;
-
-	pb->lbp.selected_lbp_id = LBP_SEL_DEF & LBP_SEL_LBP_SEL_M;
-	pb->lbp.selected_lb_id = (LBP_SEL_DEF & LBP_SEL_LB_SEL_MASK) >>
-			LBP_SEL_LB_SEL_SHIFT;
-
-	for (lbp_id = 0; lbp_id < pb->lbp.num_lbps; lbp_id++) {
-		struct paintbox_lbp *lbp = &pb->lbp.lbps[lbp_id];
-
-		for (lb_id = 0; lb_id < pb->lbp.max_lbs; lb_id++) {
-			struct paintbox_lb *lb = &lbp->lbs[lb_id];
-
-			lb->configured = true;
-		}
-	}
-
-	/* TODO(ahampson):  Determine what power management steps are needed
-	 * post reset.
-	 */
-}
-
-/* The caller to this function must hold pb->lock */
 void paintbox_lbp_release(struct paintbox_data *pb,
 		struct paintbox_session *session)
 {

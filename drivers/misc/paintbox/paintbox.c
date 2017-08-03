@@ -33,7 +33,6 @@
 #include <linux/uaccess.h>
 #include <linux/version.h>
 #include <uapi/paintbox.h>
-#include <soc/mnh/mnh-trace.h>
 
 #include "paintbox-bif.h"
 #include "paintbox-common.h"
@@ -96,7 +95,7 @@ static int paintbox_open(struct inode *ip, struct file *fp)
 #ifdef CONFIG_PAINTBOX_DEBUG
 	if (pb->stats.ioctl_time_enabled)
 		paintbox_debug_log_non_ioctl_stats(pb, PB_STATS_OPEN, start_time,
-				ktime_get_boottime(), true /*is_thread*/, 0);
+				ktime_get_boottime(), 0);
 #endif
 	return 0;
 }
@@ -150,7 +149,7 @@ static int paintbox_release(struct inode *ip, struct file *fp)
 #ifdef CONFIG_PAINTBOX_DEBUG
 	if (pb->stats.ioctl_time_enabled)
 		paintbox_debug_log_non_ioctl_stats(pb, PB_STATS_CLOSE, start_time,
-				ktime_get_boottime(), true /*is_thread*/, 0);
+				ktime_get_boottime(), 0);
 #endif
 
 	return 0;
@@ -673,7 +672,6 @@ static int paintbox_probe(struct platform_device *pdev)
 #ifdef CONFIG_PAINTBOX_DEBUG
 	pb->stats.probe_time = ktime_sub(ktime_get_boottime(), start_time);
 #endif
-	mnh_trace(MNH_TRACE_PAINTBOX_PROBE_DONE);
 
 	return 0;
 }

@@ -725,19 +725,6 @@ int paintbox_mmu_init(struct paintbox_data *pb)
 	return ret;
 }
 
-#ifdef CONFIG_PAINTBOX_IOMMU
-/* The caller to this function must hold pb->lock */
-void paintbox_mmu_post_ipu_reset(struct paintbox_data *pb)
-{
-	mutex_lock(&pb->mmu.lock);
-
-	if (pb->mmu.hw_enabled)
-		paintbox_mmu_enable_locked(pb, pb->mmu.table_base_paddr);
-
-	mutex_unlock(&pb->mmu.lock);
-}
-#endif
-
 /* All sessions must be released before remove can be called. */
 void paintbox_mmu_remove(struct paintbox_data *pb)
 {

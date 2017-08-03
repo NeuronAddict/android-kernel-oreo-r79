@@ -237,13 +237,10 @@ static inline void paintbox_bif_dma_bus_error_interrupt_overflow(
 			__func__);
 
 	/* If the DMA bus error is in the interrupt overflow then there isn't
-	 * much that can be done beyond logging the error.
+	 * much that can be done beyond logging the error and report error
+	 * back.
 	 */
-
-	/* TODO(ahampson):  Since we are unable to determine which DMA channel
-	 * had the bus error should we report the error on all channels and let
-	 * the runtime restart the job?  b/62372805
-	 */
+	dma_report_error_all_channels(pb, -ENOTRECOVERABLE);
 }
 
 /* This function must be called in an interrupt context */
@@ -285,7 +282,7 @@ static void paintbox_bif_dma_bus_error_interrupt(struct paintbox_data *pb)
 				axi_id);
 	}
 
-	dma_report_channel_error(pb, channel_id, -EIO);
+	dma_report_channel_error(pb, channel_id, -ENOTRECOVERABLE);
 }
 
 /* This function must be called in an interrupt context */
@@ -329,18 +326,6 @@ void paintbox_bif_interrupt(struct paintbox_data *pb)
 
 	if (status & BIF_ISR_OVF_BUS_ERR_DMA_MASK)
 		paintbox_bif_dma_bus_error_interrupt_overflow(pb);
-}
-
-/* The caller to this function must hold pb->lock except when called from
- * init.
- */
-void paintbox_bif_post_ipu_reset(struct paintbox_data *pb)
-{
-	writel(BIF_IMR_TO_ERR_MMU_RD_MASK | BIF_IMR_TO_ERR_DMA_WR_MASK |
-			BIF_IMR_BUS_ERR_MMU_MASK | BIF_IMR_BUS_ERR_DMA_MASK |
-			BIF_IMR_TO_ERR_DMA_RD_MASK, pb->io.axi_base + BIF_IMR);
-
-	paintbox_enable_bif_interrupt(pb);
 }
 
 int paintbox_bif_init(struct paintbox_data *pb)

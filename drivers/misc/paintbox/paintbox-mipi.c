@@ -1953,63 +1953,6 @@ irqreturn_t paintbox_mipi_output_interrupt(struct paintbox_data *pb,
 #endif
 
 /* The caller to this function must hold pb->lock */
-void paintbox_mipi_post_ipu_reset(struct paintbox_data *pb)
-{
-	ktime_t timestamp = ktime_get_boottime();
-	unsigned long irq_flags;
-	unsigned int stream_id;
-
-	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
-
-	for (stream_id = 0; stream_id < pb->io_ipu.num_mipi_input_streams;
-			stream_id++) {
-		struct paintbox_mipi_stream *stream =
-				&pb->io_ipu.mipi_input_streams[stream_id];
-
-		mipi_input_disable_irqs_and_stream(pb, stream,
-				MIPI_INPUT_SOF_IMR | MIPI_INPUT_OVF_IMR);
-
-		paintbox_irq_waiter_signal(pb, stream->irq, timestamp,
-			stream->input.last_frame_number, -ENOTRECOVERABLE);
-
-		stream->input.last_frame_number = MIPI_INVALID_FRAME_NUMBER;
-		stream->input.frame_in_progress = false;
-		stream->error = 0;
-		stream->disable_on_error = false;
-		stream->cleanup_in_progress = false;
-		stream->free_running = false;
-		stream->last_frame = false;
-		stream->enabled = false;
-		stream->is_clean = true;
-
-		disable_mipi_interface(pb, stream);
-	}
-
-	for (stream_id = 0; stream_id < pb->io_ipu.num_mipi_output_streams;
-			stream_id++) {
-		struct paintbox_mipi_stream *stream =
-				&pb->io_ipu.mipi_output_streams[stream_id];
-
-		mipi_output_disable_irqs(pb, stream, MIPI_OUTPUT_EOF_IMR);
-
-		paintbox_irq_waiter_signal(pb, stream->irq, timestamp,
-			stream->input.last_frame_number, -ENOTRECOVERABLE);
-
-		stream->error = 0;
-		stream->disable_on_error = false;
-		stream->cleanup_in_progress = false;
-		stream->free_running = false;
-		stream->last_frame = false;
-		stream->enabled = false;
-		stream->is_clean = true;
-
-		disable_mipi_interface(pb, stream);
-	}
-
-	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
-}
-
-/* The caller to this function must hold pb->lock */
 void paintbox_mipi_release(struct paintbox_data *pb,
 		struct paintbox_session *session)
 {

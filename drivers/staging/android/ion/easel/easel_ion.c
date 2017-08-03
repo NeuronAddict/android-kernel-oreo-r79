@@ -51,6 +51,9 @@ static struct ion_of_heap easel_heaps[] = {
 	{}
 };
 
+void ion_buffer_sync_for_device(struct ion_buffer *buffer, struct device *dev,
+				enum dma_data_direction direction);
+
 static int ion_do_cache_op(struct ion_client *client, struct ion_buffer *buffer,
 			unsigned int cmd)
 {
@@ -71,15 +74,23 @@ static int ion_do_cache_op(struct ion_client *client, struct ion_buffer *buffer,
 		break;
 	case ION_IOC_HANDLE_INVALIDATE_CACHE:
 	case ION_IOC_DMA_BUF_INVALIDATE_CACHE:
-		dma_sync_sg_for_cpu(easel_ion_dev, table->sgl, table->nents,
-				DMA_FROM_DEVICE);
+		if (ion_buffer_fault_user_mappings(buffer))
+			ion_buffer_sync_for_device(buffer, easel_ion_dev,
+					DMA_FROM_DEVICE);
+		else
+			dma_sync_sg_for_cpu(easel_ion_dev, table->sgl,
+					table->nents, DMA_FROM_DEVICE);
 		break;
 	case ION_IOC_HANDLE_FLUSH_INVALIDATE_CACHE:
 	case ION_IOC_DMA_BUF_FLUSH_INVALIDATE_CACHE:
 		dma_sync_sg_for_device(easel_ion_dev, table->sgl, table->nents,
 				DMA_TO_DEVICE);
-		dma_sync_sg_for_device(easel_ion_dev, table->sgl, table->nents,
-				DMA_FROM_DEVICE);
+		if (ion_buffer_fault_user_mappings(buffer))
+			ion_buffer_sync_for_device(buffer, easel_ion_dev,
+					DMA_FROM_DEVICE);
+		else
+			dma_sync_sg_for_cpu(easel_ion_dev, table->sgl,
+					table->nents, DMA_FROM_DEVICE);
 		break;
 	default:
 		return -EINVAL;

@@ -216,7 +216,7 @@ static irqreturn_t paintbox_io_interrupt(int irq, void *arg)
 #ifdef CONFIG_PAINTBOX_DEBUG
 	if (pb->stats.ioctl_time_enabled)
 		paintbox_debug_log_non_ioctl_stats(pb,  PB_STATS_IO_INTERRUPT_HANDLE,
-				start_time, ktime_get_boottime(), false /*is_thread*/, 0);
+				start_time, ktime_get_boottime(), 0);
 #endif
 
 	return IRQ_HANDLED;

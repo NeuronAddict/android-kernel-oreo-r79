@@ -50,7 +50,7 @@ void paintbox_debug_log_ioctl_stats(struct paintbox_data *pb, unsigned int cmd,
 		ktime_t start, ktime_t end);
 void paintbox_debug_log_non_ioctl_stats(struct paintbox_data *pb,
 		enum non_ioctl_stats_type stats_type, ktime_t start,
-		ktime_t end, bool is_thread, size_t transfer_len);
+		ktime_t end, size_t transfer_len);
 
 
 void paintbox_debug_create_entry(struct paintbox_data *pb,

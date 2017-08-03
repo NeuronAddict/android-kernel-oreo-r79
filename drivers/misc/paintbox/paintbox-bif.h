@@ -32,11 +32,6 @@ void paintbox_bif_interrupt(struct paintbox_data *pb);
 
 int paintbox_bif_init(struct paintbox_data *pb);
 
-/* The caller to this function must hold pb->lock except when called from
- * init.
- */
-void paintbox_bif_post_ipu_reset(struct paintbox_data *pb);
-
 /* All sessions must be released before remove can be called. */
 void paintbox_bif_remove(struct paintbox_data *pb);
 

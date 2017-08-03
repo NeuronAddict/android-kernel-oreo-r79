@@ -499,16 +499,16 @@ static const char *ioctl_names[PB_NUM_IOCTLS] = {
 
 void paintbox_debug_log_non_ioctl_stats(struct paintbox_data *pb,
 		enum non_ioctl_stats_type stats_type, ktime_t start,
-		ktime_t end, bool is_thread, size_t transfer_len)
+		ktime_t end, size_t transfer_len)
 {
 	struct paintbox_ioctl_stat *entry;
 	ktime_t duration;
 	unsigned long irqflags;
 
-	if (is_thread)
-		spin_lock_irqsave(&pb->stats.stats_lock, irqflags);
-	else
+	if (in_interrupt())
 		spin_lock(&pb->stats.stats_lock);
+	else
+		spin_lock_irqsave(&pb->stats.stats_lock, irqflags);
 
 	duration = ktime_sub(end, start);
 
@@ -529,10 +529,10 @@ void paintbox_debug_log_non_ioctl_stats(struct paintbox_data *pb,
 
 	entry->count++;
 
-	if (is_thread)
-		spin_unlock_irqrestore(&pb->stats.stats_lock, irqflags);
-	else
+	if (in_interrupt())
 		spin_unlock(&pb->stats.stats_lock);
+	else
+		spin_unlock_irqrestore(&pb->stats.stats_lock, irqflags);
 }
 
 void paintbox_debug_log_ioctl_stats(struct paintbox_data *pb, unsigned int cmd,

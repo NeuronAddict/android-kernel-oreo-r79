@@ -89,9 +89,6 @@ static inline void paintbox_lb_select(struct paintbox_data *pb,
 int paintbox_lbp_init(struct paintbox_data *pb);
 
 /* The caller to this function must hold pb->lock */
-void paintbox_lbp_post_ipu_reset(struct paintbox_data *pb);
-
-/* The caller to this function must hold pb->lock */
 void paintbox_lbp_release(struct paintbox_data *pb,
 		struct paintbox_session *session);
 

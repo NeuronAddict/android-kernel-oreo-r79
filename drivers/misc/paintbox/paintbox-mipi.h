@@ -185,9 +185,6 @@ static inline void paintbox_mipi_select_stream(struct paintbox_data *pb,
 int paintbox_mipi_init(struct paintbox_data *pb);
 
 /* The caller to this function must hold pb->lock */
-void paintbox_mipi_post_ipu_reset(struct paintbox_data *pb);
-
-/* The caller to this function must hold pb->lock */
 void paintbox_mipi_release(struct paintbox_data *pb,
 		struct paintbox_session *session);
 

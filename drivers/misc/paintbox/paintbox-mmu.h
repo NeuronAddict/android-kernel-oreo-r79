@@ -29,13 +29,6 @@ int paintbox_dump_mmu_registers(struct paintbox_debug *debug, char *buf,
 
 void paintbox_mmu_interrupt(struct paintbox_data *pb);
 
-#ifdef CONFIG_PAINTBOX_IOMMU
-/* The caller to this function must hold pb->lock */
-void paintbox_mmu_post_ipu_reset(struct paintbox_data *pb);
-#else
-static inline void paintbox_mmu_post_ipu_reset(struct paintbox_data *pb) { }
-#endif
-
 int paintbox_mmu_init(struct paintbox_data *pb);
 
 /* All sessions must be released before remove can be called. */

@@ -534,6 +534,7 @@ struct paintbox_stp {
 #endif
 	struct paintbox_session *session;
 	struct paintbox_irq *irq;
+	uint8_t constant_ram[2048];
 	unsigned int stp_id;
 	unsigned int interrupt_count;
 	bool pm_enabled;

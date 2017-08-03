@@ -664,7 +664,7 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 #ifdef CONFIG_PAINTBOX_DEBUG
 	if (pb->stats.ioctl_time_enabled)
 		paintbox_debug_log_non_ioctl_stats(pb,  PB_STATS_WAIT_PRE, start_time,
-				ktime_get_boottime(), true /*is_thread*/, 0);
+				ktime_get_boottime(), 0);
 #endif
 
 	if (wait->base.timeout_ns == LONG_MAX)
@@ -733,7 +733,7 @@ cleanup_and_exit:
 #ifdef CONFIG_PAINTBOX_DEBUG
 	if (pb->stats.ioctl_time_enabled)
 		paintbox_debug_log_non_ioctl_stats(pb,  PB_STATS_WAIT_POST, start_time,
-				ktime_get_boottime(), true /*is_thread*/, 0);
+				ktime_get_boottime(), 0);
 #endif
 
 	/* Copy errors take precedence over any other errors. */

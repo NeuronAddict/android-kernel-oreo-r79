@@ -458,6 +458,18 @@ int write_stp_scalar_sram_ioctl(struct paintbox_data *pb,
 		return ret;
 	}
 
+	/* HDR+ only updates stp scalar sram with this ioctl call. Use cache
+	 * here to improve write to scalar sram performance by avoiding
+	 * misaligned writes which triggers read-modify-write.
+	 */
+	if (req.sram_target == SRAM_TARGET_STP_CONSTANT_RAM) {
+		if (copy_from_user(&stp->constant_ram[req.sram_byte_addr],
+				req.buf, req.len_bytes)) {
+			mutex_unlock(&pb->lock);
+			return -EFAULT;
+		}
+	}
+
 	ret = create_scalar_sram_config(&sram_config, stp->stp_id,
 			req.sram_target, req.swap_data, req.pad_to_align);
 	if (ret < 0) {
@@ -469,14 +481,43 @@ int write_stp_scalar_sram_ioctl(struct paintbox_data *pb,
 		return ret;
 	}
 
-	ret = sram_write_user_buffer(pb, &sram_config, req.sram_byte_addr,
-			req.buf, req.len_bytes);
-	if (ret < 0)
-		dev_err(&pb->pdev->dev,
-				"%s: stp%u: write error addr: 0x%04x "
-				"type: 0x%02x err = %d\n", __func__, req.id,
-				req.sram_byte_addr, req.sram_target, ret);
-
+	if (req.sram_target == SRAM_TARGET_STP_CONSTANT_RAM) {
+		/* calculate the closest 16-byte words that covers the entire
+		 * sram write to avoid read-modify-write penalty.
+		 */
+		uint32_t sram_addr_lower;
+		uint32_t sram_addr_upper;
+		uint32_t len_bytes_aligned;
+		sram_addr_lower = round_down(req.sram_byte_addr,
+				sram_config.sram_word_bytes);
+		sram_addr_upper = round_up(req.sram_byte_addr + req.len_bytes,
+				sram_config.sram_word_bytes);
+		len_bytes_aligned = sram_addr_upper - sram_addr_lower;
+		ret = sram_write_buffer(pb,
+				&sram_config,
+				sram_addr_lower,
+				&stp->constant_ram[sram_addr_lower],
+				len_bytes_aligned);
+		if (ret < 0) {
+			dev_err(&pb->pdev->dev,
+					"%s: stp%u: write error addr: 0x%04x "
+					"type: 0x%02x err = %d\n", __func__,
+					req.id, sram_addr_lower,
+					req.sram_target, ret);
+		}
+	} else {
+		ret = sram_write_user_buffer(pb,
+				&sram_config,
+				req.sram_byte_addr,
+				req.buf,
+				req.len_bytes);
+		if (ret < 0)
+			dev_err(&pb->pdev->dev,
+					"%s: stp%u: write error addr: 0x%04x "
+					"type: 0x%02x err = %d\n", __func__,
+					req.id, req.sram_byte_addr,
+					req.sram_target, ret);
+	}
 	mutex_unlock(&pb->lock);
 
 	return ret;
