@@ -78,7 +78,8 @@ static int mnh_freq_cooling_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static int mnh_freq_cooling_suspend(struct platform_device *pdev)
+static int mnh_freq_cooling_suspend(struct platform_device *pdev,
+				    pm_message_t state)
 {
 	int ret = mnh_ddr_adjust_refresh_suspend();
 	pr_err("%s %d", __func__, ret);
