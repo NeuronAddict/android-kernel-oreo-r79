@@ -204,6 +204,7 @@ int easelcomm_hw_init(void)
 {
 	int ret;
 
+	mnh_trace(MNH_TRACE_EASELCOMM_INIT);
 	/* dma alloc a buffer for now, may want dedicated carveout */
 	/* temporary: alloc twice as much, align to boundary */
 	local_cmdchan_cpu_addr =

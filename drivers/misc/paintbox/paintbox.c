@@ -32,6 +32,7 @@
 #include <linux/types.h>
 #include <linux/uaccess.h>
 #include <linux/version.h>
+#include <soc/mnh/mnh-trace.h>
 #include <uapi/paintbox.h>
 
 #include "paintbox-bif.h"
@@ -555,6 +556,7 @@ static int paintbox_probe(struct platform_device *pdev)
 #ifdef CONFIG_PAINTBOX_DEBUG
 	ktime_t start_time = ktime_get_boottime();
 #endif
+	mnh_trace(MNH_TRACE_PAINTBOX_PROBE);
 
 	pb = devm_kzalloc(&pdev->dev, sizeof(*pb), GFP_KERNEL);
 	if (pb == NULL)
@@ -672,6 +674,7 @@ static int paintbox_probe(struct platform_device *pdev)
 #ifdef CONFIG_PAINTBOX_DEBUG
 	pb->stats.probe_time = ktime_sub(ktime_get_boottime(), start_time);
 #endif
+	mnh_trace(MNH_TRACE_PAINTBOX_PROBE_DONE);
 
 	return 0;
 }
