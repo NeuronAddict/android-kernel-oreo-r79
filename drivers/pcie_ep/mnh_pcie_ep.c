@@ -135,6 +135,28 @@ static int pcie_config_write(uint64_t address, uint32_t data)
 spinlock_t trace_lock;
 static void *mnh_scu_base;
 
+/* Read back trace log from SCU scratch register */
+static uint32_t mnh_trace_get(void)
+{
+	uint32_t *reg;
+	uint32_t value = -1;	/* All F */
+
+	spin_lock(&trace_lock);
+
+	if (!mnh_scu_base)
+		mnh_scu_base = ioremap_nocache(MNH_SCU_PHYS_BASE, MNH_SCU_SIZE);
+
+	if (!mnh_scu_base)
+		goto bail;
+
+	reg = (mnh_scu_base + MNH_SCU_TRACE_OFFSET);
+	value = readl(reg);
+
+bail:
+	spin_unlock(&trace_lock);
+	return value;
+}
+
 /* Log to SCU scratch register */
 void mnh_trace(uint32_t value)
 {
@@ -1992,6 +2014,33 @@ static ssize_t sysfs_set_power_mode(struct device *dev,
 static DEVICE_ATTR(power_mode, S_IRUGO | S_IWUSR | S_IWGRP,
 			show_sysfs_set_power_mode, sysfs_set_power_mode);
 
+static ssize_t show_sysfs_mnh_trace(struct device *dev,
+				struct device_attribute *attr,
+				char *buf)
+{
+	return snprintf(buf, MAX_STR_COPY, "0x%x", mnh_trace_get());
+}
+
+static ssize_t sysfs_mnh_trace(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf,
+				size_t count)
+{
+	unsigned long val = 0;
+
+	if (kstrtoul(buf, 0, &val))
+		return -EINVAL;
+
+	dev_dbg(pcie_ep_dev->dev, "User setting trace value 0x%lx\n", val);
+
+	mnh_trace(val);
+
+	return count;
+}
+
+static DEVICE_ATTR(mnh_trace, S_IRUGO | S_IWUSR | S_IWGRP,
+			show_sysfs_mnh_trace, sysfs_mnh_trace);
+
 static void clean_sysfs(void)
 {
 	device_remove_file(pcie_ep_dev->dev,
@@ -2016,6 +2065,10 @@ static void clean_sysfs(void)
 			&dev_attr_send_ltr);
 	device_remove_file(pcie_ep_dev->dev,
 			&dev_attr_set_lone);
+	device_remove_file(pcie_ep_dev->dev,
+			&dev_attr_power_mode);
+	device_remove_file(pcie_ep_dev->dev,
+			&dev_attr_mnh_trace);
 }
 
 static int init_sysfs(void)
@@ -2109,6 +2162,14 @@ static int init_sysfs(void)
 	if (ret) {
 		dev_err(pcie_ep_dev->dev,
 			"Failed to create sysfs: power_mode\n");
+		clean_sysfs();
+		return -EINVAL;
+	}
+	ret = device_create_file(pcie_ep_dev->dev,
+			&dev_attr_mnh_trace);
+	if (ret) {
+		dev_err(pcie_ep_dev->dev,
+			"Failed to create sysfs: mnh_trace\n");
 		clean_sysfs();
 		return -EINVAL;
 	}
