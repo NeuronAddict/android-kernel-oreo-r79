@@ -209,7 +209,7 @@ static void reset_line_buffer(struct paintbox_data *pb, struct paintbox_lb *lb)
 	reset_mask = 1ULL << (lb->lb_id + LBP_CTRL_LB_RESET_SHIFT);
 
 	/* This register is not self clearing, we need to clear the reset bit */
-	val = readq(pb->lbp.reg_base + LBP_CTRL);
+	val = lb->lbp->regs.lbp_ctrl;
 	val |= reset_mask;
 	writeq(val, pb->lbp.reg_base + LBP_CTRL);
 	val &= ~reset_mask;
@@ -236,6 +236,7 @@ void release_lbp(struct paintbox_data *pb, struct paintbox_session *session,
 #endif
 	/* Disable all line buffers within the pool. */
 	paintbox_lbp_select(pb, lbp->pool_id);
+	lbp->regs.lbp_ctrl = 0;
 	writeq(0, pb->lbp.reg_base + LBP_CTRL);
 
 #ifndef CONFIG_PAINTBOX_FPGA_SUPPORT
@@ -285,6 +286,7 @@ int allocate_lbp_ioctl(struct paintbox_data *pb,
 
 	paintbox_lbp_select(pb, pool_id);
 	writeq(LBP_CTRL_LBP_RESET_MASK, pb->lbp.reg_base + LBP_CTRL);
+	lbp->regs.lbp_ctrl = 0;
 	writeq(0, pb->lbp.reg_base + LBP_CTRL);
 
 	/* The LBP access control masks are not implemented on the V0 IPU.
@@ -321,7 +323,7 @@ static int write_l_param_register(struct paintbox_data *pb,
 		struct paintbox_lb *lb)
 {
 	unsigned int width_rounded, sb_cols_rounded;
-	uint32_t l_inc, l_width, line_ratio;
+	uint32_t l_inc, l_width, line_ratio, lb_l_param;
 
 #if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
 	switch (lb->fb_rows) {
@@ -366,8 +368,11 @@ static int write_l_param_register(struct paintbox_data *pb,
 		return -EINVAL;
 	}
 
-	writel(l_inc | (l_width << LB_L_PARAM_L_WIDTH_SHIFT), pb->lbp.reg_base +
-			LB_L_PARAM);
+	lb_l_param = l_inc | (l_width << LB_L_PARAM_L_WIDTH_SHIFT);
+	if (lb_l_param != lb->regs.lb_l_param) {
+		lb->regs.lb_l_param = lb_l_param;
+		writel(lb_l_param, pb->lbp.reg_base + LB_L_PARAM);
+	}
 
 	return 0;
 }
@@ -412,8 +417,8 @@ int setup_lb_ioctl(struct paintbox_data *pb,
 	struct line_buffer_config lb_config;
 	struct paintbox_lbp *lbp;
 	struct paintbox_lb *lb;
-	uint64_t ctrl, lb_offset;
-	uint32_t lb_bdry, lb_base;
+	uint64_t ctrl, lb_ctrl0, lb_offset;
+	uint32_t lb_bdry, lb_base, lb_img_size, lb_sb_size, lb_l_param;
 	int ret;
 
 	user_lb_config = (struct line_buffer_config __user *)arg;
@@ -480,23 +485,26 @@ int setup_lb_ioctl(struct paintbox_data *pb,
 	 * will disable this line buffer and leave all the earlier ones
 	 * enabled.
 	 */
-	ctrl = readq(pb->lbp.reg_base + LBP_CTRL);
+	ctrl = lbp->regs.lbp_ctrl;
 #if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
 	ctrl &= ~(1ULL << lb_config.lb_id);
 #else
 	ctrl &= ~LBP_CTRL_LB_ENA_MASK;
 	ctrl |= lb_config.lb_id;
 #endif
+	ctrl |= 1ULL << (lb->lb_id + LBP_CTRL_LB_RESET_SHIFT);
+	lbp->regs.lbp_ctrl = ctrl;
 	writeq(ctrl, pb->lbp.reg_base + LBP_CTRL);
 
-	reset_line_buffer(pb, lb);
-
-	ctrl = lb_config.num_read_ptrs;
-	ctrl |= lb_config.num_channels << LB_CTRL0_NUM_CHAN_SHIFT;
-	ctrl |= lb_config.fb_rows << LB_CTRL0_FB_ROWS_SHIFT;
-	ctrl |= ((uint64_t)lb_config.num_reuse_rows) <<
+	lb_ctrl0 = lb_config.num_read_ptrs;
+	lb_ctrl0 |= lb_config.num_channels << LB_CTRL0_NUM_CHAN_SHIFT;
+	lb_ctrl0 |= lb_config.fb_rows << LB_CTRL0_FB_ROWS_SHIFT;
+	lb_ctrl0 |= ((uint64_t)lb_config.num_reuse_rows) <<
 			LB_CTRL0_REUSE_ROWS_SHIFT;
-	writeq(ctrl, pb->lbp.reg_base + LB_CTRL0);
+	if (lb_ctrl0 != lb->regs.lb_ctrl0) {
+		lb->regs.lb_ctrl0 = lb_ctrl0;
+		writeq(lb_ctrl0, pb->lbp.reg_base + LB_CTRL0);
+	}
 
 	lb_offset = (uint64_t)lb_config.x_offset_pixels &
 			LB_OFFSET_OFFSET_X_MASK;
@@ -506,21 +514,38 @@ int setup_lb_ioctl(struct paintbox_data *pb,
 			LB_OFFSET_OFFSET_CHAN_M) << LB_OFFSET_OFFSET_CHAN_SHIFT;
 	lb_offset |= ((uint64_t)lb_config.fb_offset_pixels &
 			LB_OFFSET_FB_OFFSET_M) << LB_OFFSET_FB_OFFSET_SHIFT;
-	writeq(lb_offset, pb->lbp.reg_base + LB_OFFSET);
+	if (lb_offset != lb->regs.lb_offset) {
+		lb->regs.lb_offset = lb_offset;
+		writeq(lb_offset, pb->lbp.reg_base + LB_OFFSET);
+	}
 
-	writel(lb_bdry, pb->lbp.reg_base + LB_BDRY);
+	if (lb_bdry != lb->regs.lb_bdry) {
+		lb->regs.lb_bdry = lb_bdry;
+		writel(lb_bdry, pb->lbp.reg_base + LB_BDRY);
+	}
 
-	writel(lb_config.height_pixels << LB_IMG_SIZE_IMG_HEIGHT_SHIFT |
-			lb_config.width_pixels, pb->lbp.reg_base + LB_IMG_SIZE);
+	lb_img_size = lb_config.height_pixels << LB_IMG_SIZE_IMG_HEIGHT_SHIFT |
+			lb_config.width_pixels;
+	if (lb_img_size != lb->regs.lb_img_size) {
+		lb->regs.lb_img_size = lb_img_size;
+		writel(lb_img_size, pb->lbp.reg_base + LB_IMG_SIZE);
+	}
 
-	writel(lb_config.sb_rows << LB_SB_SIZE_SB_ROWS_SHIFT |
-			lb_config.sb_cols, pb->lbp.reg_base + LB_SB_SIZE);
+	lb_sb_size = lb_config.sb_rows << LB_SB_SIZE_SB_ROWS_SHIFT |
+			lb_config.sb_cols;
+	if (lb_sb_size != lb->regs.lb_sb_size) {
+		lb->regs.lb_sb_size = lb_sb_size;
+		writel(lb_sb_size, pb->lbp.reg_base + LB_SB_SIZE);
+	}
 
 	lb_base = lb_config.ipu_fb_base_addr >> LB_BASE_FB_BASE_ALIGN_SHIFT;
 	lb_base |= (lb_config.ipu_sb_base_addr >>
 			LB_BASE_SB_BASE_ALIGN_SHIFT) <<
 			LB_BASE_SB_BASE_ADDR_SHIFT;
-	writel(lb_base, pb->lbp.reg_base + LB_BASE);
+	if (lb_base != lb->regs.lb_base) {
+		lb->regs.lb_base = lb_base;
+		writel(lb_base, pb->lbp.reg_base + LB_BASE);
+	}
 
 #if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
 	ret = write_l_param_register(pb, lb);
@@ -540,8 +565,11 @@ int setup_lb_ioctl(struct paintbox_data *pb,
 		/* In full buffer mode the L_INC field is set to zero and the
 		 * L_WIDTH field is set to the maximum value.
 		 */
-		writel(LB_L_PARAM_L_WIDTH_MAX << LB_L_PARAM_L_WIDTH_SHIFT,
-				pb->lbp.reg_base + LB_L_PARAM);
+		lb_l_param = LB_L_PARAM_L_WIDTH_MAX << LB_L_PARAM_L_WIDTH_SHIFT;
+		if (lb_l_param != lb->regs.lb_l_param) {
+			lb->regs.lb_l_param = lb_l_param;
+			writel(lb_l_param, pb->lbp.reg_base + LB_L_PARAM);
+		}
 	}
 #endif
 
@@ -556,16 +584,17 @@ int setup_lb_ioctl(struct paintbox_data *pb,
 	/* Enable and initialize the line buffer
 	 * The init bit is not self clearing, we need to clear the init bit.
 	 */
-	ctrl = readq(pb->lbp.reg_base + LBP_CTRL);
 #if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
 	ctrl |= 1ULL << lb_config.lb_id;
 #else
 	ctrl &= ~LBP_CTRL_LB_ENA_MASK;
 	ctrl |= lb_config.lb_id + 1;
 #endif
+	ctrl &= ~(1ULL << (lb->lb_id + LBP_CTRL_LB_RESET_SHIFT));
 	ctrl |= 1ULL << (lb_config.lb_id + LBP_CTRL_LB_INIT_SHIFT);
 	writeq(ctrl, pb->lbp.reg_base + LBP_CTRL);
 	ctrl &= ~(1ULL << (lb_config.lb_id + LBP_CTRL_LB_INIT_SHIFT));
+	lbp->regs.lbp_ctrl = ctrl;
 	writeq(ctrl, pb->lbp.reg_base + LBP_CTRL);
 
 	lb->configured = true;
@@ -764,7 +793,7 @@ int reset_lbp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 
 	paintbox_lbp_select(pb, lbp->pool_id);
 
-	ctrl = readq(pb->lbp.reg_base + LBP_CTRL);
+	ctrl = lbp->regs.lbp_ctrl;
 	ctrl |= LBP_CTRL_LBP_RESET_MASK;
 	writeq(ctrl, pb->lbp.reg_base + LBP_CTRL);
 	ctrl &= ~LBP_CTRL_LBP_RESET_MASK;
@@ -807,7 +836,7 @@ int reset_lb_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 
 	paintbox_lbp_select(pb, lbp->pool_id);
 
-	ctrl = readq(pb->lbp.reg_base + LBP_CTRL);
+	ctrl = lbp->regs.lbp_ctrl;
 	ctrl |= 1ULL << req.lb_id << LBP_CTRL_LB_RESET_SHIFT;
 	writeq(ctrl, pb->lbp.reg_base + LBP_CTRL);
 	ctrl &= ~(1ULL << req.lb_id << LBP_CTRL_LB_RESET_SHIFT);
@@ -889,10 +918,12 @@ int lbp_test_broadcast_write_memory_ioctl(struct paintbox_data *pb,
 void paintbox_lbp_set_pmon_rptr_id(struct paintbox_data *pb, uint64_t rptr_id)
 {
 	uint64_t lbp_ctrl;
+	struct paintbox_lbp *lbp = &pb->lbp.lbps[pb->lbp.selected_lbp_id];
 
-	lbp_ctrl = readq(pb->lbp.reg_base + LBP_CTRL);
+	lbp_ctrl = lbp->regs.lbp_ctrl;
 	lbp_ctrl &= ~LBP_CTRL_PMON_RD_SEL_MASK;
 	lbp_ctrl |= rptr_id << LBP_CTRL_PMON_RD_SEL_SHIFT;
+	lbp->regs.lbp_ctrl = lbp_ctrl;
 	writeq(lbp_ctrl, pb->lbp.reg_base + LBP_CTRL);
 }
 
@@ -946,6 +977,8 @@ static int init_lbp(struct paintbox_data *pb, unsigned int lbp_index)
 	if (!lbp->lbs)
 		return -ENOMEM;
 
+	lbp->regs.lbp_ctrl = LBP_CTRL_DEF;
+
 	paintbox_lbp_debug_init(pb, lbp);
 
 	for (i = 0; i < pb->lbp.max_lbs; i++) {
@@ -953,6 +986,14 @@ static int init_lbp(struct paintbox_data *pb, unsigned int lbp_index)
 
 		lb->lbp = lbp;
 		lb->lb_id = i;
+
+		lb->regs.lb_ctrl0 = LB_CTRL0_DEF;
+		lb->regs.lb_offset = LB_OFFSET_DEF;
+		lb->regs.lb_bdry = LB_BDRY_DEF;
+		lb->regs.lb_img_size = LB_IMG_SIZE_DEF;
+		lb->regs.lb_sb_size = LB_SB_SIZE_DEF;
+		lb->regs.lb_base = LB_BASE_DEF;
+		lb->regs.lb_l_param = LB_L_PARAM_DEF;
 
 		paintbox_lb_debug_init(pb, lbp, lb);
 	}
