@@ -358,7 +358,7 @@ static void dma_report_completion(struct paintbox_data *pb,
 	 * read queue that is emptied by read_dma_transfer_ioctl().  All other
 	 * transfers go on a discard queue and are cleaned up by a work queue.
 	 *
-	 * TODO(ahampson): Remove the read queue support when b/62371806 is
+	 * TODO: Remove the read queue support when b/62371806 is
 	 * fixed.
 	 */
 	if (transfer->buffer_type == DMA_DRAM_BUFFER_USER &&
@@ -875,7 +875,7 @@ static inline void paintbox_dma_load_channel_regs(void __iomem *dma_base,
 		writel(transfer->chan_bif_xfer, dma_base + DMA_CHAN_BIF_XFER);
 	}
 
-	/* TODO(ahampson):  The trace_combiner used in register trace generation
+	/* TODO:  The trace_combiner used in register trace generation
 	 * relies on the DMA_CHAN_VA and DMA_CHAN_VA_BDRY registers being
 	 * present in register traces for DMA transfers.  When running on the
 	 * Simulator the driver needs to always write these registers
@@ -1296,7 +1296,7 @@ static void paintbox_dma_reset_locked(struct paintbox_data *pb)
 
 	writel(DMA_CTRL_DMA_RESET_MASK, pb->dma.dma_base + DMA_CTRL);
 
-	/* TODO(ahampson):  There should be no need to hold the DMA reset
+	/* TODO:  There should be no need to hold the DMA reset
 	 * register high for a minimum period but the FPGA will lockup if the
 	 * reset register is cleared immediately following a VA Error Interrupt.
 	 * This needs to be evaluated on the real hardware.  b/35779292

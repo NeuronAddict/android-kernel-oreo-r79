@@ -34,7 +34,7 @@
 #include "paintbox-regs.h"
 #include "paintbox-stp.h"
 
-/* TODO(ahampson):  Temporarily make DMA configuration validation a debug
+/* TODO:  Temporarily make DMA configuration validation a debug
  * only operation.
  */
 #ifdef DEBUG
@@ -137,7 +137,7 @@ int set_dma_image_parameters(struct paintbox_data *pb,
 		struct paintbox_dma_transfer *transfer,
 		struct dma_image_config *config)
 {
-	/* TODO(ahampson):  Temporarily make LBP DMA configuration validation a
+	/* TODO:  Temporarily make LBP DMA configuration validation a
 	 * debug only operation.
 	 */
 #ifdef DEBUG
@@ -240,7 +240,7 @@ int set_dma_transfer_region_parameters(struct paintbox_data *pb,
 		struct dma_transfer_config *config)
 {
 
-/* TODO(ahampson):  Temporarily make DMA configuration validation a debug
+/* TODO:  Temporarily make DMA configuration validation a debug
  * only operation.
  */
 #ifdef DEBUG
@@ -307,7 +307,7 @@ int set_dma_transfer_region_parameters(struct paintbox_data *pb,
 			DMA_CHAN_NOC_XFER_RETRY_INTERVAL_SHIFT;
 
 #if CONFIG_PAINTBOX_VERSION_MAJOR == 0
-	/* TODO(ahampson):  DMA_CHAN_NOC_XFER_DYN_OUTSTANDING_MASK is currently
+	/* TODO:  DMA_CHAN_NOC_XFER_DYN_OUTSTANDING_MASK is currently
 	 * set for all DMA transfers at this time.  This may change in the
 	 * future to give priority to MIPI transfers.
 	 */

@@ -34,23 +34,23 @@
 #include "paintbox-regs.h"
 
 /* Paintbox IO virtual address space bounds
- * TODO(ahampson):  These are place holder values.  I need to figure out the
+ * TODO:  These are place holder values.  I need to figure out the
  * correct value for these.  This comes out to 512MB right now.
  */
 #define PAINTBOX_IOVA_START		0x20000000
 #define PAINTBOX_IOVA_SIZE		0x40000000
 
-/* TOOD(ahampson):  The error base is specific to the platform and should
+/* TOOD:  The error base is specific to the platform and should
  * be passed in through the platform data.
  */
 #define PAINTBOX_ERROR_BASE		0x8000000000
 
-/* TODO(ahampson):  Figure out if there is a way to get this information from
+/* TODO:  Figure out if there is a way to get this information from
  * the system.
  */
 #define PAINTBOX_INPUT_ADDR_SIZE	43 /* bits */
 
-/* TODO(ahampson):  This will need to be configurable.  The output address size
+/* TODO:  This will need to be configurable.  The output address size
  * on Easel will be 32 bits but on a normal system it will be 40 bits.
  */
 #define PAINTBOX_OUTPUT_ADDR_SIZE	32 /* bits */
@@ -175,7 +175,7 @@ static void paintbox_mmu_table_walk_error_interrupt(struct paintbox_data *pb,
 	 */
 	dma_report_error_all_channels(pb, -ENOTRECOVERABLE);
 
-	/* TODO(ahampson):  Initiate a reset of the IPU and block new operations
+	/* TODO:  Initiate a reset of the IPU and block new operations
 	 * until the IPU comes out of reset.  As part of the reset process any
 	 * MIPI or STP waiters should be released.  b/34518459
 	 */
@@ -208,7 +208,7 @@ static void paintbox_mmu_flush_error_interrupt(struct paintbox_data *pb,
 	 */
 	dma_report_error_all_channels(pb, -ENOTRECOVERABLE);
 
-	/* TODO(ahampson):  Initiate a reset of the IPU and block new operations
+	/* TODO:  Initiate a reset of the IPU and block new operations
 	 * until the IPU comes out of reset.  As part of the reset process any
 	 * MIPI or STP waiters should be released.  b/34518459
 	 */
@@ -241,7 +241,7 @@ static void paintbox_mmu_prefetch_error_interrupt(struct paintbox_data *pb,
 	 */
 	dma_report_error_all_channels(pb, -ENOTRECOVERABLE);
 
-	/* TODO(ahampson):  Initiate a reset of the IPU and block new operations
+	/* TODO:  Initiate a reset of the IPU and block new operations
 	 * until the IPU comes out of reset.  As part of the reset process any
 	 * MIPI or STP waiters should be released.  b/34518459
 	 */
@@ -324,7 +324,7 @@ static void paintbox_mmu_tlb_sync(void *priv)
 	paintbox_disable_mmu_bif_idle_clock_gating(pb);
 #endif
 
-	/* TODO(ahampson):  There is no field bit defined for MMU_SYNC so we
+	/* TODO:  There is no field bit defined for MMU_SYNC so we
 	 * just write a 1 into the register in the interim.
 	 */
 	writel(0x01, pb->io.axi_base + MMU_SYNC);
@@ -333,7 +333,7 @@ static void paintbox_mmu_tlb_sync(void *priv)
 			dev_err(&pb->pdev->dev,
 					"%s: timeout waiting for MMU sync\n",
 					__func__);
-			/* TODO(ahampson):  A proper recovery path for a sync
+			/* TODO:  A proper recovery path for a sync
 			 * timeout should be developed for this case.
 			 * b/35470877
 			 */
@@ -366,7 +366,7 @@ static void paintbox_mmu_tlb_flush_all(void *priv)
 				dev_err(&pb->pdev->dev,
 						"%s: timeout waiting for flush "
 						"FIFO to clear\n", __func__);
-				/* TODO(ahampson):  A proper recovery path for a
+				/* TODO:  A proper recovery path for a
 				 * flush FIFO timeout should be developed for
 				 * this case.  b/35470877
 				 */
@@ -406,7 +406,7 @@ static void paintbox_mmu_tlb_invalidate_range_nosync(void *priv,
 				dev_err(&pb->pdev->dev,
 						"%s: timeout waiting for flush "
 						"FIFO to clear\n", __func__);
-				/* TODO(ahampson):  A proper recovery path for a
+				/* TODO:  A proper recovery path for a
 				 * flush FIFO timeout should be developed for
 				 * this case.  b/35470877
 				 */
@@ -526,7 +526,7 @@ int paintbox_mmu_iommu_init(struct paintbox_data *pb)
 	iommu_dev->platform_data = pdata;
 	iommu_dev->bus = &paintbox_bus_type;
 
-	/* TODO(ahampson):  Look for a better way to do this.  Normally it is
+	/* TODO:  Look for a better way to do this.  Normally it is
 	 * done in OF but since we are manually constructing the IOMMU device we
 	 * need to do it here.
 	 */

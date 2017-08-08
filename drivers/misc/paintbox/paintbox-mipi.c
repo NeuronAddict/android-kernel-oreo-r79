@@ -538,7 +538,7 @@ int enable_mipi_output_stream(struct paintbox_data *pb,
 	/* Enable the stream.  This will copy the stream's pending configuration
 	 * registers to the active set.
 	 */
-	/* TODO(showarth): wait for last frame. b/38357562 */
+	/* TODO: wait for last frame. b/38357562 */
 	ret = mipi_output_enable_irqs_and_stream(pb, stream,
 			MIPI_OUTPUT_EOF_IMR, enable_row_sync);
 
@@ -548,7 +548,7 @@ int enable_mipi_output_stream(struct paintbox_data *pb,
 	if (!free_running && stream->frame_count == 0) {
 		stream->last_frame = true;
 
-	/* TODO(ahampson):  Remove Simulator check once MIPI double buffering is
+	/* TODO:  Remove Simulator check once MIPI double buffering is
 	 * implemented in the Simulator and QEMU.  b/29508438, b/32769802
 	 *
 	 * With the current Simulator, the driver can not disable the stream at
@@ -1016,7 +1016,7 @@ int setup_mipi_input_stream(struct paintbox_data *pb,
 	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
 
 #if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
-	/* TODO(showarth): wait for ENA == 0 */
+	/* TODO: wait for ENA == 0 */
 #else
 	/* Disable the stream while updating the stream configuration.  This is
 	 * to guarantee that the update is atomic if the update occurs over a
@@ -1111,7 +1111,7 @@ int setup_mipi_output_stream(struct paintbox_data *pb,
 	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
 
 #if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
-	/* TODO(showarth): wait for ENA == 0 */
+	/* TODO: wait for ENA == 0 */
 #else
 	/* Disable the stream while updating the stream configuration.  This is
 	 * to guarantee that the update is atomic if the update occurs over a
@@ -1143,7 +1143,7 @@ int setup_mipi_output_stream(struct paintbox_data *pb,
 	writeq(cnfg0_val, pb->io_ipu.ipu_base + MPO_STRM_CNFG0);
 
 #if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
-	/* TODO(showarth): support multiple virtual channels (b/36103832). */
+	/* TODO: support multiple virtual channels (b/36103832). */
 	cnfg1_val = 0;
 #else
 	/* The MPO_SEG_END value in the MPO_STRM_CNFG1 register is subtracted
@@ -1300,7 +1300,7 @@ int verify_cleanup_completion(struct paintbox_data *pb,
 	stream->cleanup_in_progress = false;
 	stream->is_clean = true;
 
-	/* TODO(ahampson):  This needs to be disabled for QEMU/Simulator for the
+	/* TODO:  This needs to be disabled for QEMU/Simulator for the
 	 * now.  The RTL test bench can not currently handle the wait for 200us
 	 * before reading the CLEANUP bit requirement. This will be fixed in
 	 * QEMU and the RTL testbench.  b/32338758

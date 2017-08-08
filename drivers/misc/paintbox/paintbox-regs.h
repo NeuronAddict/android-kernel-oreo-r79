@@ -17,19 +17,15 @@
 
 #include <linux/types.h>
 
-#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
-#include "paintbox-regs-v1-generated.h"
-#else
 #include "paintbox-regs-v0-generated.h"
-#endif
 
-/* TODO(ahampson):  The following information should be eventually be generated
+/* TODO:  The following information should be eventually be generated
  * by the generator script from the RTL.
  */
 
 #define REG_UNUSED "UNKNOWN"
 
-/* TODO(ahampson):  Switch this to uint64_t once all the registers are
+/* TODO:  Switch this to uint64_t once all the registers are
  * converted to 64bit.
 */
 #define IPU_REG_WIDTH sizeof(uint32_t)
@@ -67,7 +63,7 @@
 #define IPU_ISR_MPO_INTR_SHIFT	(IPU_ISR_MPI_INTR_SHIFT + 3)
 #define IPU_ISR_MPO_INTR_MASK	(IPU_ISR_MPO_INTR_M << IPU_ISR_MPO_INTR_SHIFT)
 
-/* TODO(showarth): Switch these to IPU_REG_WIDTH_BYTES when the trace code is
+/* TODO: Switch these to IPU_REG_WIDTH_BYTES when the trace code is
  * fully switched over.
  */
 #if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
@@ -78,25 +74,25 @@
 #define IO_AON_NUM_REGS      (IO_APB_BLOCK_LEN / IPU_REG_WIDTH)
 #endif
 
-/* TODO(ahampson): Switch these to IPU_REG_WIDTH_BYTES when the trace code is
+/* TODO: Switch these to IPU_REG_WIDTH_BYTES when the trace code is
  * fully switched over.
  */
 #define IO_APB_BLOCK_LEN     (APB_SPARE + IPU_REG_WIDTH)
 #define IO_APB_NUM_REGS      (IO_APB_BLOCK_LEN / IPU_REG_WIDTH)
 
-/* TODO(ahampson): Switch these to IPU_REG_WIDTH_BYTES when the trace code is
+/* TODO: Switch these to IPU_REG_WIDTH_BYTES when the trace code is
  * fully switched over.
  */
 #define IO_AXI_BLOCK_LEN     (AXI_SPARE + IPU_REG_WIDTH)
 #define IO_AXI_NUM_REGS      (IO_AXI_BLOCK_LEN / IPU_REG_WIDTH)
 
-/* TODO(ahampson): Switch these to IPU_REG_WIDTH_BYTES when the trace code is
+/* TODO: Switch these to IPU_REG_WIDTH_BYTES when the trace code is
  * fully switched over.
  */
 #define STP_BLOCK_LEN           (STP_PMON_CNT_1_STS + IPU_REG_WIDTH)
 #define STP_NUM_REGS            (STP_BLOCK_LEN / IPU_REG_WIDTH)
 
-/* TODO(ahampson): Switch these to IPU_REG_WIDTH_BYTES when the trace code is
+/* TODO: Switch these to IPU_REG_WIDTH_BYTES when the trace code is
  * fully switched over.
  */
 

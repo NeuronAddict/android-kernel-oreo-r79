@@ -115,7 +115,7 @@ static int paintbox_release(struct inode *ip, struct file *fp)
 
 	mutex_lock(&pb->lock);
 
-	/* TODO(ahampson): Cleanup release sequence.  b/62372748 */
+	/* TODO: Cleanup release sequence.  b/62372748 */
 
 	paintbox_mipi_release(pb, session);
 	paintbox_dma_release(pb, session);

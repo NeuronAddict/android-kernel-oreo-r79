@@ -37,14 +37,14 @@
 #define LB_BLOCK_TRANSFER_HEIGHT 4
 #define LB_BLOCK_TRANSFER_WIDTH  4
 
-/* TODO(ahampson):  Temporarily make the line buffer configuration validation a
+/* TODO:  Temporarily make the line buffer configuration validation a
  * debug only operation.  b/62353362
  */
 #ifdef DEBUG
 static int validate_lb_config(struct paintbox_data *pb,
 		struct paintbox_lbp *lbp, struct line_buffer_config *lb_config)
 {
-	/* TODO(ahampson): Need to figure out how the broadcast id will be
+	/* TODO: Need to figure out how the broadcast id will be
 	 * expressed.
 	 */
 	if (lb_config->lb_id < 0 || lb_config->lb_id >= pb->lbp.max_lbs) {

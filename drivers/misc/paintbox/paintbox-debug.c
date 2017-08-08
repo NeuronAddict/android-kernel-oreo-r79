@@ -56,7 +56,7 @@ int dump_ipu_vprintf(struct paintbox_data *pb, char *buf, int *written,
 		vaf.fmt = format;
 		vaf.va = &args;
 
-		/* TODO(ahampson):  Add support for levels */
+		/* TODO:  Add support for levels */
 
 		pr_info("%pV", &vaf);
 	}
@@ -96,7 +96,7 @@ int dump_ipu_register(struct paintbox_data *pb, void __iomem *group_base,
 			readl(group_base + reg_offset));
 }
 
-/* TODO(ahampson):  Remove the 32bit version and rename this one
+/* TODO:  Remove the 32bit version and rename this one
  * dump_ipu_register() when all the register groups have been converted.
  * b/62373740
  */
@@ -122,7 +122,7 @@ int dump_ipu_register_with_value(struct paintbox_data *pb,
 			reg_name ? reg_name : REG_UNUSED, reg_value);
 }
 
-/* TODO(ahampson):  Remove the 32bit version and rename this one
+/* TODO:  Remove the 32bit version and rename this one
  * dump_ipu_register_with_value() when all the register groups have been
  * converted.  b/62373740
  */
@@ -903,7 +903,7 @@ static int paintbox_reg_dump_open(struct inode *inode, struct file *file)
 	struct paintbox_data *pb = inode->i_private;
 	size_t len;
 
-	/* TODO(showarth):  Add V1 support for AON registers */
+	/* TODO:  Add V1 support for AON registers */
 	len = IO_APB_NUM_REGS * REG_DEBUG_BUFFER_SIZE;
 	len += IO_AXI_NUM_REGS * REG_DEBUG_BUFFER_SIZE;
 	len += pb->io_ipu.num_mipi_input_streams * IO_IPU_NUM_REGS *

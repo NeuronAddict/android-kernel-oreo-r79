@@ -40,7 +40,7 @@ int stp_sram_write_word(struct paintbox_data *pb,
 
 	paintbox_stp_select(pb, sram_config->core_id);
 
-	/* TODO(ahampson):  This can be removed once the SWAP and COL_MAJOR
+	/* TODO:  This can be removed once the SWAP and COL_MAJOR
 	 * support is moved outside the driver.
 	 */
 	switch (sram_config->ram_data_mode) {
@@ -122,7 +122,7 @@ int stp_sram_read_word(struct paintbox_data *pb,
 		paintbox_stp_select(pb, sram_config->core_id);
 	}
 
-	/* TODO(ahampson):  This can be removed once the SWAP and COL_MAJOR
+	/* TODO:  This can be removed once the SWAP and COL_MAJOR
 	 * support is moved outside the driver.
 	 */
 	switch (sram_config->ram_data_mode) {
@@ -743,7 +743,7 @@ static int sram_write_vector_buffer(struct paintbox_data *pb,
  * the various lane groups of vector memory from their physical addresses to
  * their logical addresses.
  *
- * TODO(ahampson):  Conversion between logical and physical addressing for the
+ * TODO:  Conversion between logical and physical addressing for the
  * lane groups may be moved to the runtime.  If that is the case then this code
  * can be remmoved.
  */

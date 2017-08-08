@@ -37,7 +37,7 @@ int dma_setup_mipi_to_dram_transfer(struct paintbox_data *pb,
 {
 	int ret;
 
-/* TODO(ahampson):  Temporarily make MIPI DMA configuration validation a debug
+/* TODO:  Temporarily make MIPI DMA configuration validation a debug
  * only operation.  b/62353362
  */
 #ifdef DEBUG

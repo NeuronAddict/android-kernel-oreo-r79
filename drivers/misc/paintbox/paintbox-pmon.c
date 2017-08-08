@@ -35,7 +35,7 @@ static inline bool in_range(int64_t value, int64_t lo, int64_t hi)
 /* returns the number of counters for block type |block| */
 static int pmon_num_counters_in_block(enum pmon_block_type block)
 {
-	/* TODO(vharron) query from hardware */
+	/* TODO query from hardware */
 	if (block == PMON_BLOCK_DMA)
 		return DMA_PMON_COUNTERS;
 	return DEFAULT_PMON_COUNTERS;

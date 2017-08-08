@@ -2,7 +2,6 @@
  * Driver interface for the Paintbox Image Processing Unit
  *
  * Copyright (C) 2015 Google, Inc.
- * Author: Adam Hampson <ahampson@google.com>
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -20,7 +19,7 @@
 #include <linux/compiler.h>
 #include <linux/ioctl.h>
 
-/* TODO(ahampson): There are several enumerations and types that are used in
+/* TODO: There are several enumerations and types that are used in
  * C and C++ code across the kernel, QEMU, and Simulator.  A unified header file
  * hierarchy should be created to avoid type duplication.  This also has build
  * system implications as the components using these types are spread out over
@@ -168,7 +167,7 @@ struct dma_transfer_config {
 	bool auto_start_transfer;
 };
 
-/* TODO(ahampson):  We can remove this when b/62371806 is fixed.
+/* TODO:  We can remove this when b/62371806 is fixed.
  */
 struct dma_transfer_read {
 	uint32_t channel_id;
@@ -585,7 +584,7 @@ struct mipi_interrupt_config {
  * -ENOSYS: Unimplemented Functionality
  *
  */
-/* TODO(ahampson):  Reorganize and compress ioctl number space.  b/36068296 */
+/* TODO:  Reorganize and compress ioctl number space.  b/36068296 */
 #define PB_GET_IPU_CAPABILITIES      _IOR('p', 1, struct ipu_capabilities)
 #define PB_ALLOCATE_DMA_CHANNEL      _IOW('p', 2, unsigned int)
 #define PB_SETUP_DMA_TRANSFER        _IOW('p', 3, struct dma_transfer_config)

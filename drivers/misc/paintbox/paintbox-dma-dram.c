@@ -126,7 +126,7 @@ static int ipu_import_dma_buf(struct paintbox_data *pb,
 	}
 #endif
 
-	/* TODO(ahampson):  dma_buf_offset_bytes + config->len_bytes should be
+	/* TODO:  dma_buf_offset_bytes + config->len_bytes should be
 	 * less than or equal sg_dma_len(transfer->sg_table->sgl).  Currently
 	 * the config->len_bytes value supplied by the runtime is not the
 	 * actual transfer boundary.  b/35243756
@@ -164,7 +164,7 @@ static int ipu_import_dma_buf(struct paintbox_data *pb,
 	}
 #endif
 
-	/* TODO(ahampson):  The buffer offset should be factored in earlier so
+	/* TODO:  The buffer offset should be factored in earlier so
 	 * we don't map pages we don't need into the IOVA.
 	 */
 	transfer->dma_addr = sg_dma_address(transfer->sg_table->sgl) +

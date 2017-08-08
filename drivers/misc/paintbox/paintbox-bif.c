@@ -161,7 +161,7 @@ static void paintbox_bif_dma_timeout_interrupt(struct paintbox_data *pb,
 	 */
 	dma_report_error_all_channels(pb, -ENOTRECOVERABLE);
 
-	/* TODO(ahampson):  Initiate a reset of the IPU and block new operations
+	/* TODO:  Initiate a reset of the IPU and block new operations
 	 * until the IPU comes out of reset.  Note it might be necessary to
 	 * reset the whole Easel chip if the AXI bus is messed up.  As part of
 	 * the reset process any MIPI or STP waiters should be released.
@@ -189,7 +189,7 @@ static void paintbox_bif_mmu_timeout_interrupt(struct paintbox_data *pb,
 	 */
 	dma_report_error_all_channels(pb, -ENOTRECOVERABLE);
 
-	/* TODO(ahampson):  Initiate a reset of the IPU and block new operations
+	/* TODO:  Initiate a reset of the IPU and block new operations
 	 * until the IPU comes out of reset.  Note it might be necessary to
 	 * reset the whole Easel chip if the AXI bus is messed up.  As part of
 	 * the reset process any MIPI or STP waiters should be released.
@@ -224,7 +224,7 @@ static void paintbox_bif_mmu_bus_error_interrupt(struct paintbox_data *pb,
 	 */
 	dma_report_error_all_channels(pb, -ENOTRECOVERABLE);
 
-	/* TODO(ahampson):  Initiate a reset of the IPU and block new operations
+	/* TODO:  Initiate a reset of the IPU and block new operations
 	 * until the IPU comes out of reset.  As part of the reset process any
 	 * MIPI or STP waiters should be released.  b/34518459
 	 */

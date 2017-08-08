@@ -57,28 +57,9 @@ config PAINTBOX_IOMMU_ENABLED
 	---help---
 	This option sets the default state for Paintbox IOMMU to on.
 
-choice
-	prompt "Paintbox Version"
-	depends on PAINTBOX
-	default PAINTBOX_V0
-
-config PAINTBOX_V0
-	bool  "Paintbox V0 functionality and errata"
-	---help---
-	This option enables Paintbox V0 specific functionality and errata.
-
-config PAINTBOX_V1
-	bool  "Paintbox V1 functionality and errata"
-	---help---
-	This option enables Paintbox V1 specific functionality and errata.
-
-endchoice
-
 config PAINTBOX_VERSION_MAJOR
 	int
 	depends on PAINTBOX
-	default 2 if PAINTBOX_V2
-	default 1 if PAINTBOX_V1
 	default 0
 
 endmenu

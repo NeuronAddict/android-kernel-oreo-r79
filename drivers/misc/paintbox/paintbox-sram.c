@@ -83,7 +83,7 @@ void write_ram_data_registers(struct paintbox_data *pb, const uint8_t *buf,
 	DUMP_REGISTERS(pb, data_reg, reg_count, __func__);
 }
 
-/* TODO(ahampson):  Remove once b/30316979 is fixed.  RAM_DATA_MODE_SWAP is
+/* TODO:  Remove once b/30316979 is fixed.  RAM_DATA_MODE_SWAP is
  * needed because the assembler writes the instruction in reverse byte order
  * (due to an issue with the DV tools).  Once that bug is fixed this function
  * can be removed.
@@ -114,7 +114,7 @@ void write_ram_data_registers_swapped(struct paintbox_data *pb,
 	DUMP_REGISTERS(pb, data_reg, reg_count, __func__);
 }
 
-/* TODO(ahampson):  The conversion to the vector SRAM's column major lane
+/* TODO:  The conversion to the vector SRAM's column major lane
  * ordering needs to be moved to the runtime so it can be used for both DMA and
  * PIO.  This function can be removed once that support is ready.
  */
@@ -184,7 +184,7 @@ void read_ram_data_registers(struct paintbox_data *pb, uint8_t *buf,
 	}
 }
 
-/* TODO(ahampson):  Remove once b/30316979 is fixed.  RAM_DATA_MODE_SWAP is
+/* TODO:  Remove once b/30316979 is fixed.  RAM_DATA_MODE_SWAP is
  * needed because the assember writes the instruction in reverse byte order (due
  * to an issue with the DV tools).  Once that bug is fixed this function can be
  * removed.
@@ -212,7 +212,7 @@ void read_ram_data_registers_swapped(struct paintbox_data *pb,
 	}
 }
 
-/* TODO(ahampson):  The conversion to the vector SRAM's column major lane
+/* TODO:  The conversion to the vector SRAM's column major lane
  * ordering needs to be moved to the runtime so it can be used for both DMA and
  * PIO.  This function can be removed once that support is ready.
  */

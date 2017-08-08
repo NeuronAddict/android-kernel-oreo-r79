@@ -383,7 +383,7 @@ int stop_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 	 * done for the Simulator.  The FPGA does not have a similar mechanism
 	 * How the post-DMA interrupt cleanup on the hardware will work is TBD.
 	 *
-	 * TODO(ahampson):  This should be moved into QEMU or Simulator Server.
+	 * TODO:  This should be moved into QEMU or Simulator Server.
 	 * b/34815472
 	 */
 #ifdef CONFIG_PAINTBOX_SIMULATOR_SUPPORT
@@ -430,7 +430,7 @@ static int paintbox_stp_reset(struct paintbox_data *pb, struct paintbox_stp *stp
 	 * done for the Simulator.  The FPGA does not have a similar mechanism
 	 * How the post-DMA interrupt cleanup on the hardware will work is TBD.
 	 *
-	 * TODO(ahampson):  This should be moved into QEMU or Simulator Server.
+	 * TODO:  This should be moved into QEMU or Simulator Server.
 	 * b/34815472
 	 */
 	ret = sim_wait_for_idle(pb, stp);
@@ -468,7 +468,7 @@ int paintbox_stp_reset_all(struct paintbox_data *pb,
 	 * a similar mechanism. How the post-DMA interrupt cleanup on
 	 * the hardware will work is TBD.
 	 *
-	 * TODO(ahampson):  This should be moved into QEMU or Simulator
+	 * TODO:  This should be moved into QEMU or Simulator
 	 * Server.
 	 * b/34815472
 	 */
@@ -561,7 +561,7 @@ int paintbox_reset_all_stp_ioctl(struct paintbox_data *pb,
 	return 0;
 }
 
-/* TODO(ahampson):  This should be removed b/36069658 */
+/* TODO:  This should be removed b/36069658 */
 int setup_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 		unsigned long arg)
 {
@@ -598,7 +598,7 @@ int setup_stp_ioctl(struct paintbox_data *pb, struct paintbox_session *session,
 	dev_dbg(&pb->pdev->dev, "stp%u setup program len %zu bytes\n",
 			stp->stp_id, config.len);
 
-	/* TODO(ahampson):  The assembler generates the pISA in the byte order
+	/* TODO:  The assembler generates the pISA in the byte order
 	 * expected by the DV.  In order for the pISA to be used by the hardware
 	 * the instruction buffer needs to be byte swapped.  This will
 	 * eventually be fixed in the assembler.  b/30316979
@@ -856,7 +856,7 @@ static void paintbox_stp_handle_interrupt(struct paintbox_data *pb,
 			paintbox_irq_waiter_signal(pb, stp->irq, timestamp,
 					int_code, 0 /* error */);
 
-		/* TODO(showarth): signal error to irq waiter.  b/62351992 */
+		/* TODO: signal error to irq waiter.  b/62351992 */
 	}
 
 	status = readl(pb->stp.reg_base + STP_ISR_OVF);

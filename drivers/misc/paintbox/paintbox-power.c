@@ -630,7 +630,7 @@ int paintbox_pm_init(struct paintbox_data *pb)
 
 	spin_lock_init(&pb->power.power_lock);
 
-	/* TODO(ahampson):  Add support for debugfs entry that allows a user to
+	/* TODO:  Add support for debugfs entry that allows a user to
 	 * force a certain number of active cores. b/62352592
 	 */
 

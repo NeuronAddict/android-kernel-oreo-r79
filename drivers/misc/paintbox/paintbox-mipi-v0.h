@@ -44,7 +44,7 @@
 #define MIPI_OUTPUT_EOF_IMR	MPO_STRM_CTRL_EOF_IMR_MASK
 #define MIPI_OUTPUT_EOF_ISR	MPO_STRM_CTRL_EOF_ISR_MASK
 
-/* TODO(ahampson):  The mapping here below applies to the V0 IPU but may not be
+/* TODO:  The mapping here below applies to the V0 IPU but may not be
  * the same in future versions of the hardware.  This mapping should be moved
  * into the device tree.  b/32283059
  *

@@ -35,7 +35,7 @@
 #include "paintbox-regs.h"
 #include "paintbox-stp.h"
 
-/* TODO(ahampson):  Temporarily make stp dma configuration validation a debug
+/* TODO:  Temporarily make stp dma configuration validation a debug
  * only operation.  b/62353362
  */
 #ifdef DEBUG
@@ -147,7 +147,7 @@ static int set_dma_stp_parameters(struct paintbox_data *pb,
 	 */
 	switch (stp_config->sram_target) {
 	case SRAM_TARGET_STP_INSTRUCTION_RAM:
-		/* TODO(ahampson):  Temporarily make stp dma configuration
+		/* TODO:  Temporarily make stp dma configuration
 		 * validation a debug only operation.  b/62353362
 		 */
 #ifdef DEBUG
@@ -161,7 +161,7 @@ static int set_dma_stp_parameters(struct paintbox_data *pb,
 				DMA_CHAN_LB_START_Y_STP_IRAM);
 		break;
 	case SRAM_TARGET_STP_CONSTANT_RAM:
-		/* TODO(ahampson):  Temporarily make stp dma configuration
+		/* TODO:  Temporarily make stp dma configuration
 		 * validation a debug only operation.  b/62353362
 		 */
 #ifdef DEBUG
@@ -175,7 +175,7 @@ static int set_dma_stp_parameters(struct paintbox_data *pb,
 				DMA_CHAN_LB_START_Y_STP_CRAM);
 		break;
 	case SRAM_TARGET_STP_SCALAR_RAM:
-		/* TODO(ahampson):  Temporarily make stp dma configuration
+		/* TODO:  Temporarily make stp dma configuration
 		 * validation a debug only operation.  b/62353362
 		 */
 #ifdef DEBUG
@@ -189,7 +189,7 @@ static int set_dma_stp_parameters(struct paintbox_data *pb,
 				DMA_CHAN_LB_START_Y_STP_DRAM);
 		break;
 	case SRAM_TARGET_STP_VECTOR_RAM:
-		/* TODO(ahampson):  Add parameter checks for vector b/30969166
+		/* TODO:  Add parameter checks for vector b/30969166
 		 */
 		paintbox_dma_set_lb_start(transfer,
 				(uint64_t)stp_config->sram_addr,
@@ -220,7 +220,7 @@ int dma_setup_dram_to_stp_transfer(struct paintbox_data *pb,
 {
 	int ret;
 
-	/* TODO(ahampson):  Temporarily make stp dma configuration validation a
+	/* TODO:  Temporarily make stp dma configuration validation a
 	 * debug only operation.  b/62353362
 	 */
 #ifdef DEBUG

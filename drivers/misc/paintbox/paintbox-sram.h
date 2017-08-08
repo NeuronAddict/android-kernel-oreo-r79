@@ -22,13 +22,13 @@
 
 #define RAM_DATA_MODE_NORMAL    0
 
-/* TODO(ahampson):  Remove once b/30316979 is fixed.  RAM_DATA_MODE_SWAP is
+/* TODO:  Remove once b/30316979 is fixed.  RAM_DATA_MODE_SWAP is
  * needed because the assembler writes the instruction in reverse byte order
  * (due to an issue with the DV tools).
  */
 #define RAM_DATA_MODE_SWAP      1
 
-/* TODO(ahampson):  The conversion to the vector SRAM's column major lane
+/* TODO:  The conversion to the vector SRAM's column major lane
  * ordering needs to be moved to the runtime so it can be used for both DMA and
  * PIO.
  */

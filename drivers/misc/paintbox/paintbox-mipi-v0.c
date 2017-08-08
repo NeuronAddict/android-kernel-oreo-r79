@@ -347,7 +347,7 @@ int mipi_output_clear_and_set_control(struct paintbox_data *pb,
 /* On the V0 IPU it is also not possible to enable all streams at once, streams
  * will be enabled sequentially.
  *
- * TODO(ahampson):  This function does not verify that the streams being enabled
+ * TODO:  This function does not verify that the streams being enabled
  * are all in the same state.
  */
 void paintbox_mipi_enable_multiple_input(struct paintbox_data *pb,
@@ -377,7 +377,7 @@ void paintbox_mipi_enable_multiple_input(struct paintbox_data *pb,
 				req->free_running, req->frame_count,
 				req->input.disable_on_error);
 
-		/* TODO(ahampson):  A future performance optimization would be
+		/* TODO:  A future performance optimization would be
 		 * to construct an array of ctrl register masks here and then
 		 * write that all at once in a second loop.  This would reduce
 		 * the amount of time between stream enables.
@@ -399,7 +399,7 @@ void paintbox_mipi_enable_multiple_input(struct paintbox_data *pb,
 /* On the V0 IPU it is also not possible to enable all streams at once, streams
  * will be enabled sequentially.
  *
- * TODO(ahampson):  This function does not verify that the streams being enabled
+ * TODO:  This function does not verify that the streams being enabled
  * are all in the same state.
  */
 void paintbox_mipi_enable_multiple_output(struct paintbox_data *pb,
@@ -442,7 +442,7 @@ void paintbox_mipi_enable_multiple_output(struct paintbox_data *pb,
 /* On the V0 IPU it is also not possible to disable all streams at once, streams
  * will be disabled sequentially.
  *
- * TODO(ahampson):  This function does not verify that the streams being
+ * TODO:  This function does not verify that the streams being
  * disables are all in the same state.
  */
 void paintbox_mipi_disable_multiple_input(struct paintbox_data *pb,
@@ -486,7 +486,7 @@ void paintbox_mipi_disable_multiple_input(struct paintbox_data *pb,
 /* On the V0 IPU it is also not possible to disable all streams at once, streams
  * will be disabled sequentially.
  *
- * TODO(ahampson):  This function does not verify that the streams being
+ * TODO:  This function does not verify that the streams being
  * disables are all in the same state.
  */
 void paintbox_mipi_disable_multiple_output(struct paintbox_data *pb,
