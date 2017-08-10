@@ -1766,32 +1766,32 @@ int mnh_clk_init(struct platform_device *pdev, void __iomem *baseadress)
 		ret = -ENOMEM;
 		goto mnh_probe_err;
 	}
-	
-	tmp_mnh_dev->ddr_irq = platform_get_irq(pdev, 0);
-	dev_dbg(tmp_mnh_dev->dev, "Allocate ddr irq %d\n",
-		tmp_mnh_dev->ddr_irq);
-	err = request_irq(tmp_mnh_dev->ddr_irq, mnh_pm_handle_ddr_irq,
-	       IRQF_SHARED, DEVICE_NAME, tmp_mnh_dev->dev);
-	if (err) {
-		dev_err(tmp_mnh_dev->dev, "Could not allocated ddr irq\n");
-		ret = -EINVAL;
-		goto mnh_probe_err;
-	}
 
 	/* Check refclk rate */
 	err = device_property_read_u32(tmp_mnh_dev->dev, "refclk-gpio",
 		&refclk_gpio);
-	if (!err)
+	if (!err) {
 		tmp_mnh_dev->refclk = mnh_freq_check_refclk(refclk_gpio);
-	else {
+	} else {
 		pr_err("unable to read refclk-gpio\n");
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto mnh_probe_err;
 	}
 	tmp_mnh_dev->cpu_pllcfg = (const struct freq_reg_table*)&cpu_reg_tables[tmp_mnh_dev->refclk];
 	tmp_mnh_dev->ipu_pllcfg = (const struct freq_reg_table*)&ipu_reg_tables[tmp_mnh_dev->refclk];
 
 	mnh_dev = tmp_mnh_dev;
 	mnh_dev->cpu_freq = mnh_cpu_freq_to_index();
+
+	mnh_dev->ddr_irq = platform_get_irq(pdev, 0);
+	dev_dbg(mnh_dev->dev, "Allocate ddr irq %d\n", mnh_dev->ddr_irq);
+	err = request_irq(mnh_dev->ddr_irq, mnh_pm_handle_ddr_irq,
+			  IRQF_SHARED, DEVICE_NAME, mnh_dev->dev);
+	if (err) {
+		dev_err(mnh_dev->dev, "Could not allocated ddr irq\n");
+		ret = -EINVAL;
+		goto mnh_probe_err;
+	}
 
 	spin_lock_init(&mnh_dev->reset_lock);
 
@@ -1806,8 +1806,8 @@ int mnh_clk_init(struct platform_device *pdev, void __iomem *baseadress)
 	return 0;
 
 mnh_probe_err:
-	if (mnh_dev->ddraddr)
-		iounmap(&mnh_dev->ddraddr);
+	if (tmp_mnh_dev->ddraddr)
+		iounmap(&tmp_mnh_dev->ddraddr);
 	return ret;
 }
 
