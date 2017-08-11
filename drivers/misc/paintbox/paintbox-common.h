@@ -585,16 +585,6 @@ struct paintbox_lb {
 	unsigned int sb_rows;
 	unsigned int sb_cols;
 	bool configured;
-
-	struct {
-		uint64_t lb_ctrl0;
-		uint64_t lb_offset;
-		uint32_t lb_bdry;
-		uint32_t lb_img_size;
-		uint32_t lb_sb_size;
-		uint32_t lb_base;
-		uint32_t lb_l_param;
-	} regs;
 };
 
 /* Data structure for information specific to a Line Buffer Pool.
@@ -617,10 +607,6 @@ struct paintbox_lbp {
 	struct paintbox_lb *lbs;
 	unsigned int pool_id;
 	bool pm_enabled;
-
-	struct {
-		uint64_t lbp_ctrl;
-	} regs;
 };
 
 struct paintbox_lbp_common {
