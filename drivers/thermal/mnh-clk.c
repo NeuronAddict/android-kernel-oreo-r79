@@ -1649,6 +1649,76 @@ static DEVICE_ATTR(lpddr_mrr4, S_IRUGO,
 static DEVICE_ATTR(dump_powerregs, S_IRUGO,
 		dump_powerregs_get, NULL);
 
+static int ddr_ctl_read_reg;
+#define MAX_DDR_CTL_REG 558
+
+static ssize_t ddr_ctl_read_show(struct device *dev,
+				 struct device_attribute *attr,
+				 char *buf)
+{
+	int val;
+
+	val = readl(mnh_dev->ddraddr + (4 * ddr_ctl_read_reg));
+
+	return sprintf(buf, "0x%08x", val);
+}
+
+static ssize_t ddr_ctl_read_store(struct device *dev,
+				  struct device_attribute *attr,
+				  const char *buf,
+				  size_t count)
+{
+	int val = 0;
+	int ret;
+
+	ret = kstrtoint(buf, 10, &val);
+	if (ret < 0)
+		return ret;
+
+	dev_dbg(mnh_dev->dev, "%s: %d\n", __func__, val);
+
+	if ((val < 0) || (val > MAX_DDR_CTL_REG))
+		return -EINVAL;
+
+	ddr_ctl_read_reg = val;
+
+	return count;
+}
+DEVICE_ATTR_RW(ddr_ctl_read);
+
+static ssize_t ddr_ctl_write_store(struct device *dev,
+				   struct device_attribute *attr,
+				   const char *buf,
+				   size_t count)
+{
+	int val1 = 0, val2 = 0;
+	int ret;
+	char *str;
+
+	str = strsep((char **)&buf, ";");
+	if (!str)
+		return -EINVAL;
+
+	ret = kstrtoint(str, 10, &val1);
+	if (ret < 0)
+		return ret;
+
+	if ((val1 < 0) || (val1 > MAX_DDR_CTL_REG))
+		return -EINVAL;
+
+	ret = kstrtoint(buf, 0, &val2);
+	if (ret < 0)
+		return ret;
+
+	dev_dbg(mnh_dev->dev, "%s: reg %d, data 0x%08x\n", __func__,
+		val1, val2);
+
+	writel(val2, mnh_dev->ddraddr + (4 * val1));
+
+	return count;
+}
+DEVICE_ATTR_WO(ddr_ctl_write);
+
 static struct attribute *freq_dev_attributes[] = {
 	&dev_attr_cpu_freq.attr,
 	&dev_attr_ipu_freq.attr,
@@ -1661,6 +1731,8 @@ static struct attribute *freq_dev_attributes[] = {
 	&dev_attr_lpddr_sys200.attr,
 	&dev_attr_lpddr_mrr4.attr,
 	&dev_attr_dump_powerregs.attr,
+	&dev_attr_ddr_ctl_read.attr,
+	&dev_attr_ddr_ctl_write.attr,
 	NULL
 };
 
