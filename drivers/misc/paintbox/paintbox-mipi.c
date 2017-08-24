@@ -724,6 +724,92 @@ int disable_mipi_stream_ioctl(struct paintbox_data *pb,
 	return 0;
 }
 
+int paintbox_mipi_input_wait_for_quiescence_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg)
+{
+	struct mipi_input_wait_for_quiescence __user *user_req;
+	struct mipi_input_wait_for_quiescence req;
+	unsigned long irq_flags, timeout, start;
+	struct paintbox_mipi_stream *stream;
+	int64_t elapsed_ns;
+	long time_remaining;
+	int ret = 0, copy_ret;
+
+	user_req = (struct mipi_input_wait_for_quiescence __user *)arg;
+	if (copy_from_user(&req, user_req, sizeof(req)))
+		return -EFAULT;
+
+	mutex_lock(&pb->lock);
+
+	stream = get_mipi_stream(pb, session, req.stream_id, true, &ret);
+	if (ret < 0) {
+		mutex_unlock(&pb->lock);
+		return ret;
+	}
+
+	dev_dbg(&pb->pdev->dev, "mipi input stream%u wait for frame complete\n",
+			stream->stream_id);
+
+	timeout = nsecs_to_jiffies(req.timeout_ns);
+	start = jiffies;
+
+	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
+
+	/* Wait for MIPI frame completion can only be used if the stream is
+	 * disabled.
+	 */
+	if (stream->enabled) {
+		dev_dbg(&pb->pdev->dev, "%s: mipi input stream%u must be disabled\n",
+				__func__, stream->stream_id);
+		spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
+		mutex_unlock(&pb->lock);
+		return -EINVAL;
+	}
+
+	/* If there is no frame in progress then we are all done. */
+	if (!stream->input.frame_in_progress) {
+		spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
+		mutex_unlock(&pb->lock);
+		return 0;
+	}
+
+	stream->input.frame_completion_notify = true;
+	reinit_completion(&stream->input.frame_completion);
+
+	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
+
+	/* Wait till the last frame completes or there is a timeout. */
+	time_remaining = wait_for_completion_interruptible_timeout(
+			&stream->input.frame_completion, timeout);
+
+	elapsed_ns = jiffies_to_nsecs(jiffies - start);
+
+	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
+	stream->input.frame_completion_notify = false;
+
+	if (time_remaining >= 0 || elapsed_ns >= req.timeout_ns) {
+		ret = stream->input.frame_in_progress ? -ETIMEDOUT : 0;
+		spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
+	} else {
+		spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
+
+		/* If time_remaining < 0 then the wait was interrupted by a
+		 * signal.  Determine if there is still time left in the
+		 * timeout, if there is then restart the wait with a revised
+		 * timeout, otherwise break out of the loop.
+		 */
+		req.timeout_ns -= elapsed_ns;
+
+		copy_ret = copy_to_user(user_req, &req, sizeof(req));
+
+		ret = copy_ret ? copy_ret : time_remaining;
+	}
+
+	mutex_unlock(&pb->lock);
+
+	return ret;
+}
+
 int paintbox_mipi_enable_multiple_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg,
 		bool is_input)
@@ -1492,6 +1578,9 @@ void mipi_input_handle_dma_completed(struct paintbox_data *pb,
 
 		stream->input.frame_in_progress = false;
 
+		if (stream->input.frame_completion_notify)
+			complete(&stream->input.frame_completion);
+
 		spin_unlock(&pb->io_ipu.mipi_lock);
 	}
 }
@@ -2070,6 +2159,7 @@ static int paintbox_mipi_input_init(struct paintbox_data *pb)
 			stream->is_input = true;
 			stream->is_clean = true;
 			stream->pb = pb;
+			init_completion(&stream->input.frame_completion);
 
 			INIT_DELAYED_WORK(&stream->cleanup_work,
 					paintbox_cleanup_work);

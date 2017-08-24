@@ -60,6 +60,9 @@ int paintbox_mipi_disable_multiple_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg,
 		bool is_input);
 
+int paintbox_mipi_input_wait_for_quiescence_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg);
+
 /* The caller to these functions must hold pb->lock.*/
 void paintbox_mipi_enable_multiple_input(struct paintbox_data *pb,
 		struct paintbox_session *session, uint32_t stream_id_mask,

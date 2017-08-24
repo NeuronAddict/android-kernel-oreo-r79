@@ -422,6 +422,10 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 		ret = paintbox_mipi_disable_multiple_ioctl(pb, session, arg,
 				false /* is_input */);
 		break;
+	case PB_WAIT_FOR_MIPI_INPUT_QUIESCENCE:
+		ret = paintbox_mipi_input_wait_for_quiescence_ioctl(pb, session,
+				arg);
+		break;
 	case PB_PMON_ALLOCATE:
 		ret = pmon_allocate_ioctl(pb, session, arg);
 		break;

@@ -256,6 +256,9 @@ struct paintbox_mipi_stream {
 			unsigned int missed_ovf_interrupt;
 			int32_t last_frame_number;
 			bool frame_in_progress;
+			bool frame_completion_notify;
+
+			struct completion frame_completion;
 
 			struct {
 				unsigned int sof_interrupts;

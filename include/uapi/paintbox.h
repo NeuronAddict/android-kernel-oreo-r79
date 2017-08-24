@@ -571,6 +571,11 @@ struct mipi_interrupt_config {
 	uint32_t interrupt_id;
 };
 
+struct mipi_input_wait_for_quiescence {
+	int64_t timeout_ns;
+	unsigned int stream_id;
+};
+
 /* Ioctl interface to IPU driver
  *
  * The following ioctls will return these error codes on error conditions:
@@ -691,7 +696,10 @@ struct mipi_interrupt_config {
 #define PB_DISABLE_MIPI_OUT_STREAMS   _IOW('p', 80, \
 		struct mipi_stream_disable_multiple )
 
-#define PB_NUM_IOCTLS 81
+#define PB_WAIT_FOR_MIPI_INPUT_QUIESCENCE _IOWR('p', 81, \
+		struct mipi_input_wait_for_quiescence)
+
+#define PB_NUM_IOCTLS 82
 
 /* Test ioctls
  * The following ioctls are for testing and are not to be used for normal
