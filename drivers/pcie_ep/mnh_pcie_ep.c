@@ -905,31 +905,30 @@ static int scatterlist_to_mnh_sg(struct scatterlist *sc_list, int count,
 	u = 0;	/* iterator of *sg */
 
 	for_each_sg(sc_list, in_sg, count, i) {
-		if (u < maxsg) {
-			sg[u].paddr = sg_dma_address(in_sg);
-			sg[u].size = sg_dma_len(in_sg);
-
+		/* Last entry is reserved for the NULL terminator */
+		if (u >= (maxsg - 1)) {
+			dev_err(pcie_ep_dev->dev, "maxsg exceeded\n");
+			return -EINVAL;
+		}
 		dev_dbg(pcie_ep_dev->dev,
 			"sg[%d] : Address %pa , length %zu\n",
 			u, &sg[u].paddr, sg[u].size);
 #ifdef COMBINE_SG
-			if ((u > 0) && (sg[u-1].paddr + sg[u-1].size ==
-				sg[u].paddr)) {
-				sg[u-1].size = sg[u-1].size
-					+ sg[u].size;
-				sg[u].size = 0;
-			} else {
-				u++;
-			}
-#else
-			u++;
-#endif
+		if ((u > 0) && (sg[u-1].paddr + sg[u-1].size ==
+			sg[u].paddr)) {
+			sg[u-1].size = sg[u-1].size
+				+ sg[u].size;
+			sg[u].size = 0;
 		} else {
-			dev_err(pcie_ep_dev->dev, "maxsg exceeded\n");
-			return -EINVAL;
+			u++;
 		}
+#else
+		u++;
+#endif
 	}
-	sg[u].paddr = 0x0;
+	memset(&sg[u], 0, sizeof(sg[0]));
+	sg[u].paddr = 0x0;	/* list terminator value */
+	u++;
 
 	dev_dbg(pcie_ep_dev->dev, "SGL with %d/%d entries\n", u, i);
 
