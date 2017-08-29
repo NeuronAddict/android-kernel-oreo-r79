@@ -21,7 +21,6 @@
  * Author: Marko Bartscherer <marko.bartscherer@intel.com>
  */
 
-
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/cdev.h>
@@ -910,6 +909,10 @@ static int scatterlist_to_mnh_sg(struct scatterlist *sc_list, int count,
 			dev_err(pcie_ep_dev->dev, "maxsg exceeded\n");
 			return -EINVAL;
 		}
+
+		sg[u].paddr = sg_dma_address(in_sg);
+		sg[u].size = sg_dma_len(in_sg);
+
 		dev_dbg(pcie_ep_dev->dev,
 			"sg[%d] : Address %pa , length %zu\n",
 			u, &sg[u].paddr, sg[u].size);
