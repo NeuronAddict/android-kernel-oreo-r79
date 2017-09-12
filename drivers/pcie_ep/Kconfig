@@ -18,3 +18,10 @@ config MNH_PCIE_MULTIPLE_MSI
 	def_bool n
 	help
 	  Enables PCIE multiple MSI supports
+
+config MNH_PCIE_BOOT_TRACE
+	depends on MNH_PCIE_EP
+	tristate "MNH Boot Status Tracker"
+	default n
+	help
+	  Enables MNH boot status tracking via SCU register

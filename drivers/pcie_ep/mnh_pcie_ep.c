@@ -134,6 +134,8 @@ static int pcie_config_write(uint64_t address, uint32_t data)
 spinlock_t trace_lock;
 static void *mnh_scu_base;
 
+#ifdef CONFIG_MNH_PCIE_BOOT_TRACE
+
 /* Read back trace log from SCU scratch register */
 static uint32_t mnh_trace_get(void)
 {
@@ -176,6 +178,20 @@ bail:
 	spin_unlock(&trace_lock);
 }
 EXPORT_SYMBOL(mnh_trace);
+
+#else  /* CONFIG_MNH_PCIE_BOOT_TRACE */
+
+static uint32_t mnh_trace_get(void)
+{
+	return 0;  /* No implementation */
+}
+
+void mnh_trace(uint32_t value)
+{
+	/* No implementation */
+}
+EXPORT_SYMBOL(mnh_trace);
+#endif  /* CONFIG_MNH_PCIE_BOOT_TRACE */
 
 static int check_sram_init_done(void)
 {
