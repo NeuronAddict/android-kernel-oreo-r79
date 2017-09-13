@@ -253,7 +253,7 @@ void release_lbp(struct paintbox_data *pb, struct paintbox_session *session,
 }
 
 /* The caller to this function must hold pb->lock */
-static int paintbox_lbp_init_regs(struct paintbox_data *pb,
+static void paintbox_lbp_init_regs(struct paintbox_data *pb,
 		struct paintbox_lbp *lbp)
 {
 	unsigned int i;

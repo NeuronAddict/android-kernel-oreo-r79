@@ -504,7 +504,7 @@ void paintbox_debug_log_non_ioctl_stats(struct paintbox_data *pb,
 {
 	struct paintbox_ioctl_stat *entry;
 	ktime_t duration;
-	unsigned long irqflags;
+	unsigned long irqflags = 0;
 
 	if (in_interrupt())
 		spin_lock(&pb->stats.stats_lock);
