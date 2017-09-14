@@ -413,6 +413,10 @@ int paintbox_io_apb_init(struct paintbox_data *pb)
 	pb->io.regs.dma_chan_en = IPU_DMA_CHAN_EN_DEF;
 
 #ifdef CONFIG_PAINTBOX_DEBUG
+	paintbox_debug_create_entry(pb, &pb->io.apb_debug, pb->debug_root,
+			"apb", -1, paintbox_dump_io_apb_registers, NULL,
+			&pb->io);
+
 	paintbox_debug_create_reg_entries(pb, &pb->io.apb_debug,
 			io_apb_reg_names, IO_APB_NUM_REGS,
 			paintbox_io_apb_reg_entry_write,
