@@ -24,6 +24,9 @@
 #include <linux/slab.h>
 #include <linux/types.h>
 
+/* turn off SBLK DMA b/65762838 */
+#define USE_SBLK_DMA 0
+
 /*
  * Server receives DMA scatter-gather list from client.  Store this and
  * wake up the local process handling the DMA request.
@@ -336,10 +339,11 @@ static int easelcomm_server_handle_dma_request(
 	 * Choose SBLK vs. MBLK DMA based on whether scatterlists need more
 	 * than one block.
 	 */
-	if (easelcomm_hw_scatterlist_block_count(
-			msg_metadata->dma_xfer.sg_local_size) == 1 &&
-		easelcomm_hw_scatterlist_block_count(
-			msg_metadata->dma_xfer.sg_remote_size) == 1) {
+	if (USE_SBLK_DMA &&
+	    easelcomm_hw_scatterlist_block_count(
+		msg_metadata->dma_xfer.sg_local_size) == 1 &&
+	    easelcomm_hw_scatterlist_block_count(
+		msg_metadata->dma_xfer.sg_remote_size) == 1) {
 		/*
 		 * Single-block DMA.  server_addr for the DMA_XFER command
 		 * is the Easel-side starting physical address.
