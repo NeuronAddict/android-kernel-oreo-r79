@@ -84,7 +84,7 @@ void dma_report_error_all_channels(struct paintbox_data *pb, int err);
 
 #if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 /* This function must be called in an interrupt context */
-void dma_set_mipi_error(struct paintbox_data *pb,
+int dma_set_mipi_error(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel, int err);
 #endif
 

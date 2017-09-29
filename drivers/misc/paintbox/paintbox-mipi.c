@@ -759,10 +759,10 @@ int paintbox_mipi_input_wait_for_quiescence_ioctl(struct paintbox_data *pb,
 	 * disabled.
 	 */
 	if (stream->enabled) {
-		dev_dbg(&pb->pdev->dev, "%s: mipi input stream%u must be disabled\n",
-				__func__, stream->stream_id);
 		spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
 		mutex_unlock(&pb->lock);
+		dev_err(&pb->pdev->dev, "%s: mipi input stream%u must be disabled\n",
+				__func__, stream->stream_id);
 		return -EINVAL;
 	}
 
@@ -1661,18 +1661,19 @@ static void paintbox_mipi_output_eof_interrupt(struct paintbox_data *pb,
 			stream->stream_id, stream->enabled);
 }
 
-/* This function must be called in an interrupt context */
+/* This function must be called in an interrupt context and the caller must
+ * holdpb->io_ipu.mipi_lock.
+ */
 static void paintbox_mipi_input_ovf_interrupt(struct paintbox_data *pb,
 		struct paintbox_mipi_stream *stream, ktime_t timestamp)
 {
 	uint32_t ctrl = readl(pb->io_ipu.ipu_base + MPI_STRM_CTRL);
+#if CONFIG_PAINTBOX_VERSION_MAJOR == 0
+	int ret;
+#endif
 
 	if (ctrl & MPI_STRM_CTRL_CLEANUP_MASK) {
 		stream->cleanup_in_progress = true;
-
-		dev_dbg(&pb->pdev->dev,
-				"mipi input stream%u OVF interrupt (cleanup started)\n",
-				stream->stream_id);
 
 		/* The hardware will also initiate a cleanup operation
 		 * on an overflow.  We don't want to wait for the
@@ -1689,10 +1690,6 @@ static void paintbox_mipi_input_ovf_interrupt(struct paintbox_data *pb,
 		 * already concluded.
 		 */
 		stream->is_clean = true;
-
-		dev_dbg(&pb->pdev->dev,
-				"mipi input stream%u OVF interrupt (cleanup completed)\n",
-				stream->stream_id);
 	}
 
 	paintbox_irq_waiter_signal(pb, stream->irq, timestamp,
@@ -1702,7 +1699,39 @@ static void paintbox_mipi_input_ovf_interrupt(struct paintbox_data *pb,
 	/* Set the MIPI error for the active transfer so the error can
 	 * be reported on the DMA EOF interrupt.
 	 */
-	dma_set_mipi_error(pb, stream->dma_channel, -EIO);
+	ret = dma_set_mipi_error(pb, stream->dma_channel, -EIO);
+	if (ret < 0) {
+		/* The MIPI overflow could be not reported to the userspace
+		 * since there is no active DMA transfer.  Log that the overflow
+		 * was due to no active DMA transfer and clean up our state.
+		 */
+		dev_err(&pb->pdev->dev,
+				"mipi input stream%u #%u overflow, no DMA transfer, cleanup in_progress %d\n",
+				stream->stream_id,
+				stream->input.last_frame_number,
+				stream->cleanup_in_progress);
+
+		/* There is not going to be a DMA EOF for this overflow since
+		 * there is no active DMA transfer.  Mark the frame as no longer
+		 * in progress and notify any frame completion waiters.
+		 */
+		stream->input.frame_in_progress = false;
+
+		if (stream->input.frame_completion_notify)
+			complete(&stream->input.frame_completion);
+	} else {
+		dev_err(&pb->pdev->dev,
+				"mipi input stream%u #%u overflow, cleanup in progress %d\n",
+				stream->stream_id,
+				stream->input.last_frame_number,
+				stream->cleanup_in_progress);
+	}
+#else
+	dev_err(&pb->pdev->dev,
+			"mipi input stream%u #%u overflow, cleanup in progress %d\n",
+			stream->stream_id,
+			stream->input.last_frame_number,
+			stream->cleanup_in_progress);
 #endif
 
 	if (stream->disable_on_error) {

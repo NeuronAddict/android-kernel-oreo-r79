@@ -1349,7 +1349,7 @@ int dma_test_channel_reset_ioctl(struct paintbox_data *pb,
 
 #if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 /* This function must be called in an interrupt context */
-void dma_set_mipi_error(struct paintbox_data *pb,
+int dma_set_mipi_error(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel, int err)
 {
 	struct paintbox_dma_transfer *transfer;
@@ -1359,10 +1359,7 @@ void dma_set_mipi_error(struct paintbox_data *pb,
 	/* Verify that there is an active transfer. */
 	if (!channel->active_count) {
 		spin_unlock(&pb->dma.dma_lock);
-		dev_err(&pb->pdev->dev,
-				"%s: dma channel%u unable to set error, no active transfer\n",
-				__func__, channel->channel_id);
-		return;
+		return -ENOENT;
 	}
 
 	transfer = list_entry(channel->active_list.next,
@@ -1375,6 +1372,8 @@ void dma_set_mipi_error(struct paintbox_data *pb,
 	}
 
 	spin_unlock(&pb->dma.dma_lock);
+
+	return 0;
 }
 #endif
 
