@@ -461,6 +461,8 @@ static void dma_reset_channel_locked(struct paintbox_data *pb,
 				struct paintbox_dma_transfer, entry);
 		if (!WARN_ON(transfer == NULL)) {
 			list_del(&transfer->entry);
+			dev_warn(&pb->pdev->dev, "dma channel%u reset, transfer canceled\n",
+					channel->channel_id);
 			dma_report_completion(pb, channel, transfer,
 					ktime_get_boottime(), -ECANCELED);
 		}
@@ -485,7 +487,7 @@ void dma_stop_transfer(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel)
 {
 	struct paintbox_dma *dma = &pb->dma;
-	unsigned long irq_flags;
+	unsigned long irq_flags, wait_ret;
 	uint32_t mode;
 	uint64_t stop_mask = 1ULL << (channel->channel_id +
 			DMA_CHAN_CTRL_STOP_SHIFT);
@@ -545,12 +547,17 @@ void dma_stop_transfer(struct paintbox_data *pb,
 			channel->channel_id);
 
 	/* Wait for the EOF frame interrupt to occur.  If we timeout waiting
-	 * for the interrupt or the completion is interrupted by a signal then
-	 * the DMA channel will be reset below.
+	 * for the interrupt then the DMA channel will be reset below.  This can
+	 * lead to loss of SSP pointers.
 	 */
-	wait_for_completion_interruptible_timeout(&channel->stop_completion,
+	wait_ret = wait_for_completion_timeout(&channel->stop_completion,
 			usecs_to_jiffies(max(DMA_STOP_TIMEOUT_US,
 			MIPI_CLEANUP_TIMEOUT_US)));
+	if (wait_ret == 0)
+		dev_err(&pb->pdev->dev,
+				"dma channel%u failed to stop in %uus\n",
+				channel->channel_id, max(DMA_STOP_TIMEOUT_US,
+				MIPI_CLEANUP_TIMEOUT_US));
 
 	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
 
@@ -584,6 +591,28 @@ void dma_stop_transfer(struct paintbox_data *pb,
 		if (!WARN_ON(!channel->mipi_stream))
 			verify_cleanup_completion(pb, channel->mipi_stream);
 	}
+
+	/* The DMA channel should be quiescent at this point.  In the case of
+	 * DMA double buffering the second DMA transfer (in the kernel active
+	 * queue but pending in hardware) will be reported as canceled.  Note,
+	 * if the DMA stop of the active transfer had failed then it will also
+	 * be reported as canceled here.
+	 */
+	while (channel->active_count > 0) {
+		struct paintbox_dma_transfer *transfer;
+
+		channel->active_count--;
+
+		transfer = list_entry(channel->active_list.next,
+				struct paintbox_dma_transfer, entry);
+		if (!WARN_ON(transfer == NULL)) {
+			list_del(&transfer->entry);
+			dma_report_completion(pb, channel, transfer,
+					ktime_get_boottime(), -ECANCELED);
+		}
+	}
+
+	WARN_ON(!list_empty(&channel->active_list));
 
 #if CONFIG_PAINTBOX_VERSION_MAJOR == 0
 	/* On the first version of the hardware we always do a reset after
