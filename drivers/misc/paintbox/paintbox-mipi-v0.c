@@ -458,8 +458,8 @@ void paintbox_mipi_disable_multiple_input(struct paintbox_data *pb,
 			session_entry) {
 		int ret;
 
-		if (!req->disable_all &&
-				!(stream_id_mask & (1 << stream->stream_id)))
+		if (!stream->enabled || (!req->disable_all &&
+				!(stream_id_mask & (1 << stream->stream_id))))
 			continue;
 
 		paintbox_mipi_disable_stream_common(pb, stream);
