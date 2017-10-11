@@ -61,6 +61,8 @@
 #define VENDOR_ID				0x8086
 #define DEVICE_ID				0x3140
 
+/* timeout for msi request to grant, in microseconds */
+#define MSI_REQUEST_TIMEOUT 50
 
 #define COMBINE_SG	1
 
@@ -307,6 +309,7 @@ static void release_link(void)
 static int pcie_send_msi_p(uint32_t msi)
 {
 	uint32_t tc, data, msg;
+	int timeout;
 
 	data = CSR_IN(PCIE_MSI_TRIG) &
 		CSR_MASK(PCIE_MSI_TRIG, PCIE_VEN_MSI_REQ);
@@ -320,6 +323,21 @@ static int pcie_send_msi_p(uint32_t msi)
 	data |= tc | msg;
 	CSR_OUT(PCIE_MSI_TRIG, data);
 	CSR_OUTf(PCIE_MSI_TRIG, PCIE_VEN_MSI_REQ, 1);
+
+	/* make sure the request was granted, takes 20-40 usecs */
+	usleep_range(15, 20);
+	for (timeout = 0; timeout < MSI_REQUEST_TIMEOUT; timeout++) {
+		if (!CSR_INf(PCIE_MSI_TRIG, PCIE_VEN_MSI_REQ))
+			break;
+
+		udelay(1);
+	}
+
+	if (CSR_INf(PCIE_MSI_TRIG, PCIE_VEN_MSI_REQ)) {
+		dev_err(pcie_ep_dev->dev, "%s: send msi timeout\n", __func__);
+		return -ETIMEDOUT;
+	}
+
 	return 0;
 }
 
