@@ -403,6 +403,13 @@ void paintbox_io_apb_remove(struct paintbox_data *pb)
 #endif
 }
 
+/* Resets shadows. */
+void paintbox_io_apb_post_ipu_reset(struct paintbox_data *pb)
+{
+	pb->io.regs.ipu_imr = IPU_IMR_DEF;
+	pb->io.regs.dma_chan_en = IPU_DMA_CHAN_EN_DEF;
+}
+
 int paintbox_io_apb_init(struct paintbox_data *pb)
 {
 	int ret;

@@ -23,6 +23,9 @@
 #include <linux/kernel.h>
 #include <linux/list.h>
 #include <linux/miscdevice.h>
+#ifdef CONFIG_MNH_THERMAL
+#include <linux/mnh_freq_cooling.h>
+#endif
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/of.h>
@@ -192,6 +195,39 @@ static long paintbox_get_caps_ioctl(struct paintbox_data *pb,
 
 	return 0;
 }
+
+#ifdef CONFIG_MNH_THERMAL
+static long paintbox_ipu_reset_ioctl(struct paintbox_data *pb,
+		struct paintbox_session *session, unsigned long arg)
+{
+	int ret;
+
+	mutex_lock(&pb->lock);
+
+	if (pb->session_count > 1) {
+		dev_warn(&pb->pdev->dev,
+				"%s: ignoring reset request: multiple active sessions\n",
+				__func__);
+		ret = -EBUSY;
+		goto unlock;
+	}
+
+	paintbox_io_disable_interrupt(pb, ~0ULL);
+	mnh_ipu_reset();
+	paintbox_io_apb_post_ipu_reset(pb);
+	/* TODO(showarth): bif post ipu reset */
+	paintbox_dma_post_ipu_reset(pb);
+	paintbox_lbp_post_ipu_reset(pb);
+	paintbox_mipi_post_ipu_reset(pb);
+	/* TODO(showarth): mmu post ipu reset */
+	paintbox_stp_post_ipu_reset(pb);
+	ret = 0;
+unlock:
+	mutex_unlock(&pb->lock);
+
+	return ret;
+}
+#endif
 
 static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 		unsigned long arg)
@@ -426,6 +462,11 @@ static long paintbox_ioctl(struct file *fp, unsigned int cmd,
 		ret = paintbox_mipi_input_wait_for_quiescence_ioctl(pb, session,
 				arg);
 		break;
+#ifdef CONFIG_MNH_THERMAL
+	case PB_RESET_IPU:
+		ret = paintbox_ipu_reset_ioctl(pb, session, arg);
+		break;
+#endif
 	case PB_PMON_ALLOCATE:
 		ret = pmon_allocate_ioctl(pb, session, arg);
 		break;

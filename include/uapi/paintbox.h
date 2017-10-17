@@ -699,7 +699,16 @@ struct mipi_input_wait_for_quiescence {
 #define PB_WAIT_FOR_MIPI_INPUT_QUIESCENCE _IOWR('p', 81, \
 		struct mipi_input_wait_for_quiescence)
 
-#define PB_NUM_IOCTLS 82
+/* The big red button.
+ * Allocations and interrupt bindings are preserved, but active and pending DMAs
+ * are cancelled, MIPI streams are disabled, STPs are reset, and all setup is
+ * cleared.
+ * Only permitted on exclusive sessions.
+ * Please use responsibly.
+ */
+#define PB_RESET_IPU                   _IO('p', 82)
+
+#define PB_NUM_IOCTLS 83
 
 /* Test ioctls
  * The following ioctls are for testing and are not to be used for normal

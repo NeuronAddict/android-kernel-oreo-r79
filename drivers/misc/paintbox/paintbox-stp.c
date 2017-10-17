@@ -981,6 +981,27 @@ void paintbox_stp_remove(struct paintbox_data *pb)
 	kfree(pb->stp.stps);
 }
 
+/* Resets shadows and restores power state. */
+void paintbox_stp_post_ipu_reset(struct paintbox_data *pb)
+{
+	unsigned int i;
+	struct paintbox_stp *stp;
+
+	pb->stp.selected_stp_id = STP_SEL_DEF & STP_SEL_STP_SEL_M;
+
+	for (i = 0; i < pb->stp.num_stps; i++) {
+		stp = &pb->stp.stps[i];
+		stp->enabled = false;
+
+#ifndef CONFIG_PAINTBOX_FPGA_SUPPORT
+		if (stp->pm_enabled)
+			paintbox_pm_stp_enable(pb, stp);
+#endif
+
+		/* TODO(showarth): restore lbp access */
+	}
+}
+
 int paintbox_stp_init(struct paintbox_data *pb)
 {
 	unsigned int stp_index;

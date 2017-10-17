@@ -150,6 +150,8 @@ static inline void paintbox_dma_select_channel(struct paintbox_data *pb,
 			pb->dma.dma_base + DMA_CTRL);
 }
 
+void paintbox_dma_post_ipu_reset(struct paintbox_data *pb);
+
 int paintbox_dma_init(struct paintbox_data *pb);
 
 /* The caller to this function must hold pb->lock */

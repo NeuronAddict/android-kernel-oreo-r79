@@ -132,6 +132,8 @@ static inline void paintbox_disable_mipi_output_interface_interrupt(
 			IPU_IMR_MPO_INTR_SHIFT));
 }
 
+void paintbox_io_apb_post_ipu_reset(struct paintbox_data *pb);
+
 int paintbox_io_apb_init(struct paintbox_data *pb);
 
 /* All sessions must be released before remove can be called. */

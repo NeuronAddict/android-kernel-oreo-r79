@@ -1873,6 +1873,62 @@ void paintbox_dma_remove(struct paintbox_data *pb)
 	paintbox_dma_debug_remove(pb);
 }
 
+static void cancel_queue(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel,
+		struct list_head *transfer_list, unsigned int *count,
+		ktime_t timestamp)
+{
+	while (!list_empty(transfer_list)) {
+		struct paintbox_dma_transfer *transfer;
+
+		transfer = list_entry(transfer_list->next,
+				struct paintbox_dma_transfer, entry);
+		list_del(&transfer->entry);
+		(*count)--;
+		WARN_ON(*count < 0);
+		dma_report_completion(pb, channel, transfer, timestamp,
+				-ECANCELED);
+	}
+}
+
+/* Resets shadows and state and cancels active and pending DMAs.
+ * pb->lock is held, so no stops are pending.
+ */
+void paintbox_dma_post_ipu_reset(struct paintbox_data *pb)
+{
+	ktime_t timestamp = ktime_get_boottime();
+	unsigned int channel_id;
+
+	dev_info(&pb->pdev->dev, "%s\n", __func__);
+
+	pb->dma.bif_outstanding = ((DMA_CHAN_BIF_XFER_DEF &
+			DMA_CHAN_BIF_XFER_OUTSTANDING_MASK) >>
+			DMA_CHAN_BIF_XFER_OUTSTANDING_SHIFT) + 1;
+
+	pb->dma.selected_dma_channel_id = (DMA_CTRL_DEF &
+			DMA_CTRL_DMA_CHAN_SEL_MASK) >>
+			DMA_CTRL_DMA_CHAN_SEL_SHIFT;
+
+	pb->dma.regs.chan_ctrl = DMA_CHAN_CTRL_DEF;
+#if CONFIG_PAINTBOX_VERSION_MAJOR >= 1
+	pb->dma.regs.irq_imr = DMA_IRQ_IMR_DEF;
+	pb->dma.regs.irq_err_imr = DMA_IRQ_ERR_IMR_DEF;
+#endif
+
+	for (channel_id = 0; channel_id < pb->dma.num_channels; channel_id++) {
+		struct paintbox_dma_channel *channel =
+				&pb->dma.channels[channel_id];
+
+		channel->pm_enabled = false;
+		channel->interrupts_enabled = false;
+		paintbox_dma_channel_register_init(channel);
+		cancel_queue(pb, channel, &channel->active_list,
+				&channel->active_count, timestamp);
+		cancel_queue(pb, channel, &channel->pending_list,
+				&channel->pending_count, timestamp);
+	}
+}
+
 int paintbox_dma_init(struct paintbox_data *pb)
 {
 	unsigned int channel_id;

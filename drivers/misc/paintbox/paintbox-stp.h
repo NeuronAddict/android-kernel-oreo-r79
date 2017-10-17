@@ -117,6 +117,8 @@ static inline uint64_t paintbox_stp_stat_read(struct paintbox_data *pb)
 }
 #endif
 
+void paintbox_stp_post_ipu_reset(struct paintbox_data *pb);
+
 int paintbox_stp_init(struct paintbox_data *pb);
 
 /* The caller to this function must hold pb->lock */

@@ -2123,6 +2123,67 @@ void paintbox_mipi_remove(struct paintbox_data *pb)
 	paintbox_mipi_debug_remove(pb);
 }
 
+static void paintbox_mipi_interface_post_ipu_reset(
+		struct paintbox_mipi_interface *interfaces,
+		unsigned int num_interfaces)
+{
+	unsigned int i;
+	struct paintbox_mipi_interface *interface;
+
+	for (i = 0; i < num_interfaces; i++) {
+		interface = &interfaces[i];
+		interface->active_stream_mask = 0;
+	}
+}
+
+static void paintbox_mipi_stream_post_ipu_reset(struct paintbox_data *pb,
+		struct paintbox_mipi_stream *streams, unsigned int num_streams)
+{
+	unsigned int i;
+	struct paintbox_mipi_stream *stream;
+
+	for (i = 0; i < num_streams; i++) {
+		stream = &streams[i];
+		stream->enabled = false;
+		stream->frame_count = 0;
+		stream->free_running = false;
+		stream->last_frame = false;
+
+		/* pb->lock is held, so requested cleanup is avoided and pending
+		 * cleanup just returns.
+		 */
+		stream->cleanup_in_progress = false;
+		stream->is_clean = true;
+
+		if (stream->is_input) {
+			stream->input.last_frame_number =
+					MIPI_INVALID_FRAME_NUMBER;
+			stream->input.frame_in_progress = false;
+		}
+	}
+}
+
+/* Resets shadows and stream state. */
+void paintbox_mipi_post_ipu_reset(struct paintbox_data *pb)
+{
+	pb->io_ipu.selected_input_stream_id = MPI_STRM_SEL_DEF &
+			MPI_STRM_SEL_MPI_STRM_SEL_M;
+
+	paintbox_mipi_interface_post_ipu_reset(pb->io_ipu.mipi_input_interfaces,
+			pb->io_ipu.num_mipi_input_interfaces);
+	paintbox_mipi_stream_post_ipu_reset(pb, pb->io_ipu.mipi_input_streams,
+			pb->io_ipu.num_mipi_input_streams);
+
+	pb->io_ipu.selected_output_stream_id = MPO_STRM_SEL_DEF &
+			MPO_STRM_SEL_MPO_STRM_SEL_M;
+
+	paintbox_mipi_interface_post_ipu_reset(
+			pb->io_ipu.mipi_output_interfaces,
+			pb->io_ipu.num_mipi_output_interfaces);
+	paintbox_mipi_stream_post_ipu_reset(pb, pb->io_ipu.mipi_output_streams,
+			pb->io_ipu.num_mipi_output_streams);
+}
+
 static int paintbox_mipi_input_init(struct paintbox_data *pb)
 {
 	struct paintbox_io_ipu *ipu = &pb->io_ipu;

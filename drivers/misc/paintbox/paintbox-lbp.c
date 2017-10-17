@@ -990,6 +990,29 @@ void paintbox_lbp_remove(struct paintbox_data *pb)
 	kfree(pb->lbp.lbps);
 }
 
+/* Resets shadows and restores power state. */
+void paintbox_lbp_post_ipu_reset(struct paintbox_data *pb)
+{
+	unsigned int i;
+	struct paintbox_lbp *lbp;
+
+	pb->lbp.selected_lbp_id = LBP_SEL_DEF & LBP_SEL_LBP_SEL_M;
+	pb->lbp.selected_lb_id = (LBP_SEL_DEF & LBP_SEL_LB_SEL_MASK) >>
+			LBP_SEL_LB_SEL_SHIFT;
+
+	for (i = 0; i < pb->lbp.num_lbps; i++) {
+		lbp = &pb->lbp.lbps[i];
+		lbp->regs.lbp_ctrl = LBP_CTRL_DEF;
+
+#ifndef CONFIG_PAINTBOX_FPGA_SUPPORT
+		if (lbp->pm_enabled)
+			paintbox_pm_lbp_enable(pb, lbp);
+#endif
+
+		paintbox_lbp_init_regs(pb, lbp);
+	}
+}
+
 static int init_lbp(struct paintbox_data *pb, unsigned int lbp_index)
 {
 	struct paintbox_lbp *lbp;

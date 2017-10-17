@@ -86,6 +86,8 @@ static inline void paintbox_lb_select(struct paintbox_data *pb,
 			pb->lbp.reg_base + LBP_SEL);
 }
 
+void paintbox_lbp_post_ipu_reset(struct paintbox_data *pb);
+
 int paintbox_lbp_init(struct paintbox_data *pb);
 
 /* The caller to this function must hold pb->lock */
