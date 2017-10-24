@@ -373,6 +373,21 @@ static void dma_report_completion(struct paintbox_data *pb,
 			err);
 }
 
+int paintbox_dma_channel_active_count(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel)
+{
+	unsigned long irq_flags;
+	int active_count;
+
+	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
+
+	active_count = channel ? channel->active_count : 0;
+
+	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
+
+	return active_count;
+}
+
 int bind_dma_interrupt_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg)
 {
@@ -1071,6 +1086,11 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 
 	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 
+	if (transfer->auto_start_transfer &&
+			paintbox_dma_src_is_mipi(transfer->chan_mode))
+		ret = paintbox_mipi_enable_input_stream(pb, session,
+				channel->mipi_stream);
+
 #ifdef CONFIG_PAINTBOX_DEBUG
 	if (pb->stats.ioctl_time_enabled)
 		paintbox_debug_log_non_ioctl_stats(pb,  PB_STATS_DMA_ENQ, enq_start,
@@ -1082,7 +1102,7 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 
 	mutex_unlock(&pb->lock);
 
-	return 0;
+	return ret;
 }
 
 int read_dma_transfer_ioctl(struct paintbox_data *pb,
@@ -1184,6 +1204,7 @@ int start_dma_transfer_ioctl(struct paintbox_data *pb,
 	spin_lock_irqsave(&pb->dma.dma_lock, irq_flags);
 
 	if (list_empty(&channel->pending_list)) {
+		spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 		dev_err(&pb->pdev->dev, "dma channel%u no pending transfers\n",
 				channel->channel_id);
 		ret = -ENOENT;
@@ -1191,6 +1212,7 @@ int start_dma_transfer_ioctl(struct paintbox_data *pb,
 	}
 
 	if (channel->active_count >= MAX_ACTIVE_TRANSFERS) {
+		spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 		dev_err(&pb->pdev->dev, "dma channel%u too many transfers\n",
 				channel->channel_id);
 		ret = -EAGAIN;
@@ -1207,9 +1229,17 @@ int start_dma_transfer_ioctl(struct paintbox_data *pb,
 
 	commit_transfer_to_hardware(pb, channel, transfer);
 
-err_exit:
 	spin_unlock_irqrestore(&pb->dma.dma_lock, irq_flags);
 
+	/* Verify that the MIPI stream is enabled.  If the stream is not enabled
+	 * then this function will enable it.  If it is enabled then it will
+	 * return quickly.
+	 */
+	if (paintbox_dma_src_is_mipi(transfer->chan_mode))
+		ret = paintbox_mipi_enable_input_stream(pb, session,
+				channel->mipi_stream);
+
+err_exit:
 	mutex_unlock(&pb->lock);
 
 	return ret;

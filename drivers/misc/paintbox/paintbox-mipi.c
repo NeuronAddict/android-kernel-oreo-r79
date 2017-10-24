@@ -846,6 +846,28 @@ int paintbox_mipi_enable_multiple_ioctl(struct paintbox_data *pb,
 	return 0;
 }
 
+/* The caller to this function must hold pb->lock */
+int paintbox_mipi_enable_input_stream(struct paintbox_data *pb,
+		struct paintbox_session *session,
+		struct paintbox_mipi_stream *stream)
+{
+	struct mipi_stream_enable_multiple req;
+
+	if (WARN_ON(!stream))
+		return -EINVAL;
+
+	req.stream_id_mask = 1UL << stream->stream_id;
+	req.frame_count = stream->frame_count;
+	req.free_running = stream->free_running;
+	req.enable_all = false;
+	req.input.disable_on_error = stream->disable_on_error;
+
+	paintbox_mipi_enable_multiple_input(pb, session, req.stream_id_mask,
+			&req);
+
+	return 0;
+}
+
 int paintbox_mipi_disable_multiple_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg,
 		bool is_input)
@@ -1597,19 +1619,25 @@ static void paintbox_mipi_input_sof_interrupt(struct paintbox_data *pb,
 	paintbox_irq_waiter_signal(pb, stream->irq, timestamp,
 			stream->input.last_frame_number, 0 /* error */);
 
-	/* If the stream is free running then exit now and skip the frame count
-	 * and disable logic.
+	/* Decrement the frame count if the stream is not in free running mode.
 	 */
-	if (stream->free_running)
-		return;
-
-	if (stream->frame_count > 0)
+	if (!stream->free_running && stream->frame_count > 0)
 		stream->frame_count--;
 
-	/* If the stream is enabled and the frame count has gone to zero then
-	 * disable the stream.
+	/* If the stream has already been disabled and is just finishing out the
+	 * last frame then there is nothing left to do here.
 	 */
-	if (stream->enabled && stream->frame_count == 0) {
+	if (!stream->enabled)
+		return;
+
+	/* Disable the stream if either of the conditions have been met:
+	 * 1.  There are fewer than 2 (current and next) active transfers in the
+	 *     corresponding DMA channel.
+	 * 2.  The stream is not in free running mode and the requested frame
+	 *     count has reached zero.
+	 */
+	if (paintbox_dma_channel_active_count(pb, stream->dma_channel) < 2 ||
+			(!stream->free_running && stream->frame_count == 0)) {
 		stream->last_frame = true;
 		stream->enabled = false;
 

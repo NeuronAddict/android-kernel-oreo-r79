@@ -128,6 +128,9 @@ struct paintbox_dma_channel *dma_handle_mipi_stream_allocated(
 void dma_handle_mipi_stream_released(struct paintbox_data *pb,
 		struct paintbox_dma_channel *channel);
 
+int paintbox_dma_channel_active_count(struct paintbox_data *pb,
+		struct paintbox_dma_channel *channel);
+
 #ifdef CONFIG_PAINTBOX_TEST_SUPPORT
 int dma_test_reset_ioctl(struct paintbox_data *pb,
 		struct paintbox_session *session, unsigned long arg);
