@@ -848,22 +848,49 @@ int paintbox_mipi_enable_multiple_ioctl(struct paintbox_data *pb,
 
 /* The caller to this function must hold pb->lock */
 int paintbox_mipi_enable_input_stream(struct paintbox_data *pb,
-		struct paintbox_session *session,
 		struct paintbox_mipi_stream *stream)
 {
-	struct mipi_stream_enable_multiple req;
+	unsigned long irq_flags;
+	int ret;
 
 	if (WARN_ON(!stream))
 		return -EINVAL;
 
-	req.stream_id_mask = 1UL << stream->stream_id;
-	req.frame_count = stream->frame_count;
-	req.free_running = stream->free_running;
-	req.enable_all = false;
-	req.input.disable_on_error = stream->disable_on_error;
+	spin_lock_irqsave(&pb->io_ipu.mipi_lock, irq_flags);
 
-	paintbox_mipi_enable_multiple_input(pb, session, req.stream_id_mask,
-			&req);
+	if (stream->enabled) {
+		spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
+		return 0;
+	}
+
+	/* If the stream is being enabled as part of a DMA transfer enqueue then
+	 * put the stream in free running mode.  The stream will be
+	 * automatically disabled when the DMA transfer queue is exhausted.
+	 */
+	stream->frame_count = 0;
+	stream->free_running = true;
+	stream->is_clean = false;
+	stream->last_frame = false;
+	stream->enabled = true;
+
+	/* Always disable on error, this will prevent cascading MIPI overflows
+	 * if an overflow occurs.
+	 */
+	stream->disable_on_error = true;
+
+	enable_mipi_interface(pb, stream);
+
+	ret = mipi_input_enable_irqs_and_stream(pb, stream,
+			MIPI_INPUT_SOF_IMR | MIPI_INPUT_OVF_IMR);
+
+	/* Log a missed interrupt if it occurred but don't propagate the error
+	 * up.
+	 */
+	if (ret == -EINTR)
+		dev_warn(&pb->pdev->dev, "%s: mipi input stream%u may have missed an interrupt\n",
+				__func__, stream->stream_id);
+
+	spin_unlock_irqrestore(&pb->io_ipu.mipi_lock, irq_flags);
 
 	return 0;
 }

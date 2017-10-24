@@ -102,7 +102,6 @@ void release_mipi_stream(struct paintbox_data *pb,
 
 /* The caller to this function must hold pb->lock */
 int paintbox_mipi_enable_input_stream(struct paintbox_data *pb,
-		struct paintbox_session *session,
 		struct paintbox_mipi_stream *stream);
 
 /* The caller to this function must hold pb->lock */

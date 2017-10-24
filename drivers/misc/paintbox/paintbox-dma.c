@@ -1088,7 +1088,7 @@ int setup_dma_transfer_ioctl(struct paintbox_data *pb,
 
 	if (transfer->auto_start_transfer &&
 			paintbox_dma_src_is_mipi(transfer->chan_mode))
-		ret = paintbox_mipi_enable_input_stream(pb, session,
+		ret = paintbox_mipi_enable_input_stream(pb,
 				channel->mipi_stream);
 
 #ifdef CONFIG_PAINTBOX_DEBUG
@@ -1236,7 +1236,7 @@ int start_dma_transfer_ioctl(struct paintbox_data *pb,
 	 * return quickly.
 	 */
 	if (paintbox_dma_src_is_mipi(transfer->chan_mode))
-		ret = paintbox_mipi_enable_input_stream(pb, session,
+		ret = paintbox_mipi_enable_input_stream(pb,
 				channel->mipi_stream);
 
 err_exit:
