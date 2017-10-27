@@ -861,7 +861,8 @@ int allocate_dma_channel_ioctl(struct paintbox_data *pb,
 
 	channel = &pb->dma.channels[channel_id];
 	if (channel->session) {
-		dev_err(&pb->pdev->dev, "%s: access error, dma channel id %d\n",
+		dev_warn(&pb->pdev->dev,
+				"%s: access error, dma channel id %d\n",
 				__func__, channel_id);
 		mutex_unlock(&pb->lock);
 		return -EACCES;
