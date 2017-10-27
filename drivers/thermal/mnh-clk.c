@@ -1784,7 +1784,7 @@ static irqreturn_t mnh_pm_handle_ddr_irq(int irq, void *dev_id)
 
 	if (status) {
 		mnh_ddr_clr_int_status();
-		dev_err(mnh_dev->dev,
+		dev_dbg(mnh_dev->dev,
 			"%s unhandled status=0x%llx, but cleared.\n", __func__, status);
 	}
 
