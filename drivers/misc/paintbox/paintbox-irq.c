@@ -36,6 +36,7 @@ struct paintbox_irq_group_waiter {
 	struct paintbox_irq_group_wait *wait;
 	struct completion completion;
 	bool priority_irq_triggered;
+	bool signaled;
 	int error;
 };
 
@@ -79,6 +80,33 @@ static inline void paintbox_irq_flush_events(struct paintbox_data *pb,
 }
 
 /* The caller to this function must hold pb->irq_lock */
+static void paintbox_irq_group_add_entry(
+		struct paintbox_irq_group_waiter *waiter,
+		struct paintbox_irq_wait_entry *entry,
+		struct paintbox_irq *irq, struct paintbox_irq_event *event)
+{
+	struct paintbox_irq_group_wait *wait = waiter->wait;
+
+	entry->triggered = true;
+	memcpy(&entry->event, event, sizeof(struct paintbox_irq_event));
+
+	if (event->error) {
+		/* The first error in the irq group will be reported through
+		 * errno.  Any additional errors will only be reported in the
+		 * entry array.
+		 */
+		if (waiter->error == 0)
+			waiter->error = event->error;
+	}
+
+	if (entry->flags & PB_IRQ_PRIORITY)
+		waiter->priority_irq_triggered = true;
+
+	if (entry->flags & PB_IRQ_REQUIRED)
+		wait->base.required_irqs_triggered++;
+}
+
+/* The caller to this function must hold pb->irq_lock */
 static bool paintbox_irq_group_add_event(
 		struct paintbox_irq_group_waiter *waiter,
 		struct paintbox_irq *irq, struct paintbox_irq_event *event)
@@ -92,29 +120,13 @@ static bool paintbox_irq_group_add_event(
 		if (entry->interrupt_id != irq->interrupt_id)
 			continue;
 
-		/* If this interrupt has already been reported then return
-		 * false so that it will be added to the irq's pending queue.
+		/* If this interrupt has already been reported then return false
+		 * so that it will be added to the irq's pending queue.
 		 */
 		if (entry->triggered)
 			return false;
 
-		entry->triggered = true;
-		memcpy(&entry->event, event, sizeof(struct paintbox_irq_event));
-
-		if (event->error) {
-			/* The first error in the irq group will be reported
-			 * through errno.  Any additional errors will only be
-			 * reported in the entry array.
-			 */
-			if (waiter->error == 0)
-				waiter->error = event->error;
-		}
-
-		if (entry->flags & PB_IRQ_PRIORITY)
-			waiter->priority_irq_triggered = true;
-
-		if (entry->flags & PB_IRQ_REQUIRED)
-			wait->base.required_irqs_triggered++;
+		paintbox_irq_group_add_entry(waiter, entry, irq, event);
 
 		return true;
 	}
@@ -634,11 +646,19 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 			break;
 		}
 
-		if (paintbox_irq_deq_pending_event(irq, &event)) {
-			bool handled = paintbox_irq_group_add_event(&waiter,
-					irq, &event);
-			WARN_ON(!handled);
-		}
+		/* If the interrupt for this entry has already been reported
+		 * then skip it, any pending interrupt will be reported on the
+		 * next invocation of the ioctl.
+		 */
+		if (entry->triggered)
+			continue;
+
+		/* Dequeue the event from the IRQ object's event queue and add
+		 * it to the wait entry.
+		 */
+		if (paintbox_irq_deq_pending_event(irq, &event))
+			paintbox_irq_group_add_entry(&waiter, entry, irq,
+					&event);
 	}
 
 	/* If the completion criteria for the irq group has been met then clean
@@ -663,8 +683,8 @@ int wait_for_interrupt_ioctl(struct paintbox_data *pb,
 
 #ifdef CONFIG_PAINTBOX_DEBUG
 	if (pb->stats.ioctl_time_enabled)
-		paintbox_debug_log_non_ioctl_stats(pb,  PB_STATS_WAIT_PRE, start_time,
-				ktime_get_boottime(), 0);
+		paintbox_debug_log_non_ioctl_stats(pb,  PB_STATS_WAIT_PRE,
+				start_time, ktime_get_boottime(), 0);
 #endif
 
 	if (wait->base.timeout_ns == LONG_MAX)
@@ -769,13 +789,21 @@ void paintbox_irq_waiter_signal(struct paintbox_data *pb,
 	 */
 	list_for_each_entry_safe(waiter, waiter_next, &irq->session->wait_list,
 			session_entry) {
+		/* If this waiter has already met the exit conditions and been
+		 * signalled then do not add the event to it.
+		 */
+		if (waiter->signaled)
+			continue;
+
 		if (paintbox_irq_group_add_event(waiter, irq, &event)) {
 			/* Check to see if the completion criteria for the irq
 			 * group has been met, if so then signal the waiting
 			 * thread.
 			 */
-			if (paintbox_irq_group_verify_complete(waiter))
+			if (paintbox_irq_group_verify_complete(waiter)) {
+				waiter->signaled = true;
 				complete(&waiter->completion);
+			}
 
 			/* The interrupt has been claimed, return. */
 			spin_unlock(&pb->irq_lock);
