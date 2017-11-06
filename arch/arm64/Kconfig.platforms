@@ -65,11 +65,12 @@ config ARCH_MEDIATEK
 	  Support for Mediatek MT65xx & MT81xx ARMv8 SoCs
 
 config ARCH_MNH
-       bool "Intel Monette Hill"
-       select ARM_GIC
-       select ARM_GIC_V3
-       select MNH_PCIE_EP
-       select MNH_PERF_MON
+	bool "Intel Monette Hill"
+	select ARM_GIC
+	select ARM_GIC_V3
+	select MNH_PCIE_EP
+	select MNH_PCIE_MULTIPLE_MSI
+	select MNH_PERF_MON
 
 config ARCH_MESON
 	bool "Amlogic Platforms"
